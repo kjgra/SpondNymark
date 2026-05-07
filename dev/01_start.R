@@ -20,12 +20,12 @@
 ##
 golem::fill_desc(
   pkg_name = "SpondNymark", # The name of the golem package containing the app (typically lowercase, no underscore or periods)
-  pkg_title = "PKG_TITLE", # What the Package Does (One Line, Title Case, No Period)
-  pkg_description = "PKG_DESC.", # What the package does (one paragraph).
+  pkg_title = "Administrasjon av arrangementer", # What the Package Does (One Line, Title Case, No Period)
+  pkg_description = "Lar Spondbrukere sette opp lag til sine arrangementer, mm", # What the package does (one paragraph).
   authors = person(
-    given = "AUTHOR_FIRST", # Your First Name
-    family = "AUTHOR_LAST", # Your Last Name
-    email = "AUTHOR@MAIL.COM", # Your email
+    given = "Kjetil", # Your First Name
+    family = "Gramstad", # Your Last Name
+    email = "kjetil.gramstad@gmail.com", # Your email
     role = c("aut", "cre") # Your role (here author/creator)
   ),
   repo_url = NULL, # The URL of the GitHub repo (optional),
