@@ -1,17 +1,22 @@
 Package: SpondNymark
-Title: An Amazing Shiny App
+Title: Spond Team Distribution App
 Version: 0.0.0.9000
-Authors@R: 
-    person(given = "firstname",
-           family = "lastname",
+Authors@R:
+    person(given = "Kjell",
+           family = "Gramstad",
            role = c("aut", "cre"),
-           email = "your@email.com")
-Description: What the package does (one paragraph).
-License: What license is it under?
-Imports: 
+           email = "k.gramstad@gmail.com")
+Description: A Shiny application for logging into Spond, fetching event
+    participants, and distributing them into teams. Proposals are saved
+    to a Supabase (Postgres) backend.
+License: MIT + file LICENSE
+Imports:
     config,
     golem,
     shiny
 Encoding: UTF-8
 LazyData: true
-RoxygenNote: 7.1.1
+Suggests: 
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+Config/roxygen2/version: 8.0.0
