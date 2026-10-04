@@ -14,3 +14,19 @@
 .sn-alert { margin: 12px 0 0; padding: 8px 12px; font-size: .9rem; }
 .sn-grouplist { padding-left: 1.1rem; }
 .sn-grouplist li { margin-bottom: 6px; }
+
+/* Fase 2: choice of group and subgroup */
+.sn-ctx { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.sn-ctx .form-group { margin: 0; }
+.sn-ctx select { width: auto; max-width: 60vw; padding: 4px 2.25rem 4px 10px; background-position: right .6rem center; font-size: .9rem; }
+.sn-pick { max-width: 520px; width: 100%; margin: 3vh auto 0; }
+.sn-pick h2 { font-size: 1.35rem; font-weight: 800; }
+.sn-picklist { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.sn-pickrow { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
+  width: 100%; text-align: left; border: 1px solid var(--bs-border-color); background: var(--bs-body-bg); padding: 10px 14px; }
+.sn-pickrow:hover, .sn-pickrow:focus-visible { border-color: var(--bs-primary); background: var(--bs-body-bg); }
+.sn-pickrow-title { font-weight: 700; }
+.sn-pickrow-detail { font-size: .85rem; color: var(--bs-secondary); }
+.sn-back { align-self: flex-start; padding: 0; margin-bottom: 6px; text-decoration: none; font-weight: 600; }
+.sn-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.sn-chip { border: 1px solid var(--bs-border-color); border-radius: 999px; padding: 2px 10px; font-size: .85rem; background: var(--bs-body-bg); }

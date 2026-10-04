@@ -44,3 +44,28 @@ fake_spond_api <- function(profile_id = "P-me", fail_with = NULL) {
     groups = function(sess) fake_spond_groups()
   )
 }
+
+# Two groups where P-me is Teamleder: one with subgroups (and a name collision),
+# one without subgroups.
+fake_spond_groups_two <- function() {
+  g <- fake_spond_groups()
+  g[[1]]$members <- c(g[[1]]$members, list(
+    list(id = "M-2", firstName = "Emma", lastName = "Hansen", subGroups = list("S-gaupe")),
+    list(id = "M-3", firstName = "Noah", lastName = "Sand", subGroups = list("S-ulv", "S-gaupe"))
+  ))
+  c(g, list(list(
+    id = "G-senior", name = "Nymark Senior",
+    roles = list(list(id = "R1", name = "Teamleder")),
+    members = list(
+      list(id = "M-me2", firstName = "Kjetil", lastName = "Gramstad", roles = list("R1"), profile = list(id = "P-me")),
+      list(id = "M-9", firstName = "Ola", lastName = "Nordmann")
+    )
+  )))
+}
+
+# The user list mod_login_server() returns, built from fake data.
+fake_user <- function(groups = fake_spond_groups(), roles = c("Teamleder")) {
+  d <- spond_session_data(groups, fake_spond_profile(), roles)
+  list(spond = structure(list(token = "tok"), class = "spond_session"),
+       profile = d$profile, groups = d$groups, access = d$access)
+}

@@ -16,9 +16,11 @@ app_ui <- function(request) {
         tags$header(
           class = "sn-topbar",
           div(class = "sn-brand", span(class = "sn-dot"), "SpondNymark"),
+          mod_teams_bar_ui("teams"),
           mod_login_bar_ui("login")
         ),
         mod_login_ui("login"),
+        mod_teams_ui("teams"),
         uiOutput("main")
       )
     )
