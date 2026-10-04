@@ -6,12 +6,12 @@
 
 test_db_connect <- function(url) {
   if (requireNamespace("RPostgres", quietly = TRUE)) {
-    return(DBI::dbConnect(RPostgres::Postgres(), dbname = url))
+    return(ds_connect(url))   # same code path as the app
   }
   if (requireNamespace("RPostgreSQL", quietly = TRUE)) {
-    m <- regmatches(url, regexec("^postgres(?:ql)?://([^:]+):([^@]*)@([^:/]+)(?::(\\d+))?/([^?]+)", url, perl = TRUE))[[1]]
-    return(DBI::dbConnect(RPostgreSQL::PostgreSQL(), user = m[2], password = m[3], host = m[4],
-                          port = if (nzchar(m[5])) as.integer(m[5]) else 5432L, dbname = m[6]))
+    a <- ds_connect_args(url)  # RPostgreSQL does not take libpq options such as sslmode
+    return(DBI::dbConnect(RPostgreSQL::PostgreSQL(), user = a$user, password = a$password,
+                          host = a$host, port = a$port, dbname = a$dbname))
   }
   testthat::skip("Ingen Postgres-driver (RPostgres) installert.")
 }

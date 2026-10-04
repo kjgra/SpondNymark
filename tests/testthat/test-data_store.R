@@ -231,3 +231,24 @@ test_that(".Renviron keeps comments and position when a value is replaced", {
   ds_write_renviron("SPONDNYMARK_DB_URL", "postgresql://x", f)
   expect_equal(readLines(f), c("# kommentar", "SPONDNYMARK_DB_URL=postgresql://x", "", "# annet", "SPOND_EMAIL=a@b.no"))
 })
+
+test_that("connection strings are split into separate arguments for RPostgres", {
+  url <- "postgresql://spondnymark_app.abcd:p%40ss%3Aw%2Frd@aws-0-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require"
+  a <- ds_connect_args(url)
+  expect_equal(a$host, "aws-0-eu-west-1.pooler.supabase.com")
+  expect_equal(a$port, 5432L)
+  expect_equal(a$user, "spondnymark_app.abcd")
+  expect_equal(a$password, "p@ss:w/rd")
+  expect_equal(a$dbname, "postgres")
+  expect_equal(a$sslmode, "require")
+  # the admin URL produced by ds_fill_password round-trips to the original password
+  tpl <- "postgresql://postgres.abcd:[YOUR-PASSWORD]@aws-0-eu-west-1.pooler.supabase.com:5432/postgres"
+  pw <- "Æ#ø %å!*'()+,;=&$?[]"
+  expect_equal(ds_connect_args(ds_fill_password(tpl, pw))$password, pw)
+  expect_equal(ds_connect_args(ds_fill_password(tpl, pw))$user, "postgres.abcd")
+  # defaults and errors
+  d <- ds_connect_args("postgresql://u:p@localhost")
+  expect_equal(c(d$port, d$dbname), c(5432L, "postgres"))
+  expect_error(ds_connect_args("localhost:5432"), "Skjønte ikke")
+  expect_error(ds_connect(""), "ikke satt")
+})

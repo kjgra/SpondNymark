@@ -28,7 +28,37 @@ ds_connect <- function(url = Sys.getenv("SPONDNYMARK_DB_URL")) {
   if (!nzchar(url)) {
     stop("SPONDNYMARK_DB_URL er ikke satt. Legg tilkoblingsstrengen i .Renviron.", call. = FALSE)
   }
-  DBI::dbConnect(RPostgres::Postgres(), dbname = url)
+  # RPostgres does not read connection strings (it passes `dbname` on as a
+  # plain database name), so the URL is split into separate arguments.
+  do.call(DBI::dbConnect, c(list(RPostgres::Postgres()), ds_connect_args(url)))
+}
+
+#' Split a postgresql:// connection string into dbConnect() arguments
+#'
+#' User name and password are percent-decoded. Query parameters such as
+#' `sslmode=require` are passed on as libpq options.
+#' @noRd
+ds_connect_args <- function(url) {
+  m <- regmatches(url, regexec(
+    "^postgres(?:ql)?://([^:/@]+)(?::([^@]*))?@([^:/?]+)(?::([0-9]+))?(?:/([^?]*))?(?:\\?(.*))?$",
+    url, perl = TRUE))[[1]]
+  if (length(m) == 0) {
+    stop("Skjønte ikke tilkoblingsstrengen. Den skal se slik ut: postgresql://bruker:passord@vert:5432/postgres", call. = FALSE)
+  }
+  args <- list(
+    host = m[4],
+    port = if (nzchar(m[5])) as.integer(m[5]) else 5432L,
+    user = utils::URLdecode(m[2]),
+    password = utils::URLdecode(m[3]),
+    dbname = if (nzchar(m[6])) utils::URLdecode(m[6]) else "postgres"
+  )
+  if (nzchar(m[7])) {
+    for (kv in strsplit(m[7], "&", fixed = TRUE)[[1]]) {
+      key <- sub("=.*$", "", kv)
+      if (nzchar(key)) args[[key]] <- utils::URLdecode(sub("^[^=]*=?", "", kv))
+    }
+  }
+  args
 }
 
 # Helpers -----------------------------------------------------------------------
