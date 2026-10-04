@@ -221,3 +221,10 @@ test_that("the app user can use the app tables but cannot change the schema", {
   expect_true(priv("group_proposals", "SELECT"))
   expect_false(priv("group_proposals", "TRUNCATE"))
 })
+
+test_that(".Renviron keeps comments and position when a value is replaced", {
+  f <- withr::local_tempfile()
+  writeLines(c("# kommentar", "SPONDNYMARK_DB_URL=", "", "# annet", "SPOND_EMAIL=a@b.no"), f)
+  ds_write_renviron("SPONDNYMARK_DB_URL", "postgresql://x", f)
+  expect_equal(readLines(f), c("# kommentar", "SPONDNYMARK_DB_URL=postgresql://x", "", "# annet", "SPOND_EMAIL=a@b.no"))
+})

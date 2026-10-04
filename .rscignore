@@ -1,0 +1,6 @@
+.Renviron
+.Renviron.example
+.rscignore
+.claude
+dev
+tests

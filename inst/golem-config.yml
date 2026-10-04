@@ -13,6 +13,11 @@ default:
 production:
   app_prod: yes
 
+# Posit Connect setter R_CONFIG_ACTIVE=rsconnect. Denne seksjonen arver alt fra default.
+# Hemmeligheter skal ikke stå her, men som miljøvariabler (se .Renviron.example).
+rsconnect:
+  app_prod: yes
+
 dev:
   golem_wd: !expr golem::pkg_path()
 

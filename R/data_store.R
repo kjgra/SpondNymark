@@ -442,7 +442,14 @@ ds_app_url <- function(admin_url, role, password) {
 #' @noRd
 ds_write_renviron <- function(key, value, path = ".Renviron") {
   lines <- if (file.exists(path)) readLines(path, warn = FALSE) else character()
-  lines <- lines[!grepl(paste0("^\\s*", key, "\\s*="), lines)]
-  writeLines(c(lines, paste0(key, "=", value)), path)
+  new <- paste0(key, "=", value)
+  hit <- grep(paste0("^\\s*", key, "\\s*="), lines)
+  if (length(hit)) {
+    lines[hit[1]] <- new                 # keep position and the comments around it
+    if (length(hit) > 1) lines <- lines[-hit[-1]]
+  } else {
+    lines <- c(lines, new)
+  }
+  writeLines(lines, path)
   invisible(path)
 }

@@ -1,0 +1,30 @@
+# Miljøvariabler for SpondNymark
+#
+# Kopier denne filen til .Renviron i prosjektmappen og fyll inn verdiene.
+# R leser .Renviron når R starter, så start R på nytt etter endringer.
+#
+# .Renviron inneholder hemmeligheter og skal aldri i git, i pakkebygget eller
+# opp til Posit Connect. Den står derfor i .gitignore, .Rbuildignore og
+# .rscignore. På Posit Connect legges variablene inn under
+# Settings -> Runtime -> Environment Variables. Der lagres de kryptert.
+#
+# Admin-passordet til Supabase skal IKKE stå her. Det brukes bare av
+# dev/setup_db.R, og du skriver det inn når du kjører skriptet.
+
+# --- Kreves av appen (lokalt og på Posit Connect) --------------------------
+
+# Databasetilkobling som app-brukeren spondnymark_app.
+# dev/setup_db.R fyller inn denne linjen automatisk. Formatet er:
+# postgresql://spondnymark_app.<prosjekt-ref>:<passord>@aws-0-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require
+SPONDNYMARK_DB_URL=
+
+# --- Bare lokalt, valgfrie ------------------------------------------------
+
+# Test-database for tests/testthat/test-data_store.R. Bruk ALDRI produksjonsdatabasen.
+# Testene lager og sletter et eget midlertidig skjema.
+# Står den tom, hoppes databasetestene over.
+SPONDNYMARK_TEST_DB_URL=
+
+# E-postadressen din i Spond, brukt av dev/spike_spond.R så du slipper å skrive den.
+# Passordet ditt i Spond skal aldri stå her.
+SPOND_EMAIL=

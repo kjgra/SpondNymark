@@ -57,7 +57,10 @@ tryCatch({
     app_url <- ds_app_url(admin_url, role, new_password)
     ds_write_renviron("SPONDNYMARK_DB_URL", app_url)
     Sys.setenv(SPONDNYMARK_DB_URL = app_url)
-    cat("Appens tilkoblingsstreng er lagret i .Renviron som SPONDNYMARK_DB_URL.\n")
+    cat("Appens tilkoblingsstreng er lagret i .Renviron som SPONDNYMARK_DB_URL.\n",
+        "Når appen publiseres på Posit Connect: kopier verdien fra .Renviron til\n",
+        "Settings -> Runtime -> Environment Variables (navn: SPONDNYMARK_DB_URL).\n",
+        "Hvis du har byttet passord, må verdien oppdateres der også.\n", sep = "")
   }
 }, finally = DBI::dbDisconnect(admin))
 rm(admin_url, template)
