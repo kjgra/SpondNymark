@@ -2,6 +2,13 @@ default:
   golem_name: SpondNymark
   golem_version: 0.0.0.9000
   app_prod: no
+  # Spond-roller (navn, uten hensyn til store/små bokstaver) som gir tilgang til appen.
+  # Rollenavnene settes av klubben i Spond, så juster listen ved behov.
+  access_role_names:
+    - Teamleder
+    - Trener
+    - Lagleder
+    - Hovedlagleder
 
 production:
   app_prod: yes
