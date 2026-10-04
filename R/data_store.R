@@ -411,6 +411,9 @@ ds_setup_app_role <- function(con, role = "spondnymark_app", password = NULL) {
 #' percent-encodes it, so special characters are safe.
 #' @noRd
 ds_fill_password <- function(url, password) {
+  if (is.null(password) || length(password) != 1 || is.na(password) || !nzchar(password)) {
+    stop("Mangler passord.", call. = FALSE)
+  }
   enc <- utils::URLencode(password, reserved = TRUE)
   if (grepl("[YOUR-PASSWORD]", url, fixed = TRUE)) return(sub("[YOUR-PASSWORD]", enc, url, fixed = TRUE))
   m <- regmatches(url, regexec("^(postgres(?:ql)?://[^:/@]+):[^@]*(@.*)$", url, perl = TRUE))[[1]]

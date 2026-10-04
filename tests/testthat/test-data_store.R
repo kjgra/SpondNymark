@@ -158,6 +158,9 @@ test_that("passwords are put into Supabase connection strings and encoded", {
   expect_equal(ds_fill_password("postgresql://postgres.abcd:old@host:5432/postgres", "ny"),
                "postgresql://postgres.abcd:ny@host:5432/postgres")
   expect_error(ds_fill_password("not a url", "x"), "Skjønte ikke")
+  # askpass returns NULL when the dialog is closed (e.g. switching windows)
+  expect_error(ds_fill_password(tpl, NULL), "Mangler passord")
+  expect_error(ds_fill_password(tpl, ""), "Mangler passord")
 })
 
 test_that("the app user's connection string uses role.project-ref and sslmode=require", {

@@ -25,11 +25,43 @@ for (p in c("DBI", "RPostgres", "openssl", "askpass")) {
 role <- "spondnymark_app"
 
 # 1. Admin-tilkobling -------------------------------------------------------------
-cat("Lim inn tilkoblingsstrengen fra Supabase (Connect -> Session pooler),\n",
-    "slik den står med [YOUR-PASSWORD]:\n", sep = "")
-template <- trimws(readline("> "))
-admin_url <- ds_fill_password(template, askpass::askpass("Admin-passordet du valgte da prosjektet ble opprettet: "))
-admin <- ds_connect(admin_url)
+# Tilkoblingsstrengen (uten passord) kan stå i .Renviron som SUPABASE_POOLER_URL,
+# så slipper du å lime den inn hver gang. Den er ikke hemmelig.
+template <- Sys.getenv("SUPABASE_POOLER_URL")
+if (!nzchar(template)) {
+  cat("Lim inn tilkoblingsstrengen fra Supabase (Connect -> Session pooler),\n",
+      "slik den står med [YOUR-PASSWORD]:\n", sep = "")
+  template <- trimws(readline("> "))
+}
+if (!grepl("^postgres(ql)?://", template)) stop("Det ser ikke ut som en tilkoblingsstreng fra Supabase.")
+if (!grepl(":5432/", template, fixed = TRUE)) {
+  warning("Strengen bruker ikke port 5432. Bruk «Session pooler», ikke «Transaction pooler».")
+}
+
+# Passorddialogen lukkes hvis du bytter vindu mens den er åpen. Derfor ber
+# skriptet deg kopiere passordet først, og spør på nytt hvis noe går galt.
+admin <- NULL
+for (forsok in 1:3) {
+  readline("Kopier admin-passordet nå (f.eks. fra passordbehandleren), og trykk Enter her når det er kopiert: ")
+  password <- askpass::askpass("Lim inn admin-passordet til Supabase: ")
+  if (is.null(password) || !nzchar(password)) {
+    cat("Fikk ikke noe passord. Dialogen lukkes hvis du bytter vindu mens den er åpen. Prøv igjen.\n")
+    next
+  }
+  admin_url <- ds_fill_password(template, password)
+  rm(password)
+  admin <- tryCatch(ds_connect(admin_url), error = function(e) {
+    msg <- conditionMessage(e)
+    if (grepl("password authentication failed", msg, fixed = TRUE)) {
+      cat("Feil passord. Prøv igjen.\n")
+    } else {
+      cat("Fikk ikke koblet til databasen:", msg, "\n")
+    }
+    NULL
+  })
+  if (!is.null(admin)) break
+}
+if (is.null(admin)) stop("Ga opp etter 3 forsøk. Kjør skriptet på nytt når du er klar.")
 
 tryCatch({
   DBI::dbExecute(admin, "SET client_min_messages TO warning")

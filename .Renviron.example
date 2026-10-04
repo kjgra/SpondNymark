@@ -20,6 +20,11 @@ SPONDNYMARK_DB_URL=
 
 # --- Bare lokalt, valgfrie ------------------------------------------------
 
+# Tilkoblingsstrengen fra Supabase (Connect -> Session pooler), slik den står
+# med [YOUR-PASSWORD]. Den er ikke hemmelig. dev/setup_db.R bruker den, så du
+# slipper å lime den inn. Admin-passordet skriver du inn når skriptet spør.
+SUPABASE_POOLER_URL=
+
 # Test-database for tests/testthat/test-data_store.R. Bruk ALDRI produksjonsdatabasen.
 # Testene lager og sletter et eget midlertidig skjema.
 # Står den tom, hoppes databasetestene over.
