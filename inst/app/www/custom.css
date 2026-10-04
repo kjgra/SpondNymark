@@ -1,0 +1,16 @@
+/* SpondNymark: layout and details on top of the bslib theme (colours in app_theme()) */
+.sn-wrap { max-width: 720px; margin: 0 auto; padding-block: 12px; display: flex; flex-direction: column; gap: 16px; }
+.sn-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; min-height: 40px; }
+.sn-brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.15rem; }
+.sn-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bs-primary); display: inline-block; }
+.sn-bar { display: flex; align-items: center; gap: 12px; font-size: .9rem; color: var(--bs-secondary); }
+.sn-bar a { font-weight: 600; }
+.sn-login { max-width: 380px; width: 100%; margin: 6vh auto 0; display: flex; flex-direction: column; gap: 14px; }
+.sn-login-title { text-align: center; }
+.sn-login-title h1 { font-size: 1.9rem; font-weight: 800; margin-bottom: 4px; }
+.sn-login-title p { color: var(--bs-secondary); margin: 0; }
+.sn-login .form-group { margin-bottom: 12px; }
+.sn-hint { font-size: .85rem; color: var(--bs-secondary); margin: 10px 0 0; }
+.sn-alert { margin: 12px 0 0; padding: 8px 12px; font-size: .9rem; }
+.sn-grouplist { padding-left: 1.1rem; }
+.sn-grouplist li { margin-bottom: 6px; }

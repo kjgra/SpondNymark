@@ -12,6 +12,14 @@
 #' @noRd
 NULL
 
+# Errors we raise ourselves get class "spond_error". Their messages are written
+# for the user (Norwegian, no technical details, no secrets) and can be shown in
+# the app. Other errors (network, parsing) are shown as a general message.
+spond_stop <- function(...) {
+  stop(structure(class = c("spond_error", "error", "condition"),
+                 list(message = paste0(...), call = NULL)))
+}
+
 spond_base_url <- function() {
   "https://api.spond.com/core/v1/"
 }
@@ -42,10 +50,10 @@ spond_login <- function(email, password, base_url = spond_base_url()) {
 
   status <- httr2::resp_status(resp)
   if (status %in% c(400, 401, 403)) {
-    stop("Innlogging mot Spond feilet: feil e-post eller passord.", call. = FALSE)
+    spond_stop("Innlogging mot Spond feilet: feil e-post eller passord.")
   }
   if (status >= 400) {
-    stop(sprintf("Innlogging mot Spond feilet (HTTP %s).", status), call. = FALSE)
+    spond_stop(sprintf("Innlogging mot Spond feilet (HTTP %s). Prøv igjen om litt.", status))
   }
 
   body <- httr2::resp_body_json(resp)
@@ -53,11 +61,10 @@ spond_login <- function(email, password, base_url = spond_base_url()) {
   if (is.null(token) || !nzchar(token)) {
     # Not the expected shape. One possible cause is two-factor login.
     # Report only the field names, never the values.
-    stop(
+    spond_stop(
       "Spond svarte uten tilgangstoken. Feltene i svaret var: ",
       paste(names(body), collapse = ", "),
-      ". Dette kan bety at kontoen krever ekstra verifisering (f.eks. tofaktor).",
-      call. = FALSE
+      ". Dette kan bety at kontoen krever ekstra verifisering (f.eks. tofaktor)."
     )
   }
 
@@ -94,10 +101,10 @@ spond_get_json <- function(req) {
     httr2::req_perform()
   status <- httr2::resp_status(resp)
   if (status == 401) {
-    stop("Spond-sesjonen er utløpt. Logg inn på nytt.", call. = FALSE)
+    spond_stop("Spond-sesjonen er utløpt. Logg inn på nytt.")
   }
   if (status >= 400) {
-    stop(sprintf("Kall mot Spond feilet (HTTP %s).", status), call. = FALSE)
+    spond_stop(sprintf("Kall mot Spond feilet (HTTP %s). Prøv igjen om litt.", status))
   }
   # simplifyVector = FALSE keeps Spond's nested structure as plain lists.
   httr2::resp_body_json(resp, simplifyVector = FALSE)

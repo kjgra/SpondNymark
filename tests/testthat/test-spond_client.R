@@ -93,3 +93,10 @@ test_that("an expired session gives a clear error", {
     "utløpt"
   )
 })
+
+test_that("our own errors have class spond_error so the app can show them", {
+  expect_error(
+    httr2::with_mocked_responses(function(req) httr2::response(401), spond_login("a@b.no", "feil")),
+    class = "spond_error"
+  )
+})

@@ -8,10 +8,31 @@ app_ui <- function(request) {
   tagList(
     # Leave this function for adding external resources
     golem_add_external_resources(),
-    # Your application UI logic
-    fluidPage(
-      golem::golem_welcome_page() # Remove this line to start building your UI
+    bslib::page_fluid(
+      theme = app_theme(),
+      title = "SpondNymark",
+      div(
+        class = "sn-wrap",
+        tags$header(
+          class = "sn-topbar",
+          div(class = "sn-brand", span(class = "sn-dot"), "SpondNymark"),
+          mod_login_bar_ui("login")
+        ),
+        mod_login_ui("login"),
+        uiOutput("main")
+      )
     )
+  )
+}
+
+# Colours from the UX prototype.
+app_theme <- function() {
+  bslib::bs_theme(
+    version = 5,
+    primary = "#2F7D55",
+    secondary = "#5B6B5F",
+    bg = "#F5F7F4",
+    fg = "#1B271E"
   )
 }
 

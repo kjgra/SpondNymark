@@ -1,0 +1,46 @@
+# Fake Spond data shaped like the real API (field names from the spike run).
+# Includes the kind of personal data Spond sends, so tests can check it is dropped.
+fake_spond_groups <- function() {
+  list(
+    list(
+      id = "G2016", name = "Nymark G/J 2016", clubName = "Nymark IL",
+      roles = list(list(id = "R1", name = "Teamleder", permissions = list("events")),
+                   list(id = "R2", name = "Foresatt", permissions = list())),
+      subGroups = list(list(id = "S-ulv", name = "Nymark Ulv G10", color = "#f00"),
+                       list(id = "S-gaupe", name = "Nymark Gaupe G10", color = "#0f0")),
+      members = list(
+        list(id = "M-me", firstName = "Kjetil", lastName = "Gramstad", roles = list("R1"),
+             subGroups = list(), profile = list(id = "P-me"),
+             email = "k@example.no", phoneNumber = "99999999", dateOfBirth = "1980-01-01"),
+        list(id = "M-1", firstName = "Emma", lastName = "Haugen", roles = list(),
+             subGroups = list("S-ulv"), dateOfBirth = "2016-03-04", address = "Gata 1",
+             nationality = "NO", guardians = list(list(id = "GD1", firstName = "Mor", phoneNumber = "12345678")))
+      )
+    ),
+    list(
+      id = "G-parents", name = "Foreldre i 5B",
+      roles = list(list(id = "R9", name = "Gruppestyrer")),
+      members = list(list(id = "M-x", firstName = "Kjetil", profile = list(id = "P-me"), roles = list()))
+    )
+  )
+}
+
+fake_spond_profile <- function(id = "P-me") {
+  list(id = id, firstName = "Kjetil", lastName = "Gramstad", primaryEmail = "k@example.no",
+       dateOfBirth = "1980-01-01", phoneNumber = "99999999")
+}
+
+# A fake replacement for spond_api(): accepts one e-mail/password pair.
+fake_spond_api <- function(profile_id = "P-me", fail_with = NULL) {
+  list(
+    login = function(email, password) {
+      if (!is.null(fail_with)) stop(fail_with)
+      if (!identical(email, "trener@klubb.no") || !identical(password, "riktig")) {
+        spond_stop("Innlogging mot Spond feilet: feil e-post eller passord.")
+      }
+      structure(list(token = "tok", base_url = "x"), class = "spond_session")
+    },
+    profile = function(sess) fake_spond_profile(profile_id),
+    groups = function(sess) fake_spond_groups()
+  )
+}

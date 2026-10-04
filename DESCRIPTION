@@ -11,9 +11,11 @@ Description: A Shiny application for logging into Spond, fetching event
     to a Supabase (Postgres) backend.
 License: MIT + file LICENSE
 Imports:
+    bslib,
     config,
     DBI,
     golem,
+    htmltools,
     httr2 (>= 1.0.0),
     openssl,
     RPostgres,
