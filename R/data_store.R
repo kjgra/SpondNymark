@@ -134,11 +134,6 @@ ds_proposal_group <- function(con, access, proposal_id) {
   row
 }
 
-ds_log <- function(con, proposal_id, actor, decision) {
-  ds_exec(con, "INSERT INTO proposal_history (proposal_id, actor, decision) VALUES ($1, $2, $3)",
-          list(as.integer(proposal_id), actor, decision))
-}
-
 # Migrations --------------------------------------------------------------------
 
 ds_split_sql <- function(sql) {

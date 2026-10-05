@@ -8,3 +8,9 @@ $run_dev.*
 ^\.Renviron$
 ^\.Renviron\.example$
 ^\.rscignore$
+^app\.R$
+^README\.md$
+^\.claude$
+^\.git$
+^rsconnect$
+^manifest\.json$

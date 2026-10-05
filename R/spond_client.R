@@ -15,8 +15,8 @@ NULL
 # Errors we raise ourselves get class "spond_error". Their messages are written
 # for the user (Norwegian, no technical details, no secrets) and can be shown in
 # the app. Other errors (network, parsing) are shown as a general message.
-spond_stop <- function(...) {
-  stop(structure(class = c("spond_error", "error", "condition"),
+spond_stop <- function(..., class = NULL) {
+  stop(structure(class = c(class, "spond_error", "error", "condition"),
                  list(message = paste0(...), call = NULL)))
 }
 
@@ -101,7 +101,8 @@ spond_get_json <- function(req) {
     httr2::req_perform()
   status <- httr2::resp_status(resp)
   if (status == 401) {
-    spond_stop("Spond-sesjonen er utløpt. Logg inn på nytt.")
+    # Own class, so the app can log the trainer out and ask for a new login.
+    spond_stop("Spond-sesjonen er utløpt. Logg inn på nytt.", class = "spond_expired")
   }
   if (status >= 400) {
     spond_stop(sprintf("Kall mot Spond feilet (HTTP %s). Prøv igjen om litt.", status))

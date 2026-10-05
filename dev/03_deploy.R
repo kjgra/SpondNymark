@@ -1,61 +1,36 @@
-# Building a Prod-Ready, Robust Shiny Application.
+# Publisering til Posit Connect
 #
-# README: each step of the dev files is optional, and you don't have to
-# fill every dev scripts before getting started.
-# 01_start.R should be filled at start.
-# 02_dev.R should be used to keep track of your development during the project.
-# 03_deploy.R should be used once you need to deploy your app.
+# Kjør stegene ett og ett fra RStudio/Positron, fra prosjektmappen.
+# Første gang: steg 1-4. Senere oppdateringer: steg 1, 2 og 4.
+
+# 1. Test ------------------------------------------------------------------------
+# Med SPONDNYMARK_TEST_DB_URL i .Renviron kjøres også databasetestene.
+devtools::test()
+# Sjekk pakken. Forventet: én advarsel om norske bokstaver (æ, ø, å) i R-filene.
+# Den er ufarlig: DESCRIPTION sier Encoding: UTF-8, og Connect kjører UTF-8.
+devtools::check(document = FALSE, args = "--no-manual")
+
+# 2. Databasen ---------------------------------------------------------------------
+# Bare hvis det er nye filer i inst/db/migrations/ (se README.md der):
+# source("dev/setup_db.R")
+
+# 3. Første publisering --------------------------------------------------------------
+# Krever en konto på Posit Connect, koblet til RStudio/Positron:
+# rsconnect::addServer(...) og rsconnect::connectApiUser(...), se dokumentasjonen
+# for serveren din.
 #
-#
-######################################
-#### CURRENT FILE: DEPLOY SCRIPT #####
-######################################
+# Etter første publisering: åpne appen i Connect og legg inn miljøvariabelen
+#   SPONDNYMARK_DB_URL = (verdien fra .Renviron)
+# under Settings -> Runtime -> Environment Variables. Appen stopper ved oppstart
+# med en tydelig melding til dette er gjort. Begrens gjerne tilgangen
+# (Settings -> Access) til innloggede brukere i klubben.
 
-# Test your app
-
-## Run checks ----
-## Check the package before sending to prod
-devtools::check()
-rhub::check_for_cran()
-
-# Deploy
-
-## Local, CRAN or Package Manager ----
-## This will build a tar.gz that can be installed locally,
-## sent to CRAN, or to a package manager
-devtools::build()
-
-## Docker ----
-## If you want to deploy via a generic Dockerfile
-golem::add_dockerfile_with_renv()
-## If you want to deploy to ShinyProxy
-golem::add_dockerfile_with_renv_shinyproxy()
-
-## Posit ----
-## If you want to deploy on Posit related platforms
-golem::add_positconnect_file()
-golem::add_shinyappsio_file()
-golem::add_shinyserver_file()
-
-## Deploy to Posit Connect or ShinyApps.io ----
-
-## Add/update manifest file (optional; for Git backed deployment on Posit )
-rsconnect::writeManifest()
-
-## In command line.
+# 4. Publiser ------------------------------------------------------------------------
+# app.R starter appen. .rscignore holder .Renviron, dev/ og tests/ unna.
 rsconnect::deployApp(
-  appName = desc::desc_get_field("Package"),
-  appTitle = desc::desc_get_field("Package"),
-  appFiles = c(
-    # Add any additional files unique to your app here.
-    "R/",
-    "inst/",
-    "data/",
-    "NAMESPACE",
-    "DESCRIPTION",
-    "app.R"
-  ),
-  appId = rsconnect::deployments(".")$appID,
+  appName = "spondnymark",
+  appTitle = "SpondNymark",
+  appFiles = c("app.R", "DESCRIPTION", "NAMESPACE", "LICENSE", "R/", "inst/"),
   lint = FALSE,
   forceUpdate = TRUE
 )

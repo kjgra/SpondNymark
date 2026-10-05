@@ -72,3 +72,15 @@ testthat::test_that("logout forgets the user and the Spond session", {
     expect_equal(state(), list(status = "logged_out"))
   })
 })
+
+testthat::test_that("an expired Spond session logs the trainer out with an explanation", {
+  testServer(mod_login_server, args = list(spond = fake_spond_api(), role_names = c("Teamleder")), {
+    session$userData$sn_session_expired()          # not logged in: nothing happens
+    expect_null(error_msg())
+    session$setInputs(email = "trener@klubb.no", password = "riktig", login = 1)
+    expect_false(is.null(session$returned()))
+    session$userData$sn_session_expired()
+    expect_null(session$returned())
+    expect_match(error_msg(), "utløpt")
+  })
+})

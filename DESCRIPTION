@@ -1,15 +1,19 @@
 Package: SpondNymark
-Title: Spond Team Distribution App
-Version: 0.0.0.9000
+Title: Gruppeinndeling for Trenere i Nymark, Basert på Spond
+Version: 0.1.0
 Authors@R:
-    person(given = "Kjell",
+    person(given = "Kjetil",
            family = "Gramstad",
            role = c("aut", "cre"),
            email = "k.gramstad@gmail.com")
-Description: A Shiny application for logging into Spond, fetching event
-    participants, and distributing them into teams. Proposals are saved
-    to a Supabase (Postgres) backend.
-License: MIT + file LICENSE
+Description: En Shiny-app for trenere og lagledere i Nymark. Appen leser lag,
+    medlemmer og arrangementer fra Spond, og lar trenerne tagge medlemmer,
+    lage gruppeforslag med dra-og-slipp og godkjenne dem. Forslag, tagger og
+    kommentarer lagres i en Postgres-database (Supabase). Bare Spond-ID-er
+    lagres; navn og andre personopplysninger blir i Spond.
+License: file LICENSE
+Depends:
+    R (>= 4.1.0)
 Imports:
     bslib,
     config,
@@ -19,9 +23,10 @@ Imports:
     httr2 (>= 1.0.0),
     openssl,
     RPostgres,
-    shiny
+    shiny,
+    stats,
+    utils
 Encoding: UTF-8
-LazyData: true
 Suggests: 
     askpass,
     pkgload,

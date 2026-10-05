@@ -100,3 +100,11 @@ test_that("our own errors have class spond_error so the app can show them", {
     class = "spond_error"
   )
 })
+
+test_that("an expired session has its own class, so the app can log out", {
+  session <- structure(list(token = "tok", base_url = spond_base_url()), class = "spond_session")
+  expect_error(
+    httr2::with_mocked_responses(function(req) httr2::response(401), spond_get_events(session, group_id = "G1")),
+    class = "spond_expired"
+  )
+})

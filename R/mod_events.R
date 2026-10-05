@@ -120,7 +120,8 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
       tryCatch(
         list(events = spond$events(user()$spond, group_id = ctx$group_id, subgroup_id = ctx$subgroup_id, ...),
              error = NULL),
-        spond_error = function(e) list(events = NULL, error = conditionMessage(e)),
+        spond_error = function(e) list(events = NULL, error = conditionMessage(e),
+                                       expired = inherits(e, "spond_expired")),
         error = function(e) {
           message("Henting av arrangementer feilet: ", conditionMessage(e))
           list(events = NULL, error = "Kunne ikke hente arrangementer fra Spond. Prøv igjen om litt.")
@@ -148,6 +149,14 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
     })
 
     shown <- reactive(if (identical(tab(), "past")) past() else upcoming())
+
+    # An expired Spond session sends the trainer back to the login page.
+    observe({
+      res <- shown()
+      if (isTRUE(res$expired) && is.function(session$userData$sn_session_expired)) {
+        session$userData$sn_session_expired()
+      }
+    })
 
     observeEvent(input$tab, if (input$tab %in% c("upcoming", "past", if (!is.null(db)) "approvals")) tab(input$tab))
     observeEvent(input$older, past_window(past_window() + past_days))

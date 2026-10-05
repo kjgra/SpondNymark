@@ -160,3 +160,15 @@ test_that("the members section stays open when the view is redrawn", {
     expect_match(view_html(output), "<details class=\"sn-fold\" open data-sn-toggle=\"proxy1-members_open\"")
   })
 })
+
+test_that("an expired Spond session sends the trainer to the login page", {
+  expired <- structure(class = c("spond_expired", "spond_error", "error", "condition"),
+                       list(message = "Spond-sesjonen er utløpt. Logg inn på nytt.", call = NULL))
+  called <- 0
+  ctx <- reactiveVal(teams_context(fake_group()))
+  testServer(mod_events_server, args = events_args(fake_events_api(fail_with = expired), ctx), {
+    session$userData$sn_session_expired <- function() called <<- called + 1
+    session$setInputs(refresh = "x")
+    expect_gte(called, 1)
+  })
+})
