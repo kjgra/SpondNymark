@@ -21,3 +21,9 @@ test_that("members in context: whole group or one subgroup, sorted by name", {
   expect_equal(ulv$display_name, c("Emma Haugen", "Noah S."))
   expect_equal(subgroup_sizes(g), c(`S-ulv` = 2L, `S-gaupe` = 2L))
 })
+
+test_that("member counts use singular and plural", {
+  expect_equal(n_members(1), "1 medlem")
+  expect_equal(n_members(0), "0 medlemmer")
+  expect_equal(n_members(19L), "19 medlemmer")
+})

@@ -1,7 +1,7 @@
 #' Choose main group and subgroup
 #'
 #' After login the trainer chooses which main group (lag) to work with, and
-#' then a subgroup or the whole group. Each step is skipped when there is only
+#' then the main group itself or one of its subgroups. Each step is skipped when there is only
 #' one choice: one group skips the group step, a group without subgroups
 #' skips the subgroup step. Both can be changed later from the top bar.
 #'
@@ -11,8 +11,9 @@
 #' @param user Reactive from `mod_login_server()`.
 #' @return A reactive: NULL until a context is chosen, otherwise a list with
 #'   `group_id`, `group_name`, `subgroup_id` (NULL = whole group),
-#'   `subgroup_name`, `label`, `members` (from `members_in_context()`) and
-#'   `group` (the group from `spond_session_data()`).
+#'   `subgroup_name`, `label` (main group or subgroup name), `path` (main
+#'   group name, then subgroup name if any), `members` (from
+#'   `members_in_context()`) and `group` (the group from `spond_session_data()`).
 #' @noRd
 #' @importFrom shiny NS tagList
 mod_teams_ui <- function(id) {
@@ -26,18 +27,24 @@ mod_teams_bar_ui <- function(id) {
   uiOutput(ns("bar"), class = "sn-ctx")
 }
 
-# Value used for "Hele gruppen" in inputs.
+# Value used for "the main group itself" (no subgroup) in inputs.
 teams_all <- ".all"
 
 # A button that sends `value` to the Shiny input `input_id`.
-pick_button <- function(input_id, value, title, detail) {
+pick_button <- function(input_id, value, title, detail, class = NULL) {
   tags$button(
-    type = "button", class = "btn sn-pickrow",
+    type = "button", class = paste(c("btn sn-pickrow", class), collapse = " "),
     onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})",
                       input_id, gsub("[^A-Za-z0-9._-]", "", value)),
     span(class = "sn-pickrow-title", title),
     span(class = "sn-pickrow-detail", detail)
   )
+}
+
+# Subgroups in a native select: indented with a tree mark, so it is clear they
+# belong to the main group listed above them (non-breaking spaces survive in <option>).
+subgroup_option_label <- function(names) {
+  paste0("\u00a0\u00a0\u2514\u00a0", names)
 }
 
 # A compact select for the top bar: Bootstrap 5 dropdown style, label for screen readers.
@@ -114,7 +121,8 @@ mod_teams_server <- function(id, user) {
             p(class = "sn-hint", "Du er trener eller lagleder i flere lag. Velg hvilket du vil jobbe med."),
             div(class = "sn-picklist", lapply(u$groups, function(g) {
               pick_button(ns("pick_group"), g$id, g$name,
-                          paste0(g$my_roles, " · ", nrow(g$members), " medlemmer"))
+                          paste0(g$my_roles, " \u00b7 ", n_members(nrow(g$members)),
+                                 if (nrow(g$subgroups)) paste0(" \u00b7 ", nrow(g$subgroups), " undergrupper")))
             }))
           ))
         ),
@@ -130,15 +138,22 @@ mod_teams_server <- function(id, user) {
                                               ns("back_to_groups")),
                             "← Bytt lag")
               },
-              h2(paste0(g$name, ": velg undergruppe")),
-              p(class = "sn-hint", "Undergruppene har egne arrangementer og medlemmer. Velg hva du vil jobbe med."),
+              h2("Velg gruppe"),
+              p(class = "sn-hint",
+                "Hovedgruppen viser alt i gruppen. Undergruppene har egne arrangementer og medlemmer."),
+              # Hierarchy: the main group first, its subgroups nested underneath.
               div(
                 class = "sn-picklist",
-                pick_button(ns("pick_subgroup"), teams_all, "Hele gruppen", paste(nrow(g$members), "medlemmer")),
-                lapply(seq_len(nrow(g$subgroups)), function(i) {
-                  pick_button(ns("pick_subgroup"), g$subgroups$id[i], g$subgroups$name[i],
-                              paste(sizes[[g$subgroups$id[i]]], "medlemmer"))
-                })
+                pick_button(ns("pick_subgroup"), teams_all, g$name,
+                            paste("Hovedgruppe \u00b7", n_members(nrow(g$members))), class = "sn-pickrow-main"),
+                div(
+                  class = "sn-subtree", role = "group", `aria-label` = paste("Undergrupper i", g$name),
+                  div(class = "sn-subtree-label", paste("Undergrupper i", g$name)),
+                  lapply(seq_len(nrow(g$subgroups)), function(i) {
+                    pick_button(ns("pick_subgroup"), g$subgroups$id[i], g$subgroups$name[i],
+                                n_members(sizes[[g$subgroups$id[i]]]))
+                  })
+                )
               )
             ))
           )
@@ -158,9 +173,10 @@ mod_teams_server <- function(id, user) {
                      selected = group_id())
         },
         if (identical(step(), "ready") && nrow(g$subgroups) > 0) {
-          bar_select(ns("subgroup_select"), "Undergruppe",
-                     choices = c(stats::setNames(teams_all, "Hele gruppen"),
-                                 stats::setNames(g$subgroups$id, g$subgroups$name)),
+          # The main group first, its subgroups indented underneath.
+          bar_select(ns("subgroup_select"), paste("Hovedgruppe eller undergruppe i", g$name),
+                     choices = c(stats::setNames(teams_all, g$name),
+                                 stats::setNames(g$subgroups$id, subgroup_option_label(g$subgroups$name))),
                      selected = subgroup())
         }
       )
@@ -176,7 +192,8 @@ mod_teams_server <- function(id, user) {
         group_name = g$name,
         subgroup_id = sid,
         subgroup_name = sname,
-        label = if (is.null(sid)) paste("Hele", g$name) else sname,
+        label = if (is.null(sid)) g$name else sname,
+        path = c(g$name, sname),   # main group, then subgroup if any
         members = members_in_context(g, sid),
         group = g
       )

@@ -52,6 +52,10 @@ members_in_context <- function(group, subgroup_id = NULL) {
   m
 }
 
+#' "1 medlem" / "5 medlemmer"
+#' @noRd
+n_members <- function(n) paste(n, if (identical(as.integer(n), 1L)) "medlem" else "medlemmer")
+
 #' Number of members per subgroup (0 for empty subgroups)
 #' @noRd
 subgroup_sizes <- function(group) {

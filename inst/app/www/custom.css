@@ -30,3 +30,13 @@
 .sn-back { align-self: flex-start; padding: 0; margin-bottom: 6px; text-decoration: none; font-weight: 600; }
 .sn-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .sn-chip { border: 1px solid var(--bs-border-color); border-radius: 999px; padding: 2px 10px; font-size: .85rem; background: var(--bs-body-bg); }
+
+/* Hierarchy: main group with its subgroups nested underneath */
+.sn-pickrow-main .sn-pickrow-title { font-size: 1.05rem; }
+.sn-subtree { margin-left: 12px; padding-left: 14px; border-left: 2px solid var(--bs-border-color);
+  display: flex; flex-direction: column; gap: 8px; }
+.sn-subtree-label { font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--bs-secondary); margin-top: 2px; }
+.sn-crumb-parent { color: var(--bs-secondary); font-weight: 600; }
+.sn-crumb-sep { margin: 0 6px; color: var(--bs-secondary); }
+.sn-crumb-current { font-weight: 700; }
