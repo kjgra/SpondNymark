@@ -33,7 +33,8 @@ mod_login_bar_ui <- function(id) {
 }
 
 spond_api <- function() {
-  list(login = spond_login, profile = spond_get_profile, groups = spond_get_groups)
+  list(login = spond_login, profile = spond_get_profile, groups = spond_get_groups,
+       events = spond_get_events)
 }
 
 login_form <- function(ns) {

@@ -55,6 +55,23 @@ bar_select <- function(input_id, label, choices, selected) {
   )
 }
 
+#' The chosen context: a main group, or one of its subgroups (see the return
+#' value of `mod_teams_server()`).
+#' @noRd
+teams_context <- function(group, subgroup_id = NULL) {
+  sname <- if (is.null(subgroup_id)) NULL else group$subgroups$name[group$subgroups$id == subgroup_id]
+  list(
+    group_id = group$id,
+    group_name = group$name,
+    subgroup_id = subgroup_id,
+    subgroup_name = sname,
+    label = if (is.null(subgroup_id)) group$name else sname,
+    path = c(group$name, sname),   # main group, then subgroup if any
+    members = members_in_context(group, subgroup_id),
+    group = group
+  )
+}
+
 #' @noRd
 mod_teams_server <- function(id, user) {
   moduleServer(id, function(input, output, session) {
@@ -184,19 +201,7 @@ mod_teams_server <- function(id, user) {
 
     reactive({
       if (!identical(step(), "ready")) return(NULL)
-      g <- current_group()
-      sid <- if (identical(subgroup(), teams_all)) NULL else subgroup()
-      sname <- if (is.null(sid)) NULL else g$subgroups$name[g$subgroups$id == sid]
-      list(
-        group_id = g$id,
-        group_name = g$name,
-        subgroup_id = sid,
-        subgroup_name = sname,
-        label = if (is.null(sid)) g$name else sname,
-        path = c(g$name, sname),   # main group, then subgroup if any
-        members = members_in_context(g, sid),
-        group = g
-      )
+      teams_context(current_group(), if (identical(subgroup(), teams_all)) NULL else subgroup())
     })
   })
 }

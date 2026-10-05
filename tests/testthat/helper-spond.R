@@ -69,3 +69,55 @@ fake_user <- function(groups = fake_spond_groups(), roles = c("Teamleder")) {
   list(spond = structure(list(token = "tok"), class = "spond_session"),
        profile = d$profile, groups = d$groups, access = d$access)
 }
+
+# Events shaped like Spond's `sponds/` response, with the personal data Spond
+# sends (profiles, guardians, decline messages) so tests can check it is dropped.
+fake_spond_events <- function() {
+  list(
+    list(
+      id = "E-ulv", heading = "Trening Ulv", type = "EVENT",
+      startTimestamp = "2026-10-10T08:00:00Z", endTimestamp = "2026-10-10T09:30:00.000Z",
+      description = "Ta med drikkeflaske", location = list(address = "Banen 1"),
+      recipients = list(
+        group = list(id = "G2016", name = "Nymark G/J 2016",
+                     subGroups = list(list(id = "S-ulv", name = "Nymark Ulv G10")),
+                     members = list(list(id = "M-1", firstName = "Emma", dateOfBirth = "2016-03-04"))),
+        profiles = list(list(id = "P-1", firstName = "Emma")),
+        guardians = list(list(id = "GD1", phoneNumber = "12345678"))
+      ),
+      responses = list(acceptedIds = list("M-1", "M-3"), declinedIds = list("M-gone"),
+                       unansweredIds = list("M-2"), waitinglistIds = list(), unconfirmedIds = list(),
+                       declineMessages = list(`M-gone` = "Skadet kneet"))
+    ),
+    list(
+      id = "E-kamp", heading = "Kamp mot Fana", matchEvent = TRUE,
+      startTimestamp = "2026-10-08T16:00:00Z", endTimestamp = "2026-10-08T17:00:00Z",
+      recipients = list(group = list(id = "G2016")),
+      responses = list(acceptedIds = list("M-2"), unansweredIds = list("M-1", "M-3"))
+    ),
+    list(
+      id = "E-gaupe", heading = "Trening Gaupe", cancelled = TRUE,
+      startTimestamp = "2026-10-12T15:00:00Z", endTimestamp = "2026-10-12T16:00:00Z",
+      recipients = list(group = list(id = "G2016", subGroups = list("S-gaupe"))),
+      responses = list(acceptedIds = list("M-2"))
+    )
+  )
+}
+
+# A Spond API stand-in that records the event queries it receives.
+fake_events_api <- function(events = fake_spond_events(), fail_with = NULL) {
+  calls <- list()
+  api <- fake_spond_api()
+  api$events <- function(sess, ...) {
+    calls[[length(calls) + 1]] <<- list(...)
+    if (!is.null(fail_with)) stop(fail_with)
+    events
+  }
+  api$calls <- function() calls
+  api
+}
+
+fake_now <- function() as.POSIXct("2026-10-05 12:00:00", tz = "UTC")
+
+# The main group with subgroups and the name collision (Emma H.).
+fake_group <- function() fake_user(fake_spond_groups_two())$groups[["G2016"]]

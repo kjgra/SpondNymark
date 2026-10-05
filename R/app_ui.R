@@ -21,7 +21,7 @@ app_ui <- function(request) {
         ),
         mod_login_ui("login"),
         mod_teams_ui("teams"),
-        uiOutput("main")
+        mod_events_ui("events")
       )
     )
   )
