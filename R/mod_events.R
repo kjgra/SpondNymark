@@ -83,15 +83,20 @@ event_row <- function(ns, event, ctx, groups = NULL) {
   )
 }
 
-# Two-button switch between upcoming and past events.
-tab_switch <- function(ns, tab) {
-  btn <- function(value, label) {
+# Switch between upcoming and past events, and (with the database) the
+# proposals waiting for approval, with their number.
+tab_switch <- function(ns, tab, n_pending = NULL) {
+  btn <- function(value, ...) {
     tags$button(type = "button", class = paste("btn btn-sm", if (tab == value) "btn-primary" else "btn-outline-primary"),
                 `aria-pressed` = if (tab == value) "true" else "false",
-                onclick = set_input_js(ns("tab"), value), label)
+                onclick = set_input_js(ns("tab"), value), ...)
   }
   div(class = "btn-group", role = "group", `aria-label` = "Vis arrangementer",
-      btn("upcoming", "Kommende"), btn("past", "Gjennomførte"))
+      btn("upcoming", "Kommende"), btn("past", "Gjennomførte"),
+      if (!is.null(n_pending)) {
+        btn("approvals", "Godkjenning",
+            if (n_pending > 0) span(class = "sn-tab-count", `aria-label` = paste(n_pending, "venter"), n_pending))
+      })
 }
 
 #' @noRd
@@ -144,12 +149,13 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
 
     shown <- reactive(if (identical(tab(), "past")) past() else upcoming())
 
-    observeEvent(input$tab, if (input$tab %in% c("upcoming", "past")) tab(input$tab))
+    observeEvent(input$tab, if (input$tab %in% c("upcoming", "past", if (!is.null(db)) "approvals")) tab(input$tab))
     observeEvent(input$older, past_window(past_window() + past_days))
     observeEvent(input$refresh, refresh(refresh() + 1))
     observeEvent(input$back, selected(NULL))
     observeEvent(input$open, {
-      ev <- Filter(function(e) identical(e$id, input$open), shown()$events)
+      # Also upcoming events, so "Åpne arrangement" works from the approvals list.
+      ev <- Filter(function(e) identical(e$id, input$open), c(shown()$events, upcoming()$events))
       if (length(ev)) selected(ev[[1]])
     })
 
@@ -164,8 +170,14 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
     mod_participants_server("participants", event = selected, group = reactive(context()$group), tagger = tagger)
 
     groups <- if (!is.null(db)) {
+      # Proposals are loaded for the upcoming events (for "Godkjenning") and
+      # for the events in the tab that is shown.
+      known_events <- reactive({
+        ev <- c(upcoming()$events, if (identical(tab(), "past")) past()$events)
+        ev[!duplicated(vapply(ev, function(e) e$id, ""))]
+      })
       mod_groups_server("groups", context, user, db, tagger, event = selected, now = now,
-                        event_ids = reactive(vapply(shown()$events, `[[`, "", "id")))
+                        events = known_events, open_event_input = ns("open"))
     }
     editing <- if (is.null(groups)) function() FALSE else groups$editing
 
@@ -188,18 +200,21 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
     list_view <- function(ctx) {
       res <- shown()
       is_past <- identical(tab(), "past")
+      is_approvals <- identical(tab(), "approvals") && !is.null(groups)
       bslib::card(
         bslib::card_header(
           class = "sn-card-head",
           h2(class = "sn-title", context_title(ctx)),
           div(class = "sn-head-actions",
-              tab_switch(ns, tab()),
+              tab_switch(ns, tab(), if (!is.null(groups)) groups$n_pending()),
               tags$button(type = "button", class = "btn btn-sm btn-link sn-refresh",
                           onclick = set_input_js(ns("refresh"), "x"), title = "Hent på nytt fra Spond",
                           "Oppdater"))
         ),
         bslib::card_body(
-          if (!is.null(res$error)) {
+          if (is_approvals) {
+            mod_groups_pending_ui(ns("groups"))
+          } else if (!is.null(res$error)) {
             div(class = "sn-alert", role = "alert", res$error)
           } else if (length(res$events) == 0) {
             p(class = "sn-hint", if (is_past) paste0("Ingen gjennomførte arrangementer de siste ", past_window(), " dagene.")

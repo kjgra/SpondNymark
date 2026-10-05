@@ -31,15 +31,43 @@
 
   // Text field + button: Enter or the button sends the typed text in one go
   // (avoids losing the last characters to Shiny's input debounce).
+  // With data-sn-key, {key, value} is sent, so one input can serve many fields
+  // (e.g. a comment field per proposal).
+  function submitValue(el, value) {
+    var key = el.getAttribute('data-sn-key');
+    return key === null ? value : { key: key, value: value, at: Date.now() };
+  }
   $(document).on('keydown', 'input[data-sn-submit]', function (e) {
     if (e.key === 'Enter') {
       e.preventDefault();
-      send(this.getAttribute('data-sn-submit'), this.value);
+      send(this.getAttribute('data-sn-submit'), submitValue(this, this.value));
     }
   });
   $(document).on('click', 'button[data-sn-submit-for]', function () {
     var field = document.getElementById(this.getAttribute('data-sn-submit-for'));
-    if (field) send(this.getAttribute('data-sn-submit'), field.value);
+    if (field) send(this.getAttribute('data-sn-submit'), submitValue(this, field.value));
+  });
+
+  // Text typed in fields marked .sn-keep survives when the server redraws the
+  // part of the page they are in (e.g. a comment being written while another
+  // trainer's change arrives).
+  $(document).on('shiny:value', function (e) {
+    var kept = [];
+    $(e.target).find('input.sn-keep').each(function () {
+      if (this.id && this.value) {
+        kept.push({ id: this.id, value: this.value, focus: document.activeElement === this,
+                    pos: this.selectionStart });
+      }
+    });
+    if (!kept.length) return;
+    setTimeout(function () {
+      kept.forEach(function (k) {
+        var el = document.getElementById(k.id);
+        if (!el || el.value) return;
+        el.value = k.value;
+        if (k.focus) { el.focus(); try { el.setSelectionRange(k.pos, k.pos); } catch (err) {} }
+      });
+    }, 0);
   });
 
   // <details data-sn-toggle="ns-id">: report open/closed so a re-render keeps it.

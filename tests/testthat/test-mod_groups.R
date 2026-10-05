@@ -4,7 +4,8 @@ acc <- function() fake_user(fake_spond_groups_two())$access
 
 groups_args <- function(con, ctx = reactiveVal(teams_context(fake_group())), ev = reactiveVal(ev_ulv())) {
   list(context = ctx, user = reactive(fake_user(fake_spond_groups_two())), db = db_handle(function() con),
-       event = ev, event_ids = reactive(c("E-ulv", "E-kamp")), now = fake_now, poll_ms = 60000)
+       event = ev, events = reactive(lapply(fake_spond_events()[1:2], event_minimal)),
+       open_event_input = "events-open", now = fake_now, poll_ms = 60000)
 }
 html_of <- function(x) as.character(x$html)
 locks_in <- function(con) DBI::dbGetQuery(con, "SELECT * FROM edit_locks")
@@ -38,7 +39,7 @@ test_that("a new event proposal is made, edited on the board and saved", {
     session$setInputs(remove_group = "Gruppe B")
     expect_equal(draft()$labels, c("Gruppe A", "Keepere"))
 
-    session$setInputs(name = "Kamp 1", save = "x")
+    session$setInputs(name_1 = "Kamp 1", save = "x")
     expect_false(session$returned$editing())
     expect_match(html_of(output$event_cards), "Kamp 1")           # shown at once, before any reload
     session$elapse(500)
@@ -72,7 +73,7 @@ test_that("editing an existing proposal, and a member who no longer comes is mar
     expect_equal(draft()$labels, c("Rød", "Blå"))
     expect_match(html_of(output$board), "data-member=\"M-2\"")    # placed members stay on the board
     session$setInputs(move = list(member = "M-2", group = ""))
-    session$setInputs(name = "Kamp 1", save = "x")
+    session$setInputs(name_1 = "Kamp 1", save = "x")
     expect_equal(DBI::dbGetQuery(con, "SELECT spond_member_id FROM group_proposal_members")$spond_member_id, "M-1")
     expect_equal(DBI::dbGetQuery(con, "SELECT decision FROM proposal_history ORDER BY id")$decision,
                  c("created", "edited"))
@@ -107,7 +108,7 @@ test_that("gruppeutkast belong to the context they were made in", {
     expect_match(html_of(output$board), "Ikke fordelt")
     expect_match(html_of(output$editor), "Gruppeutkast i Nymark Ulv G10")
     session$setInputs(move = list(member = "M-3", group = "Gruppe B"))
-    session$setInputs(name = "Nye lag", save = "x")
+    session$setInputs(name_1 = "Nye lag", save = "x")
     p <- DBI::dbGetQuery(con, "SELECT spond_subgroup_id, spond_event_id FROM group_proposals")
     expect_equal(p$spond_subgroup_id, "S-ulv")
     expect_true(is.na(p$spond_event_id))
@@ -130,7 +131,7 @@ test_that("no new proposals for past events; bad input gives a message", {
   })
   testServer(mod_groups_server, args = groups_args(con), {
     session$setInputs(new = "event")
-    session$setInputs(name = "   ", save = "x")
+    session$setInputs(name_1 = "   ", save = "x")
     expect_match(html_of(output$editor_msg), "Navnet på forslaget")
     expect_true(session$returned$editing())
     session$setInputs(cancel = "x")
@@ -186,5 +187,99 @@ test_that("opening and closing quickly leaves no lock behind", {
     session$setInputs(cancel = "x")      # before the lock was taken
     session$elapse(500)
     expect_equal(nrow(locks_in(con)), 0)
+  })
+})
+
+test_that("send for approval, approve, and a second approval rolls back the first", {
+  con <- local_test_db()
+  a <- ds_save_proposal(con, acc(), "P-me", "G2016", "Rød/blå", c("Rød", "Blå"), event_id = "E-ulv")
+  b <- ds_save_proposal(con, acc(), "P-me", "G2016", "Tre lag", c("1", "2", "3"), event_id = "E-ulv")
+  status_of <- function(id) DBI::dbGetQuery(con, "SELECT status FROM group_proposals WHERE id = $1", params = list(id))$status
+  testServer(mod_groups_server, args = groups_args(con), {
+    session$flushReact()
+    cards <- html_of(output$event_cards)
+    expect_match(cards, "Send til godkjenning")
+    expect_match(cards, "Slett grupper")
+    session$setInputs(act = paste0("approve:", a))           # not allowed for a draft: ignored
+    expect_equal(status_of(a), "draft")
+    session$setInputs(act = paste0("submit:", a))
+    expect_equal(status_of(a), "pending")
+    expect_equal(session$returned$n_pending(), 1)
+    pend <- html_of(output$pending_cards)
+    expect_match(pend, "For Trening Ulv")
+    expect_match(pend, "data-sn-input=\"events-open\" data-sn-value=\"E-ulv\"")
+    expect_match(pend, "Godkjenn")
+    expect_match(as.character(session$returned$event_badge("E-ulv")), "Venter på godkjenning")
+    session$setInputs(act = paste0("approve:", a))
+    expect_equal(status_of(a), "approved")
+    expect_match(as.character(session$returned$event_badge("E-ulv")), "Godkjente grupper")
+    expect_match(html_of(output$event_cards), "Rull tilbake")
+
+    session$setInputs(act = paste0("submit:", b))
+    session$setInputs(act = paste0("approve:", b))
+    expect_equal(status_of(b), "approved")
+    expect_equal(status_of(a), "rolled_back")                # only one approved per event
+    session$elapse(500)
+    h <- html_of(output$event_cards)
+    expect_match(h, "Rullet tilbake")
+    expect_match(h, "Kjetil G.</strong>\\s+godkjente")
+  })
+})
+
+test_that("deleting asks first, and the proposal disappears", {
+  con <- local_test_db()
+  a <- ds_save_proposal(con, acc(), "P-me", "G2016", "Rød/blå", "Rød", event_id = "E-ulv")
+  testServer(mod_groups_server, args = groups_args(con), {
+    session$flushReact()
+    session$setInputs(act = paste0("delete:", a))
+    expect_equal(DBI::dbGetQuery(con, "SELECT status FROM group_proposals")$status, "draft")   # not yet
+    session$setInputs(confirm_delete = as.character(a))
+    expect_equal(DBI::dbGetQuery(con, "SELECT status FROM group_proposals")$status, "deleted")
+    expect_false(grepl("Rød/blå", html_of(output$event_cards)))
+    session$elapse(500)
+    expect_false(grepl("Rød/blå", html_of(output$event_cards)))
+  })
+})
+
+test_that("comments are added, and sensitive ones refused", {
+  con <- local_test_db()
+  a <- ds_save_proposal(con, acc(), "P-me", "G2016", "Rød/blå", "Rød", event_id = "E-ulv")
+  testServer(mod_groups_server, args = groups_args(con), {
+    session$flushReact()
+    expect_match(html_of(output$event_cards), "Kommentarer \\(0\\)")
+    session$setInputs(comment = list(key = as.character(a), value = "  Fin fordeling  "))
+    expect_equal(DBI::dbGetQuery(con, "SELECT body, author FROM proposal_comments")$body, "Fin fordeling")
+    cards <- html_of(output$event_cards)
+    expect_match(cards, "Kommentarer \\(1\\)")
+    expect_match(cards, "Fin fordeling")
+    session$setInputs(comment = list(key = as.character(a), value = "Emma er skadet i kneet"))
+    expect_equal(nrow(DBI::dbGetQuery(con, "SELECT 1 FROM proposal_comments")), 1)
+    session$setInputs(comment = list(key = "999999", value = "Hei"))   # unknown proposal: ignored
+    expect_equal(nrow(DBI::dbGetQuery(con, "SELECT 1 FROM proposal_comments")), 1)
+    session$elapse(500)
+    expect_match(html_of(output$event_cards), "laget forslaget")
+  })
+})
+
+test_that("the editor can save and send for approval in one go", {
+  con <- local_test_db()
+  testServer(mod_groups_server, args = groups_args(con), {
+    session$setInputs(new = "event")
+    session$setInputs(move = list(member = "M-1", group = "Gruppe A"))
+    session$setInputs(name_1 = "Kamp", save_submit = "x")
+    expect_equal(DBI::dbGetQuery(con, "SELECT status FROM group_proposals")$status, "pending")
+    expect_equal(session$returned$n_pending(), 1)
+  })
+})
+
+test_that("a name typed in an earlier editor is not reused", {
+  con <- local_test_db()
+  testServer(mod_groups_server, args = groups_args(con), {
+    session$setInputs(new = "event")
+    session$setInputs(name_1 = "Første", save = "x")
+    session$setInputs(new = "event")
+    expect_equal(draft()$name, "Forslag 1")      # "Første" is not "Forslag 1", so number 1 is free
+    session$setInputs(save = "x")                # name field of editor 2 not sent yet
+    expect_setequal(DBI::dbGetQuery(con, "SELECT name FROM group_proposals")$name, c("Første", "Forslag 1"))
   })
 })

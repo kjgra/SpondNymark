@@ -32,12 +32,14 @@ profile_name <- function(names, profile_id) {
 #'   created_by, updated_at, labels (character, in order) and assignments
 #'   (named character: member id -> label).
 #' @noRd
-proposals_view <- function(headers, groups) {
+proposals_view <- function(headers, groups, threads = NULL) {
   if (is.null(headers) || nrow(headers) == 0) return(list())
+  if (is.null(threads)) threads <- threads_empty()
   lapply(seq_len(nrow(headers)), function(i) {
     id <- as.integer(headers$id[i])
     l <- groups$labels[groups$labels$proposal_id == id, , drop = FALSE]
     m <- groups$members[groups$members$proposal_id == id, , drop = FALSE]
+    th <- threads[threads$proposal_id == id, , drop = FALSE]
     na_chr <- function(x) if (is.na(x)) NULL else as.character(x)
     list(
       id = id,
@@ -48,9 +50,25 @@ proposals_view <- function(headers, groups) {
       created_by = headers$created_by[i],
       updated_at = headers$updated_at[i],
       labels = as.character(l$label[order(l$sort_order)]),
-      assignments = stats::setNames(as.character(m$label), as.character(m$spond_member_id))
+      assignments = stats::setNames(as.character(m$label), as.character(m$spond_member_id)),
+      comments = thread_part(th, "comment"),
+      history = thread_part(th, "history")
     )
   })
+}
+
+#' Empty result of `ds_proposal_threads()`
+#' @noRd
+threads_empty <- function() {
+  data.frame(proposal_id = integer(), kind = character(), actor = character(), text = character(),
+             created_at = as.POSIXct(character(), tz = "UTC"), stringsAsFactors = FALSE)
+}
+
+# Comments or history of one proposal: data.frame(actor, text, created_at).
+thread_part <- function(th, kind) {
+  x <- th[th$kind == kind, c("actor", "text", "created_at"), drop = FALSE]
+  rownames(x) <- NULL
+  x
 }
 
 #' Proposal statuses that can be edited (editing sets the status to draft)
@@ -60,6 +78,88 @@ proposal_editable <- function(status) status %in% c("draft", "rolled_back", "rej
 #' Status label in Norwegian
 #' @noRd
 proposal_status_label <- function(status) unname(ds_status_label[status])
+
+#' Proposals sorted for display: approved first, then waiting for approval,
+#' drafts, and rejected/rolled back last; oldest first within each status
+#' @noRd
+proposals_sorted <- function(proposals) {
+  if (length(proposals) == 0) return(proposals)
+  rank <- c(approved = 1, pending = 2, draft = 3, rejected = 4, rolled_back = 5)
+  r <- vapply(proposals, function(p) unname(rank[p$status]) %||% 9, numeric(1))
+  id <- vapply(proposals, function(p) as.numeric(p$id), numeric(1))
+  proposals[order(r, id)]
+}
+
+#' What can be done with a proposal in a status: action -> button text
+#'
+#' Every trainer with access may do every action (decided by Kjetil).
+#' "edit" opens the editor; the others are status changes (`ds_transition()`).
+#' @noRd
+proposal_actions <- function(status) {
+  switch(status,
+    draft = c(edit = "Rediger grupper", submit = "Send til godkjenning", delete = "Slett grupper"),
+    pending = c(approve = "Godkjenn", reject = "Avslå"),
+    approved = c(rollback = "Rull tilbake"),
+    rejected = ,
+    rolled_back = c(edit = "Rediger grupper", delete = "Slett grupper"),
+    character()
+  )
+}
+
+#' The proposal list after a status change, without waiting for a reload
+#'
+#' Approving rolls back other approved proposals for the same event, as the
+#' database does. Deleted proposals leave the list.
+#' @noRd
+proposals_after <- function(proposals, id, action) {
+  to <- ds_transitions[[action]]$to
+  target <- Filter(function(p) identical(as.integer(p$id), as.integer(id)), proposals)
+  if (length(target) == 0 || is.null(to)) return(proposals)
+  ev <- target[[1]]$event_id
+  out <- lapply(proposals, function(p) {
+    if (identical(as.integer(p$id), as.integer(id))) {
+      p$status <- to
+    } else if (identical(action, "approve") && !is.null(ev) && identical(p$event_id, ev) &&
+               identical(p$status, "approved")) {
+      p$status <- "rolled_back"
+    }
+    p
+  })
+  Filter(function(p) !identical(p$status, "deleted"), out)
+}
+
+#' History entry in Norwegian ("laget forslaget")
+#' @noRd
+history_label <- function(decision) {
+  labels <- c(created = "laget forslaget", edited = "endret gruppene", sent_for_approval = "sendte til godkjenning",
+              approved = "godkjente", rejected = "avslo", rolled_back = "rullet tilbake", deleted = "slettet")
+  out <- unname(labels[decision])
+  ifelse(is.na(out), decision, out)
+}
+
+#' Why a comment is not allowed, or NULL
+#'
+#' Same rule as for tags: no health or other sensitive information.
+#' @noRd
+comment_problem <- function(text) {
+  text <- trimws(text %||% "")
+  if (!nzchar(text)) return("Skriv en kommentar først.")
+  if (nchar(text) > 2000) return("En kommentar kan ha maks 2000 tegn.")
+  if (any(vapply(tag_sensitive_patterns(), grepl, logical(1), x = text, ignore.case = TRUE, perl = TRUE))) {
+    return("Kommentarer skal ikke inneholde helseopplysninger eller andre sensitive opplysninger.")
+  }
+  NULL
+}
+
+#' "5. okt. kl. 18:40" in Norwegian time (with the year if not this year)
+#' @noRd
+short_time <- function(t, tz = "Europe/Oslo", now = Sys.time()) {
+  t <- as.POSIXct(t)
+  y <- format(t, "%Y", tz = tz)
+  paste0(as.integer(format(t, "%d", tz = tz)), ". ", no_month(t, tz),
+         if (y != format(now, "%Y", tz = tz)) paste0(" ", y) else "",
+         " kl. ", format(t, "%H:%M", tz = tz))
+}
 
 #' "Gruppe A", "Gruppe B", ... the first one not in use
 #' @noRd
@@ -219,18 +319,20 @@ clock_time <- function(t, tz = "Europe/Oslo") format(as.POSIXct(t), "%H:%M", tz 
 #'
 #' Lets the page show the result of "Lagre" without waiting for a reload.
 #' @noRd
-proposal_upsert <- function(proposals, id, draft, name, actor, now = Sys.time()) {
+proposal_upsert <- function(proposals, id, draft, name, actor, now = Sys.time(), status = "draft") {
   old <- Filter(function(p) identical(as.integer(p$id), as.integer(id)), proposals)
   rec <- list(
     id = as.integer(id),
     event_id = draft$event$id,
     subgroup_id = if (is.null(draft$event)) draft$subgroup_id else NULL,
     name = name,
-    status = "draft",
+    status = status,
     created_by = if (length(old)) old[[1]]$created_by else actor,
     updated_at = now,
     labels = draft$labels,
-    assignments = draft$assignments
+    assignments = draft$assignments,
+    comments = if (length(old)) old[[1]]$comments else thread_part(threads_empty(), "comment"),
+    history = if (length(old)) old[[1]]$history else thread_part(threads_empty(), "history")
   )
   if (length(old)) {
     lapply(proposals, function(p) if (identical(as.integer(p$id), as.integer(id))) rec else p)

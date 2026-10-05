@@ -418,22 +418,55 @@ ds_status_label <- c(draft = "Utkast", pending = "Til godkjenning", approved = "
 #' Delete is soft: the row and its history stay, but the proposal disappears
 #' from all lists. The update only succeeds from the allowed statuses, so two
 #' trainers clicking at the same time cannot both succeed.
+#'
+#' Approving a proposal for an event rolls back any other approved proposal
+#' for the same event, so an event has at most one approved set of groups.
+#' Everything happens in one statement (one round trip).
+#' @return The new status (invisibly).
 #' @noRd
 ds_transition <- function(con, access, proposal_id, action, actor) {
   t <- ds_transitions[[action]]
   if (is.null(t)) stop("Ukjent handling: ", action, call. = FALSE)
   current <- ds_proposal_group(con, access, proposal_id)
-  id <- as.integer(proposal_id)
-  ds_transaction(con, {
-    n <- ds_exec(con, "UPDATE group_proposals SET status = $2, updated_at = now()
-                        WHERE id = $1 AND status = ANY($3::text[])",
-                 list(id, t$to, ds_text_array(t$from)))
-    if (n == 0) {
-      stop("Kan ikke utføre dette når status er «", ds_status_label[[current$status]], "».", call. = FALSE)
-    }
-    ds_log(con, id, actor, t$log)
-  })
+  res <- ds_query(con, "
+    WITH t AS (
+      UPDATE group_proposals SET status = $2, updated_at = now()
+       WHERE id = $1 AND status = ANY($3::text[])
+      RETURNING id, spond_event_id),
+    h AS (
+      INSERT INTO proposal_history (proposal_id, actor, decision) SELECT id, $4, $5 FROM t),
+    o AS (
+      UPDATE group_proposals g SET status = 'rolled_back', updated_at = now()
+        FROM t
+       WHERE $6 AND g.spond_event_id = t.spond_event_id AND g.id <> t.id AND g.status = 'approved'
+      RETURNING g.id),
+    oh AS (
+      INSERT INTO proposal_history (proposal_id, actor, decision) SELECT id, $4, 'rolled_back' FROM o)
+    SELECT (SELECT count(*) FROM t)::integer AS n, (SELECT count(*) FROM o)::integer AS replaced",
+    list(as.integer(proposal_id), t$to, ds_text_array(t$from), actor, t$log, identical(action, "approve")))
+  if (res$n[1] == 0) {
+    stop("Kan ikke utføre dette når status er «", ds_status_label[[current$status]], "».", call. = FALSE)
+  }
   invisible(t$to)
+}
+
+#' Comments and history of several proposals, in one query
+#'
+#' @return data.frame: proposal_id, kind ("comment" or "history"), actor,
+#'   text (comment body or history decision), created_at; oldest first.
+#' @noRd
+ds_proposal_threads <- function(con, access, group_id, proposal_ids) {
+  assert_group_access(access, group_id)
+  ds_query(con, "
+    SELECT x.proposal_id, x.kind, x.actor, x.text, x.created_at FROM (
+      SELECT c.proposal_id, 'comment'::text AS kind, c.author AS actor, c.body AS text, c.created_at, c.id
+        FROM proposal_comments c
+      UNION ALL
+      SELECT h.proposal_id, 'history'::text, h.actor, h.decision, h.created_at, h.id
+        FROM proposal_history h
+    ) x JOIN group_proposals p ON p.id = x.proposal_id
+     WHERE p.spond_group_id = $1 AND x.proposal_id = ANY($2::integer[])
+     ORDER BY x.created_at, x.kind, x.id", list(group_id, ds_text_array(as.integer(proposal_ids))))
 }
 
 # Comments ----------------------------------------------------------------------

@@ -182,3 +182,22 @@
   .sn-armed-target { padding: 6px 14px; }
   .sn-board.has-armed { padding-bottom: 140px; }
 }
+
+/* Approval, comments, history */
+.sn-proposal-approved { border-color: #9CCBAE; box-shadow: inset 4px 0 0 #2F7D55; }
+.sn-proposal-pending { box-shadow: inset 4px 0 0 #E0A800; }
+.sn-proposal-rejected, .sn-proposal-rolled_back { opacity: .85; }
+.sn-proposal-for { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  font-size: .85rem; font-weight: 600; color: var(--bs-secondary); }
+.sn-open-event { padding: 0; }
+.sn-thread { border-top: 1px solid var(--bs-border-color); padding-top: 6px; }
+.sn-thread > summary { font-size: .85rem; font-weight: 600; color: var(--bs-secondary); cursor: pointer; }
+.sn-thread[open] > summary { margin-bottom: 6px; }
+.sn-comment { padding: 4px 0; border-bottom: 1px dashed var(--bs-border-color); }
+.sn-comment-meta { font-size: .78rem; color: var(--bs-secondary); }
+.sn-comment-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.sn-comment-add { display: flex; gap: 6px; margin-top: 8px; }
+.sn-comment-add .form-control { flex: 1; min-width: 0; }
+.sn-history { font-size: .8rem; color: var(--bs-secondary); padding: 1px 0; }
+.sn-tab-count { display: inline-block; min-width: 1.3em; margin-left: 4px; padding: 0 5px; border-radius: 999px;
+  background: #E0A800; color: #fff; font-size: .72rem; font-weight: 700; line-height: 1.5; }

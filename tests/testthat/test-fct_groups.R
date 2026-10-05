@@ -106,3 +106,38 @@ test_that("a saved proposal is put into the list without waiting for a reload", 
   expect_equal(l2[[1]]$name, "Kamp 2")
   expect_equal(l2[[1]]$created_by, "P-annen")    # the creator stays
 })
+
+test_that("actions follow the status", {
+  expect_equal(names(proposal_actions("draft")), c("edit", "submit", "delete"))
+  expect_equal(names(proposal_actions("pending")), c("approve", "reject"))
+  expect_equal(names(proposal_actions("approved")), "rollback")
+  expect_equal(names(proposal_actions("rejected")), c("edit", "delete"))
+  expect_equal(names(proposal_actions("rolled_back")), c("edit", "delete"))
+  expect_length(proposal_actions("deleted"), 0)
+})
+
+test_that("status changes are reflected locally like in the database", {
+  mk <- function(id, status, ev = "E1") list(id = id, status = status, event_id = ev)
+  l <- list(mk(1L, "approved"), mk(2L, "pending"), mk(3L, "approved", "E2"))
+  a <- proposals_after(l, 2L, "approve")
+  expect_equal(vapply(a, `[[`, "", "status"), c("rolled_back", "approved", "approved"))
+  d <- proposals_after(l, 1L, "rollback")
+  expect_equal(d[[1]]$status, "rolled_back")
+  expect_length(proposals_after(list(mk(4L, "draft")), 4L, "delete"), 0)
+  sorted <- proposals_sorted(list(mk(5L, "draft"), mk(6L, "approved"), mk(7L, "pending")))
+  expect_equal(vapply(sorted, `[[`, 1L, "id"), c(6L, 7L, 5L))
+})
+
+test_that("comments are checked like tags", {
+  expect_null(comment_problem("Fin fordeling, men bytt Emma og Noah"))
+  expect_match(comment_problem("  "), "Skriv en kommentar")
+  expect_match(comment_problem("Noah er syk"), "sensitive")
+  expect_match(comment_problem(strrep("a", 2001)), "maks 2000")
+})
+
+test_that("history and times read well in Norwegian", {
+  expect_equal(history_label(c("created", "approved", "ukjent")), c("laget forslaget", "godkjente", "ukjent"))
+  t <- as.POSIXct("2026-10-05 16:40:00", tz = "UTC")
+  expect_equal(short_time(t, now = fake_now()), "5. okt. kl. 18:40")
+  expect_equal(short_time(as.POSIXct("2025-12-24 10:00:00", tz = "UTC"), now = fake_now()), "24. des. 2025 kl. 11:00")
+})

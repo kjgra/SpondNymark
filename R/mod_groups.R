@@ -24,12 +24,19 @@
 #' @param db Database handle from `db_handle()`.
 #' @param tagger Value of `mod_tags_server()`, or NULL.
 #' @param event Reactive selected event (minimal), or NULL.
-#' @param event_ids Reactive ids of the events in the list (their proposals
-#'   are loaded, so the list can show which events have groups).
+#' @param events Reactive list of the events the trainer can see now (the
+#'   upcoming ones and the shown tab). Their proposals are loaded, so the
+#'   list can show which events have groups, and "Til godkjenning" can show
+#'   which event a proposal is for.
+#' @param event_ids Reactive ids of those events (derived from `events` when
+#'   not given).
+#' @param open_event_input Input id (in `mod_events`) that opens an event,
+#'   used by "Åpne arrangement" in the list of proposals waiting for approval.
 #' @param now Function giving the current time.
 #' @return list(`editing` reactive TRUE while the editor is open,
-#'   `n_drafts` reactive number of gruppeutkast, `event_badge(event_id)` a
-#'   small label for an event row, or NULL).
+#'   `n_drafts` reactive number of gruppeutkast, `n_pending` reactive number
+#'   of proposals waiting for approval, `event_badge(event_id)` a small label
+#'   for an event row, or NULL).
 #' @noRd
 #' @importFrom shiny NS tagList
 mod_groups_event_ui <- function(id) uiOutput(NS(id, "event_cards"))
@@ -41,11 +48,15 @@ mod_groups_drafts_ui <- function(id) uiOutput(NS(id, "draft_cards"))
 mod_groups_editor_ui <- function(id) uiOutput(NS(id, "editor"))
 
 #' @noRd
+mod_groups_pending_ui <- function(id) uiOutput(NS(id, "pending_cards"))
+
+#' @noRd
 mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reactive(NULL),
-                              event_ids = reactive(character()), now = Sys.time,
-                              poll_ms = 10000, heartbeat_ms = 30000, defer_ms = 400) {
+                              events = reactive(list()), event_ids = NULL, open_event_input = NULL,
+                              now = Sys.time, poll_ms = 10000, heartbeat_ms = 30000, defer_ms = 400) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
+    if (is.null(event_ids)) event_ids <- reactive(vapply(events(), function(e) e$id, ""))
     session_key <- paste0("s-", session$token %||% "local", "-", id)
 
     proposals <- reactiveVal(list())
@@ -79,8 +90,9 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
       res <- db_try(function(con) {
         h <- ds_list_proposals(con, u$access, ctx$group_id, ids, ctx$subgroup_id)
         g <- ds_proposal_groups(con, u$access, ctx$group_id, h$id)
+        th <- ds_proposal_threads(con, u$access, ctx$group_id, h$id)
         l <- ds_active_locks(con, u$access, ctx$group_id)
-        list(proposals = proposals_view(h, g), locks = l[l$session_key != session_key, , drop = FALSE])
+        list(proposals = proposals_view(h, g, th), locks = l[l$session_key != session_key, , drop = FALSE])
       }, "Henting av gruppeforslag")
       if (is.null(res)) {
         load_error("Gruppeforslagene kunne ikke hentes fra databasen. Prøv igjen om litt.")
@@ -197,11 +209,11 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
       open_editor(draft_from(p, ev))
     }
 
-    observeEvent(input$edit, {
+    edit_requested <- function(pid) {
       req(is.null(draft()))
-      l <- lock_on(as.integer(input$edit))
-      if (is.null(l)) return(start_edit(input$edit))
-      pending_edit(input$edit)
+      l <- lock_on(as.integer(pid))
+      if (is.null(l)) return(start_edit(pid))
+      pending_edit(pid)
       showModal(modalDialog(
         title = "Noen redigerer allerede",
         p(paste0(editor_name(l$editor), " redigerer dette forslaget nå (startet kl. ",
@@ -210,10 +222,11 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
         footer = tagList(
           modalButton("Avbryt"),
           tags$button(type = "button", class = "btn btn-primary", `data-sn-input` = ns("force_edit"),
-                      `data-sn-value` = input$edit, `data-sn-busy` = "Åpner", "Rediger likevel")
+                      `data-sn-value` = pid, `data-sn-busy` = "Åpner", "Rediger likevel")
         )
       ))
-    })
+    }
+    observeEvent(input$edit, edit_requested(input$edit))
 
     observeEvent(input$force_edit, {
       removeModal()
@@ -242,18 +255,20 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
       change_groups(draft_rename_group(draft(), input$rename$from, input$rename$to))
     })
 
-    observeEvent(input$save, {
+    save <- function(submit) {
       d <- draft()
       req(d)
       ctx <- context()
       u <- user()
-      name <- tag_clean(input$name %||% d$name)
+      # The name field gets a new id each time the editor opens, so a value
+      # left over from the previous editor can never be saved by mistake.
+      name <- tag_clean(input[[paste0("name_", open_count())]] %||% d$name)
       v <- tryCatch(ds_validate_proposal(name, d$labels, d$assignments), error = function(e) conditionMessage(e))
       if (is.character(v)) return(editor_msg(v))
       saved <- tryCatch({
         db$run(function(con) {
           ds_save_proposal(con, u$access, u$profile$id, ctx$group_id, name, d$labels, d$assignments,
-                           subgroup_id = d$subgroup_id, event_id = d$event$id, id = d$id)
+                           subgroup_id = d$subgroup_id, event_id = d$event$id, id = d$id, submit = submit)
         })
       }, error = function(e) {
         msg <- conditionMessage(e)
@@ -263,9 +278,104 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
       })
       if (is.character(saved)) return(editor_msg(saved))
       # Show the saved proposal at once; the next reload confirms it.
-      proposals(proposal_upsert(proposals(), saved, d, name, u$profile$id))
+      proposals(proposal_upsert(proposals(), saved, d, name, u$profile$id,
+                                status = if (submit) "pending" else "draft"))
       close_editor()
-      showNotification(paste0("«", name, "» er lagret."), type = "message", duration = 4)
+      showNotification(paste0("«", name, "» er ", if (submit) "lagret og sendt til godkjenning." else "lagret."),
+                       type = "message", duration = 4)
+    }
+    observeEvent(input$save, save(FALSE))
+    observeEvent(input$save_submit, save(TRUE))
+
+    # Status changes ---------------------------------------------------------
+    # Buttons send "action:id". Every trainer with access may do every action.
+    find_proposal <- function(pid) {
+      p <- Filter(function(p) identical(as.character(p$id), as.character(pid)), proposals())
+      if (length(p) == 1) p[[1]] else NULL
+    }
+
+    observeEvent(input$act, {
+      parts <- strsplit(as.character(input$act), ":", fixed = TRUE)[[1]]
+      req(length(parts) == 2)
+      action <- parts[1]
+      prop <- find_proposal(parts[2])
+      req(prop, action %in% names(proposal_actions(prop$status)))
+      if (identical(action, "edit")) {
+        return(edit_requested(prop$id))
+      }
+      if (identical(action, "delete")) {
+        showModal(modalDialog(
+          title = paste0("Slette «", prop$name, "»?"),
+          p("Gruppene fjernes fra oversikten og listene. Historikken beholdes, men forslaget vises ikke lenger noe sted i appen."),
+          footer = tagList(
+            modalButton("Avbryt"),
+            tags$button(type = "button", class = "btn btn-danger", `data-sn-input` = ns("confirm_delete"),
+                        `data-sn-value` = prop$id, `data-sn-busy` = "Sletter", "Slett grupper")
+          )
+        ))
+        return()
+      }
+      change_status(prop, action)
+    })
+
+    observeEvent(input$confirm_delete, {
+      removeModal()
+      prop <- find_proposal(input$confirm_delete)
+      req(prop, "delete" %in% names(proposal_actions(prop$status)))
+      change_status(prop, "delete")
+    })
+
+    change_status <- function(prop, action) {
+      u <- user()
+      res <- tryCatch({
+        db$run(function(con) ds_transition(con, u$access, prop$id, action, u$profile$id))
+        NULL
+      }, error = function(e) {
+        msg <- conditionMessage(e)
+        if (grepl("^Kan ikke utføre|ikke tilgang", msg)) return(msg)
+        message("Statusendring feilet: ", msg)
+        "Kunne ikke lagre endringen. Prøv igjen om litt."
+      })
+      if (!is.null(res)) {
+        showNotification(res, type = "warning", duration = 6)
+        refresh(refresh() + 1)
+        return()
+      }
+      before <- proposals()
+      after <- proposals_after(before, prop$id, action)
+      rolled <- Filter(function(p) identical(p$status, "approved") && !identical(p$id, prop$id) &&
+                         identical(p$event_id, prop$event_id) && !is.null(prop$event_id), before)
+      proposals(after)
+      done <- c(submit = "er sendt til godkjenning.", approve = "er godkjent.", reject = "er avslått.",
+                rollback = "er rullet tilbake.", delete = "er slettet.")[[action]]
+      showNotification(paste0("«", prop$name, "» ", done,
+                              if (identical(action, "approve") && length(rolled))
+                                paste0(" «", rolled[[1]]$name, "» er rullet tilbake.")),
+                       type = "message", duration = 5)
+      after_update(function() refresh(isolate(refresh()) + 1))
+    }
+
+    # Comments --------------------------------------------------------------
+    observeEvent(input$comment, {
+      m <- input$comment
+      prop <- find_proposal(m$key)
+      req(prop)
+      problem <- comment_problem(m$value)
+      if (!is.null(problem)) return(showNotification(problem, type = "warning", duration = 6))
+      u <- user()
+      ok <- db_try(function(con) ds_add_comment(con, u$access, prop$id, u$profile$id, trimws(m$value)),
+                   "Lagring av kommentar")
+      if (is.null(ok)) return(showNotification("Kunne ikke lagre kommentaren. Prøv igjen.", type = "warning"))
+      session$sendCustomMessage("sn-clear-input", ns(paste0("comment_", prop$id)))
+      # Show it at once; the next reload confirms it.
+      proposals(lapply(proposals(), function(p) {
+        if (identical(p$id, prop$id)) {
+          p$comments <- rbind(p$comments, data.frame(actor = u$profile$id, text = trimws(m$value),
+                                                     created_at = Sys.time(), stringsAsFactors = FALSE))
+        }
+        p
+      }))
+      after_update(function() refresh(isolate(refresh()) + 1))
     })
 
     observeEvent(input$cancel, close_editor())
@@ -305,7 +415,67 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
       if (is.null(tagger)) member_chip(id, name, note = note) else tagger$chip(id, name, note)
     }
 
-    proposal_card <- function(prop, ctx, ev = NULL) {
+    action_button <- function(prop, action, label) {
+      style <- switch(action, submit = , approve = "btn-primary", delete = , reject = "btn-outline-danger",
+                      "btn-outline-primary")
+      busy <- c(edit = "Åpner", submit = "Sender", approve = "Godkjenner", reject = "Avslår",
+                rollback = "Ruller tilbake")[action]
+      tags$button(type = "button", class = paste("btn btn-sm", style),
+                  `data-sn-input` = if (identical(action, "edit")) ns("edit") else ns("act"),
+                  `data-sn-value` = if (identical(action, "edit")) prop$id else paste0(action, ":", prop$id),
+                  `data-sn-busy` = if (!is.na(busy)) unname(busy),
+                  label)
+    }
+
+    threads_ui <- function(prop) {
+      key <- function(x) paste0(x, "_", prop$id)
+      com <- prop$comments
+      his <- prop$history
+      tagList(
+        remembered_details(
+          ns(key("c_open")), isolate(input[[key("c_open")]]), FALSE, class = "sn-thread",
+          paste0("Kommentarer (", nrow(com), ")"),
+          if (nrow(com) == 0) p(class = "sn-hint", "Ingen kommentarer ennå."),
+          lapply(seq_len(nrow(com)), function(i) {
+            div(class = "sn-comment",
+                div(class = "sn-comment-meta", strong(editor_name(com$actor[i])), " \u00b7 ",
+                    short_time(com$created_at[i], now = now())),
+                div(class = "sn-comment-text", com$text[i]))
+          }),
+          div(class = "sn-comment-add",
+              tags$input(id = ns(key("comment")), type = "text", class = "form-control form-control-sm sn-keep",
+                         placeholder = "Skriv en kommentar", maxlength = "2000", `aria-label` = "Kommentar",
+                         `data-sn-submit` = ns("comment"), `data-sn-key` = prop$id),
+              tags$button(type = "button", class = "btn btn-sm btn-outline-primary",
+                          `data-sn-submit-for` = ns(key("comment")), `data-sn-submit` = ns("comment"),
+                          `data-sn-key` = prop$id, "Kommenter")),
+          p(class = "sn-hint sn-tag-privacy", "Ikke skriv helseopplysninger eller andre sensitive opplysninger.")
+        ),
+        remembered_details(
+          ns(key("h_open")), isolate(input[[key("h_open")]]), FALSE, class = "sn-thread",
+          "Historikk",
+          lapply(seq_len(nrow(his)), function(i) {
+            div(class = "sn-history", short_time(his$created_at[i], now = now()), " \u00b7 ",
+                strong(editor_name(his$actor[i])), " ", history_label(his$text[i]))
+          })
+        )
+      )
+    }
+
+    event_line <- function(prop) {
+      if (is.null(prop$event_id)) return(div(class = "sn-proposal-for", "Gruppeutkast"))
+      evs <- Filter(function(e) identical(e$id, prop$event_id), events())
+      if (length(evs) == 0) return(NULL)
+      ev <- evs[[1]]
+      div(class = "sn-proposal-for",
+          span(paste0("For ", ev$heading, ", ", event_when(ev$start, ev$end))),
+          if (!is.null(open_event_input)) {
+            tags$button(type = "button", class = "btn btn-sm btn-link sn-open-event",
+                        `data-sn-input` = open_event_input, `data-sn-value` = ev$id, "Åpne arrangement")
+          })
+    }
+
+    proposal_card <- function(prop, ctx, ev = NULL, show_event = FALSE) {
       all <- members_in_context(ctx$group, NULL)
       parts <- if (is.null(ev)) NULL else event_participants(ev, ctx$group)
       coming <- if (is.null(parts)) character() else parts$member_id[parts$status == "accepted"]
@@ -324,8 +494,10 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
         }))
       }
       l <- lock_on(prop$id)
+      actions <- proposal_actions(prop$status)
       div(
-        class = "sn-proposal",
+        class = paste0("sn-proposal sn-proposal-", prop$status),
+        if (show_event) event_line(prop),
         div(class = "sn-proposal-head",
             div(strong(class = "sn-proposal-name", prop$name),
                 div(class = "sn-hint", paste("Laget av", editor_name(prop$created_by)))),
@@ -342,12 +514,11 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
               span(class = "sn-hint", paste0("Kommer, men ikke fordelt (", length(lay$unplaced), "):")),
               chips(lay$unplaced))
         },
-        if (proposal_editable(prop$status)) {
+        if (length(actions)) {
           div(class = "sn-proposal-actions",
-              tags$button(type = "button", class = "btn btn-sm btn-outline-primary",
-                          `data-sn-input` = ns("edit"), `data-sn-value` = prop$id, `data-sn-busy` = "Åpner",
-                          "Rediger grupper"))
-        }
+              lapply(names(actions), function(a) action_button(prop, a, actions[[a]])))
+        },
+        threads_ui(prop)
       )
     }
 
@@ -364,7 +535,7 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
       ev <- event()
       req(ev)
       ctx <- context()
-      props <- Filter(function(p) identical(p$event_id, ev$id), proposals())
+      props <- proposals_sorted(Filter(function(p) identical(p$event_id, ev$id), proposals()))
       past <- event_is_past(ev, now())
       tagList(
         h3(class = "sn-section-title", "Grupper"),
@@ -385,7 +556,23 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
       )
     })
 
-    drafts <- reactive(Filter(function(p) is.null(p$event_id), proposals()))
+    drafts <- reactive(proposals_sorted(Filter(function(p) is.null(p$event_id), proposals())))
+    pending <- reactive(Filter(function(p) identical(p$status, "pending"), proposals()))
+
+    output$pending_cards <- renderUI({
+      ctx <- context()
+      req(ctx)
+      props <- pending()
+      tagList(
+        if (!is.null(load_error())) div(class = "sn-alert", role = "alert", load_error()),
+        if (length(props) == 0) p(class = "sn-hint", "Ingen forslag venter på godkjenning.")
+        else p(class = "sn-hint", "Forslag til kommende arrangementer og gruppeutkast som venter på godkjenning."),
+        lapply(props, function(prop) {
+          evs <- Filter(function(e) identical(e$id, prop$event_id), events())
+          proposal_card(prop, ctx, ev = if (length(evs)) evs[[1]], show_event = TRUE)
+        })
+      )
+    })
 
     output$draft_cards <- renderUI({
       ctx <- context()
@@ -418,7 +605,7 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
               else paste0("Gruppeutkast i ", ctx$label, ". Må opprettes i Spond for å gjelde."))
         ),
         bslib::card_body(
-          textInput(ns("name"), "Navn på forslaget", value = d$name, width = "100%"),
+          textInput(ns(paste0("name_", open_count())), "Navn på forslaget", value = d$name, width = "100%"),
           p(class = "sn-own-edit", "✎ Andre trenere ser at du redigerer nå."),
           p(class = "sn-hint sn-board-hint",
             span(class = "sn-hint-drag", "Dra et kort til en gruppe, eller trykk på kortet og så «Plasser her»."),
@@ -428,6 +615,8 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
           div(class = "sn-editor-actions",
               tags$button(type = "button", class = "btn btn-primary", `data-sn-input` = ns("save"),
                           `data-sn-value` = "x", `data-sn-busy` = "Lagrer", "Lagre"),
+              tags$button(type = "button", class = "btn btn-outline-primary", `data-sn-input` = ns("save_submit"),
+                          `data-sn-value` = "x", `data-sn-busy` = "Lagrer", "Lagre og send til godkjenning"),
               tags$button(type = "button", class = "btn btn-outline-secondary", `data-sn-input` = ns("cancel"),
                           `data-sn-value` = "x", "Avbryt"))
         )
@@ -497,13 +686,18 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
     list(
       editing = reactive(is_editing()),
       n_drafts = reactive(length(drafts())),
+      n_pending = reactive(length(pending())),
       event_badge = function(event_id) {
-        n <- sum(vapply(proposals(), function(p) identical(p$event_id, event_id), logical(1)))
+        props <- Filter(function(p) identical(p$event_id, event_id), proposals())
+        st <- vapply(props, function(p) p$status, "")
         l <- locks()
         locked <- !is.null(l) && any(!is.na(l$event_id) & l$event_id == event_id)
         tagList(
-          if (n > 0) span(class = "sn-tag sn-tag-groups", if (n == 1) "1 gruppeforslag" else paste(n, "gruppeforslag")),
-          if (locked) span(class = "sn-tag sn-tag-lock", "✎ Redigeres")
+          if ("approved" %in% st) span(class = "sn-tag sn-status-pill sn-status-approved", "\u2713 Godkjente grupper")
+          else if ("pending" %in% st) span(class = "sn-tag sn-status-pill sn-status-pending", "Venter på godkjenning")
+          else if (length(st)) span(class = "sn-tag sn-tag-groups",
+                                    if (length(st) == 1) "1 gruppeforslag" else paste(length(st), "gruppeforslag")),
+          if (locked) span(class = "sn-tag sn-tag-lock", "\u270e Redigeres")
         )
       }
     )

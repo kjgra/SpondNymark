@@ -309,3 +309,34 @@ test_that("a proposal that is not editable is left untouched by an edit", {
   expect_equal(g$members$spond_member_id, "M1")
   expect_equal(g$history$decision, c("created", "sent_for_approval"))
 })
+
+test_that("approving a proposal rolls back the event's previously approved one", {
+  con <- local_test_db(); acc <- test_access()
+  a <- ds_save_proposal(con, acc, "P1", "G1", "A", "X", event_id = "E1", submit = TRUE)
+  b <- ds_save_proposal(con, acc, "P1", "G1", "B", "X", event_id = "E1", submit = TRUE)
+  other <- ds_save_proposal(con, acc, "P1", "G1", "Annet", "X", event_id = "E2", submit = TRUE)
+  ds_transition(con, acc, a, "approve", "P1")
+  ds_transition(con, acc, other, "approve", "P1")
+  ds_transition(con, acc, b, "approve", "P2")
+  st <- DBI::dbGetQuery(con, "SELECT id, status FROM group_proposals ORDER BY id")
+  expect_equal(st$status, c("rolled_back", "approved", "approved"))   # E2 is not touched
+  expect_equal(ds_get_proposal(con, acc, a)$history$decision,
+               c("created", "sent_for_approval", "approved", "rolled_back"))
+  expect_equal(tail(ds_get_proposal(con, acc, a)$history$actor, 1), "P2")
+})
+
+test_that("comments and history of several proposals come in one query", {
+  con <- local_test_db(); acc <- test_access()
+  a <- ds_save_proposal(con, acc, "P1", "G1", "A", "X", submit = TRUE)
+  b <- ds_save_proposal(con, acc, "P1", "G1", "B", "X")
+  ds_add_comment(con, acc, a, "P2", "Bra")
+  DBI::dbExecute(con, "INSERT INTO group_proposals (spond_group_id, name, created_by) VALUES ('G2', 'X', 'P9')")
+  foreign <- DBI::dbGetQuery(con, "SELECT id FROM group_proposals WHERE spond_group_id = 'G2'")$id
+  DBI::dbExecute(con, "INSERT INTO proposal_comments (proposal_id, author, body) VALUES ($1, 'P9', 'hemmelig')",
+                 params = list(foreign))
+  th <- ds_proposal_threads(con, acc, "G1", c(a, b, foreign))
+  expect_equal(th$text[th$proposal_id == a], c("created", "sent_for_approval", "Bra"))
+  expect_equal(th$kind[th$proposal_id == a], c("history", "history", "comment"))
+  expect_false("hemmelig" %in% th$text)
+  expect_equal(names(ds_proposal_threads(con, acc, "G1", integer())), c("proposal_id", "kind", "actor", "text", "created_at"))
+})
