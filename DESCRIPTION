@@ -25,7 +25,7 @@ LazyData: true
 Suggests: 
     askpass,
     pkgload,
-    testthat (>= 3.0.0),
+    testthat (>= 3.1.7),
     withr
 Config/testthat/edition: 3
 Config/roxygen2/version: 8.0.0

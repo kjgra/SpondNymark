@@ -13,6 +13,10 @@
 #'
 #' @param context Reactive from `mod_teams_server()`.
 #' @param user Reactive from `mod_login_server()` (for the Spond session).
+#' @param tagger Value of `mod_tags_server()`: member chips show tags and open
+#'   the tag editor. NULL gives plain chips.
+#' @param db Database handle from `db_handle()`. With it, group proposals
+#'   are shown and can be made (`mod_groups`); NULL leaves them out.
 #' @param spond List of Spond functions, see `spond_api()`.
 #' @param now Function giving the current time (replaceable in tests).
 #' @param past_days Size of the window for past events, and how much "Vis
@@ -61,7 +65,7 @@ event_count_text <- function(event) {
   paste(parts, collapse = " · ")
 }
 
-event_row <- function(ns, event, ctx) {
+event_row <- function(ns, event, ctx, groups = NULL) {
   s <- event$start
   tz <- "Europe/Oslo"
   tags$button(
@@ -74,7 +78,7 @@ event_row <- function(ns, event, ctx) {
     div(class = "sn-event-main",
         span(class = "sn-event-title", event$heading),
         span(class = "sn-event-when", event_when(event$start, event$end)),
-        div(class = "sn-tags", event_badges(event, ctx))),
+        div(class = "sn-tags", event_badges(event, ctx), if (!is.null(groups)) groups$event_badge(event$id))),
     span(class = "sn-event-count", event_count_text(event))
   )
 }
@@ -91,7 +95,8 @@ tab_switch <- function(ns, tab) {
 }
 
 #' @noRd
-mod_events_server <- function(id, context, user, spond = spond_api(), now = Sys.time, past_days = 30) {
+mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond = spond_api(),
+                              now = Sys.time, past_days = 30) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     tab <- reactiveVal("upcoming")
@@ -156,7 +161,29 @@ mod_events_server <- function(id, context, user, spond = spond_api(), now = Sys.
       if (length(ev)) selected(ev[[1]])
     })
 
-    mod_participants_server("participants", event = selected, group = reactive(context()$group))
+    mod_participants_server("participants", event = selected, group = reactive(context()$group), tagger = tagger)
+
+    groups <- if (!is.null(db)) {
+      mod_groups_server("groups", context, user, db, tagger, event = selected, now = now,
+                        event_ids = reactive(vapply(shown()$events, `[[`, "", "id")))
+    }
+    editing <- if (is.null(groups)) function() FALSE else groups$editing
+
+    # Members of the context, with tags. Rendered on its own so new tags do
+    # not redraw the event list.
+    output$members <- renderUI({
+      ctx <- context()
+      req(ctx)
+      m <- ctx$members
+      tagList(
+        if (!is.null(tagger) && !is.null(tagger$error())) div(class = "sn-alert", role = "alert", tagger$error()),
+        if (nrow(m) == 0) p(class = "sn-hint", "Ingen medlemmer.")
+        else tagList(
+          if (!is.null(tagger)) p(class = "sn-hint", "Trykk på et navn for å legge til eller fjerne tagger."),
+          member_chips(m$id, m$display_name, tagger)
+        )
+      )
+    })
 
     list_view <- function(ctx) {
       res <- shown()
@@ -178,7 +205,7 @@ mod_events_server <- function(id, context, user, spond = spond_api(), now = Sys.
             p(class = "sn-hint", if (is_past) paste0("Ingen gjennomførte arrangementer de siste ", past_window(), " dagene.")
                                  else "Ingen kommende arrangementer.")
           } else {
-            div(class = "sn-events", lapply(res$events, function(e) event_row(ns, e, ctx)))
+            div(class = "sn-events", lapply(res$events, function(e) event_row(ns, e, ctx, groups)))
           },
           if (is_past && is.null(res$error)) {
             div(class = "sn-more",
@@ -193,6 +220,7 @@ mod_events_server <- function(id, context, user, spond = spond_api(), now = Sys.
     output$view <- renderUI({
       ctx <- context()
       req(ctx)
+      if (editing()) return(mod_groups_editor_ui(ns("groups")))
       ev <- selected()
       if (!is.null(ev)) {
         return(div(
@@ -211,23 +239,28 @@ mod_events_server <- function(id, context, user, spond = spond_api(), now = Sys.
                   if (ev$match) span(class = "sn-tag sn-tag-match", "Kamp"),
                   if (ev$cancelled) span(class = "sn-tag sn-tag-cancelled", "Avlyst"))
             ),
-            bslib::card_body(mod_participants_ui(ns("participants")))
+            bslib::card_body(
+              if (!is.null(groups)) div(class = "sn-event-groups", mod_groups_event_ui(ns("groups"))),
+              mod_participants_ui(ns("participants"))
+            )
           )
         ))
       }
       tagList(
         list_view(ctx),
-        tags$details(
-          class = "sn-fold",
-          tags$summary(paste0("Medlemmer i ", ctx$label, " · ", nrow(ctx$members))),
-          if (nrow(ctx$members) == 0) p(class = "sn-hint", "Ingen medlemmer.")
-          else div(class = "sn-chips", lapply(ctx$members$display_name, function(n) span(class = "sn-chip", n)))
+        remembered_details(
+          ns("members_open"), isolate(input$members_open), FALSE, class = "sn-fold",
+          paste0("Medlemmer i ", ctx$label, " \u00b7 ", nrow(ctx$members)),
+          uiOutput(ns("members"))
         ),
-        tags$details(
-          class = "sn-fold",
-          tags$summary("Gruppeutkast"),
-          p(class = "sn-hint", "Utkast til nye undergrupper. Kommer i en senere versjon av appen.")
-        )
+        if (!is.null(groups)) {
+          n <- groups$n_drafts()
+          remembered_details(
+            ns("drafts_open"), isolate(input$drafts_open), FALSE, class = "sn-fold",
+            paste0("Gruppeutkast", if (n > 0) paste0(" \u00b7 ", n)),
+            mod_groups_drafts_ui(ns("groups"))
+          )
+        }
       )
     })
 

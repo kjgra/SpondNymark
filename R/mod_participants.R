@@ -7,6 +7,7 @@
 #'
 #' @param event Reactive minimal event (from `event_minimal()`), or NULL.
 #' @param group Reactive group from `spond_session_data()`.
+#' @param tagger Value of `mod_tags_server()`, or NULL for plain chips.
 #' @noRd
 #' @importFrom shiny NS tagList
 mod_participants_ui <- function(id) {
@@ -15,8 +16,9 @@ mod_participants_ui <- function(id) {
 }
 
 #' @noRd
-mod_participants_server <- function(id, event, group) {
+mod_participants_server <- function(id, event, group, tagger = NULL) {
   moduleServer(id, function(input, output, session) {
+    ns <- session$ns
     participants <- reactive({
       ev <- event()
       req(ev)
@@ -36,12 +38,14 @@ mod_participants_server <- function(id, event, group) {
         })),
         lapply(seq_len(nrow(present)), function(i) {
           s <- present$status[i]
-          names <- parts$display_name[parts$status == s]
-          tags$details(
+          rows <- parts[parts$status == s, , drop = FALSE]
+          open_id <- ns(paste0("open_", s))
+          remembered_details(
+            open_id, isolate(input[[paste0("open_", s)]]), s %in% c("accepted", "waiting", "unconfirmed"),
             class = paste0("sn-status sn-status-", s),
-            open = if (s %in% c("accepted", "waiting", "unconfirmed")) NA,
-            tags$summary(paste0(present$label[i], " (", length(names), ")")),
-            div(class = "sn-chips", lapply(names, function(n) span(class = "sn-chip", n)))
+            paste0(present$label[i], " (", nrow(rows), ")"),
+            # Former members cannot be tagged: they are no longer in the group.
+            member_chips(rows$member_id, rows$display_name, tagger, clickable = rows$known)
           )
         })
       )

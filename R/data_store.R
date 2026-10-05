@@ -11,6 +11,13 @@
 #' directly. Optional IDs are passed as "" and turned into NULL with
 #' `NULLIF($n, '')`, which behaves the same in RPostgres and RPostgreSQL.
 #'
+#' Speed: with RPostgres, a parameterised statement costs three round trips
+#' to the server (prepare, describe, execute). Supabase is in Ireland, so
+#' every round trip counts. `ds_query()`/`ds_exec()` therefore put the
+#' parameters into the SQL as safely quoted literals (`dbQuoteLiteral()`,
+#' libpq's own escaping) and send it in one round trip. Writes are batched
+#' (`unnest()`), so saving a proposal is a handful of statements.
+#'
 #' @name data_store
 #' @noRd
 NULL
@@ -76,12 +83,43 @@ ds_text_array <- function(x) {
   paste0("{", paste0('"', esc, '"', collapse = ","), "}")
 }
 
+# Replace $1, $2, ... with the parameters as quoted SQL literals.
+ds_interpolate <- function(con, sql, params) {
+  vals <- vapply(unname(params), function(v) {
+    if (length(v) != 1) stop("Hver parameter må ha lengde 1.", call. = FALSE)
+    as.character(DBI::dbQuoteLiteral(con, v))
+  }, character(1))
+  m <- gregexpr("\\$[0-9]+", sql)
+  idx <- as.integer(substring(regmatches(sql, m)[[1]], 2))
+  if (any(idx > length(vals))) stop("For få parametere til spørringen.", call. = FALSE)
+  regmatches(sql, m) <- list(vals[idx])
+  sql
+}
+
+# One round trip with RPostgres; other drivers (RPostgreSQL in some test
+# setups) get ordinary parameter binding.
+ds_fast <- function(con) inherits(con, "PqConnection")
+
 ds_query <- function(con, sql, params = list()) {
-  if (length(params)) DBI::dbGetQuery(con, sql, params = unname(params)) else DBI::dbGetQuery(con, sql)
+  if (!length(params)) return(DBI::dbGetQuery(con, sql))
+  if (ds_fast(con)) {
+    res <- withCallingHandlers(
+      DBI::dbGetQuery(con, ds_interpolate(con, sql, params), immediate = TRUE),
+      warning = function(w) {
+        if (grepl("Don't need to call dbFetch", conditionMessage(w), fixed = TRUE)) invokeRestart("muffleWarning")
+      }
+    )
+    # RPostgres returns an empty result without columns in this mode; ask
+    # again the ordinary way so callers always get the column names and types.
+    if (ncol(res) > 0) return(res)
+  }
+  DBI::dbGetQuery(con, sql, params = unname(params))
 }
 
 ds_exec <- function(con, sql, params = list()) {
-  if (length(params)) DBI::dbExecute(con, sql, params = unname(params)) else DBI::dbExecute(con, sql)
+  if (!length(params)) return(DBI::dbExecute(con, sql))
+  if (ds_fast(con)) return(DBI::dbExecute(con, ds_interpolate(con, sql, params), immediate = TRUE))
+  DBI::dbExecute(con, sql, params = unname(params))
 }
 
 ds_transaction <- function(con, code) {
@@ -202,6 +240,30 @@ ds_get_proposal <- function(con, access, proposal_id) {
   )
 }
 
+#' Groups and members of several proposals in one group, in two queries
+#'
+#' Used to show the proposals in a list. Proposals from other groups are
+#' never returned, even if their ids are asked for.
+#' @return list(labels = data.frame(proposal_id, label, sort_order),
+#'   members = data.frame(proposal_id, spond_member_id, label))
+#' @noRd
+ds_proposal_groups <- function(con, access, group_id, proposal_ids) {
+  assert_group_access(access, group_id)
+  ids <- ds_text_array(as.integer(proposal_ids))
+  list(
+    labels = ds_query(con, "
+      SELECT l.proposal_id, l.label, l.sort_order
+        FROM group_proposal_labels l JOIN group_proposals p ON p.id = l.proposal_id
+       WHERE p.spond_group_id = $1 AND l.proposal_id = ANY($2::integer[])
+       ORDER BY l.proposal_id, l.sort_order", list(group_id, ids)),
+    members = ds_query(con, "
+      SELECT m.proposal_id, m.spond_member_id, m.label
+        FROM group_proposal_members m JOIN group_proposals p ON p.id = m.proposal_id
+       WHERE p.spond_group_id = $1 AND m.proposal_id = ANY($2::integer[])
+       ORDER BY m.proposal_id, m.label, m.spond_member_id", list(group_id, ids))
+  )
+}
+
 ds_validate_proposal <- function(name, labels, assignments) {
   name <- trimws(name)
   if (!nzchar(name) || nchar(name) > 120) stop("Navnet på forslaget må ha mellom 1 og 120 tegn.", call. = FALSE)
@@ -220,16 +282,26 @@ ds_validate_proposal <- function(name, labels, assignments) {
   list(name = name, labels = labels)
 }
 
+# Replace the groups of a proposal: three statements, however many groups
+# and members (deleting the labels also deletes the members, by cascade).
 ds_write_groups <- function(con, id, labels, assignments) {
+  id <- as.integer(id)
   ds_exec(con, "DELETE FROM group_proposal_labels WHERE proposal_id = $1", list(id))
-  for (i in seq_along(labels)) {
-    ds_exec(con, "INSERT INTO group_proposal_labels (proposal_id, label, sort_order) VALUES ($1, $2, $3)",
-            list(id, labels[i], i))
+  ds_exec(con, "INSERT INTO group_proposal_labels (proposal_id, label, sort_order)
+                SELECT $1, x.label, x.ord FROM unnest($2::text[]) WITH ORDINALITY AS x(label, ord)",
+          list(id, ds_text_array(labels)))
+  if (length(assignments)) {
+    ds_exec(con, "INSERT INTO group_proposal_members (proposal_id, spond_member_id, label)
+                  SELECT $1, x.member, x.label FROM unnest($2::text[], $3::text[]) AS x(member, label)",
+            list(id, ds_text_array(names(assignments)), ds_text_array(unname(assignments))))
   }
-  for (m in names(assignments)) {
-    ds_exec(con, "INSERT INTO group_proposal_members (proposal_id, spond_member_id, label) VALUES ($1, $2, $3)",
-            list(id, m, unname(assignments[[m]])))
-  }
+}
+
+# History entries for one proposal in one statement.
+ds_log_many <- function(con, proposal_id, actor, decisions) {
+  ds_exec(con, "INSERT INTO proposal_history (proposal_id, actor, decision)
+                SELECT $1, $2, d FROM unnest($3::text[]) WITH ORDINALITY AS x(d, ord) ORDER BY ord",
+          list(as.integer(proposal_id), actor, ds_text_array(decisions)))
 }
 
 #' Create or update a proposal
@@ -245,20 +317,20 @@ ds_write_groups <- function(con, id, labels, assignments) {
 ds_save_proposal <- function(con, access, actor, group_id, name, labels, assignments = character(),
                              subgroup_id = NULL, event_id = NULL, id = NULL, submit = FALSE) {
   v <- ds_validate_proposal(name, labels, assignments)
+  status <- if (isTRUE(submit)) "pending" else "draft"
   if (is.null(id)) {
     assert_group_access(access, group_id)
     # Event-bound proposals follow the event's visibility, so they carry no subgroup.
     sub <- if (is.null(event_id)) ds_opt(subgroup_id) else ""
+    decisions <- c("created", if (isTRUE(submit)) "sent_for_approval")
+    if (ds_fast(con)) return(ds_create_proposal_fast(con, group_id, sub, ds_opt(event_id), v, status, actor,
+                                                     assignments, decisions))
     ds_transaction(con, {
-      id <- ds_query(con, "INSERT INTO group_proposals (spond_group_id, spond_subgroup_id, spond_event_id, name, created_by)
-                           VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), $4, $5) RETURNING id",
-                     list(group_id, sub, ds_opt(event_id), v$name, actor))$id
+      id <- ds_query(con, "INSERT INTO group_proposals (spond_group_id, spond_subgroup_id, spond_event_id, name, created_by, status)
+                           VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), $4, $5, $6) RETURNING id",
+                     list(group_id, sub, ds_opt(event_id), v$name, actor, status))$id
       ds_write_groups(con, id, v$labels, assignments)
-      ds_log(con, id, actor, "created")
-      if (isTRUE(submit)) {
-        ds_exec(con, "UPDATE group_proposals SET status = 'pending', updated_at = now() WHERE id = $1", list(id))
-        ds_log(con, id, actor, "sent_for_approval")
-      }
+      ds_log_many(con, id, actor, decisions)
     })
     return(as.integer(id))
   }
@@ -266,19 +338,67 @@ ds_save_proposal <- function(con, access, actor, group_id, name, labels, assignm
   current <- ds_proposal_group(con, access, id)
   if (!identical(current$spond_group_id, group_id)) stop("Forslaget hører til en annen gruppe.", call. = FALSE)
   id <- as.integer(id)
+  not_editable <- function() stop("Forslaget kan ikke redigeres når status er «", current$status, "».", call. = FALSE)
+  decisions <- c("edited", if (isTRUE(submit)) "sent_for_approval")
+  if (ds_fast(con)) {
+    if (!ds_update_proposal_fast(con, id, v, status, actor, assignments, decisions)) not_editable()
+    return(id)
+  }
   ds_transaction(con, {
-    n <- ds_exec(con, "UPDATE group_proposals SET name = $2, status = 'draft', updated_at = now()
+    n <- ds_exec(con, "UPDATE group_proposals SET name = $2, status = $3, updated_at = now()
                         WHERE id = $1 AND status IN ('draft', 'rolled_back', 'rejected')",
-                 list(id, v$name))
-    if (n == 0) stop("Forslaget kan ikke redigeres når status er «", current$status, "».", call. = FALSE)
+                 list(id, v$name, status))
+    if (n == 0) not_editable()
     ds_write_groups(con, id, v$labels, assignments)
-    ds_log(con, id, actor, "edited")
-    if (isTRUE(submit)) {
-      ds_exec(con, "UPDATE group_proposals SET status = 'pending', updated_at = now() WHERE id = $1", list(id))
-      ds_log(con, id, actor, "sent_for_approval")
-    }
+    ds_log_many(con, id, actor, decisions)
   })
   id
+}
+
+# New proposal in ONE statement (one round trip): the proposal, its groups,
+# members and history are inserted together with data-modifying CTEs. It is
+# atomic on its own, and the foreign keys are checked at the end of it.
+ds_create_proposal_fast <- function(con, group_id, sub, event_id, v, status, actor, assignments, decisions) {
+  res <- ds_query(con, "
+    WITH p AS (
+      INSERT INTO group_proposals (spond_group_id, spond_subgroup_id, spond_event_id, name, created_by, status)
+      VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), $4, $5, $6) RETURNING id),
+    l AS (
+      INSERT INTO group_proposal_labels (proposal_id, label, sort_order)
+      SELECT p.id, x.label, x.ord FROM p, unnest($7::text[]) WITH ORDINALITY AS x(label, ord)),
+    m AS (
+      INSERT INTO group_proposal_members (proposal_id, spond_member_id, label)
+      SELECT p.id, x.member, x.label FROM p, unnest($8::text[], $9::text[]) AS x(member, label)),
+    h AS (
+      INSERT INTO proposal_history (proposal_id, actor, decision)
+      SELECT p.id, $5, x.d FROM p, unnest($10::text[]) WITH ORDINALITY AS x(d, ord) ORDER BY x.ord)
+    SELECT id FROM p",
+    list(group_id, sub, event_id, v$name, actor, status, ds_text_array(v$labels),
+         ds_text_array(names(assignments)), ds_text_array(unname(assignments)), ds_text_array(decisions)))
+  as.integer(res$id)
+}
+
+# Edit in ONE round trip: several statements sent together, which Postgres
+# runs as one transaction. The UPDATE only succeeds from an editable status;
+# it sets updated_at = now() (the transaction's start time), and the later
+# statements only run when that mark is there. The final SELECT tells
+# whether the edit happened.
+ds_update_proposal_fast <- function(con, id, v, status, actor, assignments, decisions) {
+  done <- "EXISTS (SELECT 1 FROM group_proposals WHERE id = $1 AND updated_at = now())"
+  sql <- paste0("
+    UPDATE group_proposals SET name = $2, status = $3, updated_at = now()
+     WHERE id = $1 AND status IN ('draft', 'rolled_back', 'rejected');
+    DELETE FROM group_proposal_labels WHERE proposal_id = $1 AND ", done, ";
+    INSERT INTO group_proposal_labels (proposal_id, label, sort_order)
+    SELECT $1, x.label, x.ord FROM unnest($4::text[]) WITH ORDINALITY AS x(label, ord) WHERE ", done, ";
+    INSERT INTO group_proposal_members (proposal_id, spond_member_id, label)
+    SELECT $1, x.member, x.label FROM unnest($5::text[], $6::text[]) AS x(member, label) WHERE ", done, ";
+    INSERT INTO proposal_history (proposal_id, actor, decision)
+    SELECT $1, $7, x.d FROM unnest($8::text[]) WITH ORDINALITY AS x(d, ord) WHERE ", done, " ORDER BY x.ord;
+    SELECT count(*)::integer AS n FROM group_proposals WHERE id = $1 AND updated_at = now()")
+  res <- ds_query(con, sql, list(id, v$name, status, ds_text_array(v$labels), ds_text_array(names(assignments)),
+                                 ds_text_array(unname(assignments)), actor, ds_text_array(decisions)))
+  isTRUE(res$n[1] > 0)
 }
 
 # Allowed status changes: action -> from-statuses, new status, history entry.
@@ -342,30 +462,40 @@ ds_acquire_lock <- function(con, access, group_id, editor, session_key,
     g <- ds_proposal_group(con, access, proposal_id)
     if (!identical(g$spond_group_id, group_id)) stop("Forslaget hører til en annen gruppe.", call. = FALSE)
   }
-  ds_transaction(con, {
-    ds_exec(con, "DELETE FROM edit_locks WHERE session_key = $1", list(session_key))
-    ds_exec(con, "INSERT INTO edit_locks (spond_group_id, spond_subgroup_id, spond_event_id, proposal_id, editor, session_key)
-                  VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), NULLIF($4, '')::integer, $5, $6)",
-            list(group_id, ds_opt(subgroup_id), ds_opt(event_id), ds_opt(proposal_id), editor, session_key))
-  })
+  # One statement: replaces this session's lock (session_key is unique).
+  ds_exec(con, "INSERT INTO edit_locks (spond_group_id, spond_subgroup_id, spond_event_id, proposal_id, editor, session_key)
+                VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), NULLIF($4, '')::integer, $5, $6)
+                ON CONFLICT (session_key) DO UPDATE
+                  SET spond_group_id = EXCLUDED.spond_group_id, spond_subgroup_id = EXCLUDED.spond_subgroup_id,
+                      spond_event_id = EXCLUDED.spond_event_id, proposal_id = EXCLUDED.proposal_id,
+                      editor = EXCLUDED.editor, started_at = now(), heartbeat_at = now()",
+          list(group_id, ds_opt(subgroup_id), ds_opt(event_id), ds_opt(proposal_id), editor, session_key))
+  # Clean up locks from closed browsers now and then (here, not on every read).
+  ds_exec(con, "DELETE FROM edit_locks WHERE heartbeat_at < now() - make_interval(secs => $1)", list(ds_lock_max_age))
   invisible(TRUE)
 }
 
-ds_heartbeat_lock <- function(con, session_key) {
-  invisible(ds_exec(con, "UPDATE edit_locks SET heartbeat_at = now() WHERE session_key = $1", list(session_key)) > 0)
+#' Renew this session's lock. FALSE if it is gone or has expired (then the
+#' caller acquires it again).
+#' @noRd
+ds_heartbeat_lock <- function(con, session_key, max_age = ds_lock_max_age) {
+  invisible(ds_exec(con, "UPDATE edit_locks SET heartbeat_at = now()
+                           WHERE session_key = $1 AND heartbeat_at >= now() - make_interval(secs => $2)",
+                    list(session_key, as.numeric(max_age))) > 0)
 }
 
 ds_release_lock <- function(con, session_key) {
   invisible(ds_exec(con, "DELETE FROM edit_locks WHERE session_key = $1", list(session_key)))
 }
 
-#' Active locks in a group (stale locks are cleaned up first)
+#' Active locks in a group (locks without a heartbeat for `max_age` seconds are ignored)
 #' @noRd
 ds_active_locks <- function(con, access, group_id, max_age = ds_lock_max_age) {
   assert_group_access(access, group_id)
-  ds_exec(con, "DELETE FROM edit_locks WHERE heartbeat_at < now() - make_interval(secs => $1)", list(as.numeric(max_age)))
   ds_query(con, "SELECT spond_subgroup_id, spond_event_id, proposal_id, editor, session_key, started_at
-                   FROM edit_locks WHERE spond_group_id = $1 ORDER BY started_at", list(group_id))
+                   FROM edit_locks
+                  WHERE spond_group_id = $1 AND heartbeat_at >= now() - make_interval(secs => $2)
+                  ORDER BY started_at", list(group_id, as.numeric(max_age)))
 }
 
 # Database setup (admin only) -----------------------------------------------------

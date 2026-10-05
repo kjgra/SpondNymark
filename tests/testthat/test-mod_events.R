@@ -14,7 +14,7 @@ test_that("the main group shows all upcoming events, marked with subgroups", {
     expect_match(html, "Avlyst")
     expect_match(html, "2 kommer · 1 ikke svart")
     expect_match(html, "Medlemmer i Nymark G/J 2016 · 4")
-    expect_match(html, "Gruppeutkast")
+    expect_false(grepl("Gruppeutkast", html))   # needs the database (see test-mod_groups.R)
     q <- api$calls()[[1]]
     expect_equal(q$group_id, "G2016")
     expect_null(q$subgroup_id)
@@ -127,4 +127,36 @@ test_that("no context, no view", {
 
 test_that("ui is a tag list", {
   expect_s3_class(mod_events_ui("x"), "shiny.tag.list")
+})
+
+test_that("members and participants are shown as chips with tags", {
+  api <- fake_events_api()
+  ctx <- reactiveVal(teams_context(fake_group()))
+  tagger <- list(chip = function(id, n) member_chip(id, n, if (id == "M-1") "Keeper" else character(), "tags-open"),
+                 error = function() NULL)
+  testServer(mod_events_server, args = c(events_args(api, ctx), tagger = list(tagger)), {
+    view_html(output)
+    members <- as.character(output$members$html)
+    expect_match(members, "Trykk på et navn")
+    expect_match(members, "data-sn-value=\"M-1\"")
+    expect_match(members, "sn-minitag\">Keeper")
+    session$setInputs(open = "E-ulv")
+    parts <- as.character(output$`participants-list`$html)
+    expect_match(parts, "data-sn-value=\"M-1\"")
+    expect_match(parts, "sn-minitag\">Keeper")
+    # Former members are not clickable
+    expect_false(grepl("data-sn-value=\"M-gone\"", parts))
+    expect_match(parts, "Tidligere medlem")
+  })
+})
+
+test_that("the members section stays open when the view is redrawn", {
+  api <- fake_events_api()
+  ctx <- reactiveVal(teams_context(fake_group()))
+  testServer(mod_events_server, args = events_args(api, ctx), {
+    expect_false(grepl("<details open data-sn-toggle=\"proxy1-members_open\"", view_html(output)))
+    session$setInputs(members_open = TRUE)
+    session$setInputs(tab = "past")
+    expect_match(view_html(output), "<details class=\"sn-fold\" open data-sn-toggle=\"proxy1-members_open\"")
+  })
 })

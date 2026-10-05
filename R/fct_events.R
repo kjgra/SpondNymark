@@ -90,7 +90,8 @@ event_sent_to <- function(event, group) {
 #' Names come from the whole main group, so they look the same in every
 #' context. Members who are no longer in the group are shown as "Tidligere
 #' medlem".
-#' @return data.frame: member_id, display_name, status, label; sorted by
+#' @return data.frame: member_id, display_name, status, label, known (still
+#'   a member of the group); sorted by
 #'   status order, then name.
 #' @noRd
 event_participants <- function(event, group) {
@@ -98,7 +99,8 @@ event_participants <- function(event, group) {
   r <- event$responses
   members <- members_in_context(group, NULL)
   r$display_name <- members$display_name[match(r$member_id, members$id)]
-  r$display_name[is.na(r$display_name)] <- "Tidligere medlem"
+  r$known <- !is.na(r$display_name)
+  r$display_name[!r$known] <- "Tidligere medlem"
   r$label <- st$label[match(r$status, st$status)]
   r <- r[order(match(r$status, st$status), tolower(r$display_name)), , drop = FALSE]
   rownames(r) <- NULL
@@ -142,4 +144,11 @@ event_when <- function(start, end = NA, tz = "Europe/Oslo", now = Sys.time()) {
     out <- paste0(out, "–", if (same_day) "" else paste0(day(e), " kl. "), format(e, "%H:%M", tz = tz))
   }
   out
+}
+
+#' Whether an event is over (ended, or started if it has no end time)
+#' @noRd
+event_is_past <- function(event, now = Sys.time()) {
+  t <- if (is.na(event$end)) event$start else event$end
+  !is.na(t) && t < now
 }

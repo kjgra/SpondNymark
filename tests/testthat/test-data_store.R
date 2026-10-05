@@ -252,3 +252,60 @@ test_that("connection strings are split into separate arguments for RPostgres", 
   expect_error(ds_connect_args("localhost:5432"), "Skjønte ikke")
   expect_error(ds_connect(""), "ikke satt")
 })
+
+test_that("groups of several proposals are read in one go, only from the own group", {
+  con <- local_test_db(); acc <- test_access()
+  a <- ds_save_proposal(con, acc, "P1", "G1", "A", c("Rød", "Blå"), c(M1 = "Blå", M2 = "Rød"), event_id = "E1")
+  b <- ds_save_proposal(con, acc, "P1", "G1", "B", "Alle", c(M3 = "Alle"))
+  DBI::dbExecute(con, "INSERT INTO group_proposals (spond_group_id, name, created_by) VALUES ('G2', 'Fremmed', 'P9')")
+  other <- DBI::dbGetQuery(con, "SELECT id FROM group_proposals WHERE spond_group_id = 'G2'")$id
+  DBI::dbExecute(con, "INSERT INTO group_proposal_labels (proposal_id, label, sort_order) VALUES ($1, 'X', 1)", params = list(other))
+  g <- ds_proposal_groups(con, acc, "G1", c(a, b, other))
+  expect_equal(g$labels$label, c("Rød", "Blå", "Alle"))
+  expect_equal(g$labels$proposal_id, c(a, a, b))
+  expect_equal(g$members$spond_member_id, c("M1", "M2", "M3"))
+  expect_equal(nrow(ds_proposal_groups(con, acc, "G1", integer())$labels), 0)
+  expect_error(ds_proposal_groups(con, acc, "G2", other), "ikke tilgang")
+})
+
+test_that("parameters are quoted safely when put into the SQL", {
+  con <- local_test_db(); acc <- test_access()
+  evil <- "x'); DROP TABLE member_tags; --"
+  ds_add_tag(con, acc, "G1", "M1", evil, "P1")
+  expect_equal(ds_list_tags(con, acc, "G1")$tag, evil)
+  expect_equal(ds_interpolate(con, "SELECT $2, $1, $10", c(list("a", "b"), as.list(3:10))),
+               "SELECT 'b', 'a', 10::int4")
+  expect_error(ds_interpolate(con, "SELECT $3", list("a")), "For få parametere")
+  # Empty results keep their columns
+  res <- ds_query(con, "SELECT spond_member_id, tag FROM member_tags WHERE spond_group_id = $1", list("ingen"))
+  expect_equal(names(res), c("spond_member_id", "tag"))
+  expect_equal(nrow(res), 0)
+})
+
+test_that("saving a proposal takes few statements, however many members", {
+  con <- local_test_db(); acc <- test_access()
+  members <- stats::setNames(rep(c("A", "B"), 15), paste0("M", 1:30))
+  n <- 0
+  exec <- ds_exec
+  query <- ds_query
+  local_mocked_bindings(ds_exec = function(...) { n <<- n + 1; exec(...) },
+                        ds_query = function(...) { n <<- n + 1; query(...) })
+  ds_save_proposal(con, acc, "P1", "G1", "Stor", c("A", "B"), members, event_id = "E1")
+  expect_lte(n, 1)                       # one round trip for a new proposal
+  id <- DBI::dbGetQuery(con, "SELECT id FROM group_proposals WHERE name = 'Stor'")$id
+  n <- 0
+  ds_save_proposal(con, acc, "P1", "G1", "Stor 2", c("A", "B"), members, event_id = "E1", id = id)
+  expect_lte(n, 2)                       # access check + one round trip for the edit
+  expect_equal(nrow(DBI::dbGetQuery(con, "SELECT 1 FROM group_proposal_members WHERE proposal_id = $1", params = list(id))), 30)
+})
+
+test_that("a proposal that is not editable is left untouched by an edit", {
+  con <- local_test_db(); acc <- test_access()
+  id <- ds_save_proposal(con, acc, "P1", "G1", "Til godkjenning", "A", c(M1 = "A"), submit = TRUE)
+  expect_error(ds_save_proposal(con, acc, "P1", "G1", "Endret", "B", c(M2 = "B"), id = id), "kan ikke redigeres")
+  g <- ds_get_proposal(con, acc, id)
+  expect_equal(g$proposal$name, "Til godkjenning")
+  expect_equal(g$labels$label, "A")
+  expect_equal(g$members$spond_member_id, "M1")
+  expect_equal(g$history$decision, c("created", "sent_for_approval"))
+})

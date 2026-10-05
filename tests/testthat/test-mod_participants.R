@@ -11,8 +11,8 @@ test_that("participants are listed by status with counts", {
     expect_match(html, "Noah S.")
     expect_match(html, "Tidligere medlem")
     # "Kommer" is open, "Kommer ikke" folded
-    expect_match(html, '<details class="sn-status sn-status-accepted" open>')
-    expect_match(html, '<details class="sn-status sn-status-declined">')
+    expect_match(html, '<details class="sn-status sn-status-accepted" open data-sn-toggle')
+    expect_match(html, '<details class="sn-status sn-status-declined" data-sn-toggle')
   })
 })
 

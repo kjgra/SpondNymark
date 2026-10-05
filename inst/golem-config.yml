@@ -9,6 +9,14 @@ default:
     - Trener
     - Lagleder
     - Hovedlagleder
+  # Nøytrale tagger som tilbys med ett trykk (posisjon og rolle). Aldri helseopplysninger.
+  tag_suggestions:
+    - Keeper
+    - Kaptein
+    - Forsvar
+    - Midtbane
+    - Angrep
+    - Ny
 
 production:
   app_prod: yes
