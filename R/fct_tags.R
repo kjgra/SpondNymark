@@ -118,9 +118,14 @@ remembered_details <- function(input_id, open, default, summary, ..., class = NU
 #' @noRd
 #' @param clickable Logical, recycled: FALSE for members who cannot be tagged
 #'   (e.g. former members).
-member_chips <- function(ids, names, tagger = NULL, clickable = TRUE) {
+#' @param kinds Optional member kinds ("coach", "player", "adult"). Only
+#'   players get tags; trainers get a black chip.
+member_chips <- function(ids, names, tagger = NULL, clickable = TRUE, kinds = NULL) {
   clickable <- rep_len(clickable, length(ids))
+  kinds <- if (is.null(kinds)) rep("player", length(ids)) else ifelse(is.na(kinds), "player", kinds)
   div(class = "sn-chips", lapply(seq_along(ids), function(i) {
-    if (is.null(tagger) || !clickable[i]) member_chip(ids[i], names[i]) else tagger$chip(ids[i], names[i])
+    if (identical(kinds[i], "coach")) return(span(class = "sn-chip sn-chip-coach", names[i]))
+    if (is.null(tagger) || !clickable[i] || !identical(kinds[i], "player")) member_chip(ids[i], names[i])
+    else tagger$chip(ids[i], names[i])
   }))
 }

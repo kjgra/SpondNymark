@@ -100,6 +100,47 @@ event_date_block <- function(s, tz = "Europe/Oslo") {
       span(class = "sn-event-month", if (is.na(s)) "" else short(no_month(s, tz))))
 }
 
+# A trainer in the member list: black row with the role name.
+coach_row <- function(name, roles) {
+  div(class = "sn-coach",
+      HTML(paste0('<svg class="sn-coach-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" ',
+                  'fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">',
+                  '<circle cx="9" cy="14" r="5"></circle><path d="M13 10l7-4M14 13h7"></path></svg>')),
+      span(class = "sn-coach-name", name),
+      if (nzchar(roles)) span(class = "sn-coach-role", roles))
+}
+
+# The members of a context in three sections: trainers (no tags), players
+# (tags) and other adults (guardians who are members without a trainer role;
+# the section is left out when empty).
+member_sections <- function(m, tagger = NULL) {
+  kind <- if (is.null(m$kind)) rep("player", nrow(m)) else m$kind
+  roles <- if (is.null(m$roles)) rep("", nrow(m)) else m$roles
+  coaches <- which(kind == "coach")
+  players <- which(kind == "player")
+  adults <- which(kind == "adult")
+  section_title <- function(title, n) h3(class = "sn-members-title", paste0(title, " \u00b7 ", n))
+  tagList(
+    div(class = "sn-members-section",
+        section_title("Trenere", length(coaches)),
+        if (length(coaches) == 0) p(class = "sn-hint", "Ingen med trenerrolle her.")
+        else div(class = "sn-coach-list", lapply(coaches, function(i) coach_row(m$display_name[i], roles[i])))),
+    div(class = "sn-members-section",
+        section_title("Spillere", length(players)),
+        if (length(players) == 0) p(class = "sn-hint", "Ingen spillere her.")
+        else tagList(
+          if (!is.null(tagger)) p(class = "sn-hint", "Trykk på et navn for å legge til eller fjerne tagger."),
+          member_chips(m$id[players], m$display_name[players], tagger)
+        )),
+    if (length(adults)) {
+      div(class = "sn-members-section",
+          section_title("Andre voksne", length(adults)),
+          p(class = "sn-hint", "Foresatte som er medlemmer uten trenerrolle. De får ikke tagger."),
+          member_chips(m$id[adults], m$display_name[adults]))
+    }
+  )
+}
+
 # Classes shared by the event row and the event page header.
 event_state_class <- function(event) {
   paste(c(if (isTRUE(event$match)) "sn-event-match", if (isTRUE(event$cancelled)) "sn-event-cancelled"),
@@ -247,11 +288,7 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
       m <- ctx$members
       tagList(
         if (!is.null(tagger) && !is.null(tagger$error())) div(class = "sn-alert", role = "alert", tagger$error()),
-        if (nrow(m) == 0) p(class = "sn-hint", "Ingen medlemmer.")
-        else tagList(
-          if (!is.null(tagger)) p(class = "sn-hint", "Trykk på et navn for å legge til eller fjerne tagger."),
-          member_chips(m$id, m$display_name, tagger)
-        )
+        if (nrow(m) == 0) p(class = "sn-hint", "Ingen medlemmer.") else member_sections(m, tagger)
       )
     })
 

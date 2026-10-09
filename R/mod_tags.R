@@ -51,12 +51,15 @@ mod_tags_server <- function(id, context, user, db, poll_ms = 15000, suggestions 
     })
 
     # Members are looked up in the main group, so ids from the browser can
-    # never point outside the group the trainer has access to.
+    # never point outside the group the trainer has access to. Only players
+    # get tags (not trainers or other adults).
     member_row <- function(id) {
       ctx <- context()
       if (is.null(ctx) || is.null(id)) return(NULL)
       m <- ctx$group$members[ctx$group$members$id == id, , drop = FALSE]
-      if (nrow(m) == 1) m else NULL
+      if (nrow(m) != 1) return(NULL)
+      if (!is.null(m$kind) && !identical(m$kind, "player")) return(NULL)
+      m
     }
 
     write <- function(f, fail_msg) {

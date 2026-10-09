@@ -319,3 +319,14 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-comment-add { display: flex; gap: 6px; margin-top: 8px; }
 .sn-comment-add .form-control { flex: 1; min-width: 0; }
 .sn-history { font-size: .8rem; color: var(--bs-secondary); padding: 1px 0; }
+
+/* Members: trainers, players, other adults */
+.sn-members-section + .sn-members-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--sn-line); }
+.sn-members-title { font-family: var(--sn-font-display); font-size: 1.1rem; font-weight: 800; margin: 0 0 8px; }
+.sn-coach-list { display: flex; flex-direction: column; gap: 6px; }
+.sn-coach { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 6px 12px; border-radius: 12px;
+  background: var(--sn-black); color: var(--sn-white); font-weight: 600; }
+.sn-coach-icon { color: var(--sn-yellow); flex: none; }
+.sn-coach-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.sn-coach-role { font-size: .8rem; font-weight: 600; color: var(--sn-yellow); text-align: right; }
+.sn-chip-coach { background: var(--sn-black); color: var(--sn-white); border-color: var(--sn-black); }

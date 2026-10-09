@@ -91,7 +91,7 @@ event_sent_to <- function(event, group) {
 #' context. Members who are no longer in the group are shown as "Tidligere
 #' medlem".
 #' @return data.frame: member_id, display_name, status, label, known (still
-#'   a member of the group); sorted by
+#'   a member of the group), kind (see `spond_member_kinds()`); sorted by
 #'   status order, then name.
 #' @noRd
 event_participants <- function(event, group) {
@@ -101,6 +101,7 @@ event_participants <- function(event, group) {
   r$display_name <- members$display_name[match(r$member_id, members$id)]
   r$known <- !is.na(r$display_name)
   r$display_name[!r$known] <- "Tidligere medlem"
+  r$kind <- if (is.null(members$kind)) rep("player", nrow(r)) else members$kind[match(r$member_id, members$id)]
   r$label <- st$label[match(r$status, st$status)]
   r <- r[order(match(r$status, st$status), tolower(r$display_name)), , drop = FALSE]
   rownames(r) <- NULL

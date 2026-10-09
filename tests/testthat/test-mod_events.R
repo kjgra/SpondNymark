@@ -232,3 +232,25 @@ test_that("with the database the top bar button shows the count and opens the ap
     expect_match(paste(unlist(output$bar), collapse = ""), "is-active")
   })
 })
+
+test_that("members are listed as trainers, players and (when any) other adults", {
+  m <- data.frame(id = c("M-c", "M-p1", "M-p2"), display_name = c("Kari T.", "Ida S.", "Jon B."),
+                  kind = c("coach", "player", "player"), roles = c("Teamleder", "", ""))
+  html <- as.character(member_sections(m))
+  expect_match(html, "Trenere · 1")
+  expect_match(html, "Spillere · 2")
+  expect_match(html, "sn-coach-role\">Teamleder")
+  expect_false(grepl("Andre voksne", html))
+  m2 <- rbind(m, data.frame(id = "M-a", display_name = "Anne V.", kind = "adult", roles = ""))
+  expect_match(as.character(member_sections(m2)), "Andre voksne · 1")
+})
+
+test_that("only players get clickable chips", {
+  tagger <- list(chip = function(id, name, note = NULL) tags$button(`data-sn-value` = id, name))
+  html <- as.character(member_chips(c("M-c", "M-p", "M-a"), c("Kari", "Ida", "Anne"), tagger,
+                                    kinds = c("coach", "player", "adult")))
+  expect_match(html, "sn-chip sn-chip-coach\">Kari")
+  expect_match(html, "data-sn-value=\"M-p\"")
+  expect_false(grepl("data-sn-value=\"M-a\"", html))
+  expect_false(grepl("data-sn-value=\"M-c\"", html))
+})

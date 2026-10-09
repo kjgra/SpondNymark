@@ -9,6 +9,16 @@ default:
     - Trener
     - Lagleder
     - Hovedlagleder
+  # Spond-roller som gjør et medlem til trener: vist for seg, uten tagger, og ikke
+  # fordelt i gruppeforslag for arrangementer. Uavhengig av tilgangslisten over.
+  coach_role_names:
+    - Teamleder
+    - Trener
+    - Lagleder
+    - Hovedlagleder
+    - Hjelpetrener
+    - Keepertrener
+    - Hjelper
   # Nøytrale tagger som tilbys med ett trykk (posisjon og rolle). Aldri helseopplysninger.
   tag_suggestions:
     - Keeper
