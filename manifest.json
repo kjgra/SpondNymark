@@ -1757,7 +1757,7 @@
       "checksum": "17f847933966777e7397760158d3dc05"
     },
     "app.R": {
-      "checksum": "972d378c525fe5d255cecc306c5735a5"
+      "checksum": "83f7784fbb8bb2059f3b11bdd12dae4f"
     },
     "DESCRIPTION": {
       "checksum": "b6992bedb812649dd3358aee87a88d8c"
@@ -1785,6 +1785,9 @@
     },
     "NAMESPACE": {
       "checksum": "9096f7f5795633f990d3fe1352f8f9fc"
+    },
+    "R/_disable_autoload.R": {
+      "checksum": "ab5ec214e17be89bb07c79e479c1a39f"
     },
     "R/app_config.R": {
       "checksum": "0f79d97837ff91c50f065824b39a6fbc"

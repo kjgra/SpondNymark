@@ -14,3 +14,4 @@ $run_dev.*
 ^\.git$
 ^rsconnect$
 ^manifest\.json$
+^R/_disable_autoload\.R$
