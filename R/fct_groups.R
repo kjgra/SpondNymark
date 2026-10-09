@@ -203,7 +203,8 @@ is_player_kind <- function(kind) is.na(kind) | kind == "player"
 
 #' Members who can be placed in the editor
 #'
-#' For an event: every player who has said "Kommer", plus those already
+#' For an event: every player who has said "Kommer" (before the invitation
+#' is sent: every player invited, see `placeable_status()`), plus those already
 #' placed (even if they later changed their answer, or are trainers placed
 #' before trainers were left out). For a gruppeutkast: the members of the
 #' context, plus those already placed.
@@ -217,7 +218,8 @@ draft_members <- function(draft, group, members) {
   placed <- names(draft$assignments)
   if (!is.null(draft$event)) {
     p <- event_participants(draft$event, group)
-    p <- p[(p$status == "accepted" & is_player_kind(p$kind)) | p$member_id %in% placed, , drop = FALSE]
+    ok <- placeable_status(p$status, draft$event$not_sent) & is_player_kind(p$kind)
+    p <- p[ok | p$member_id %in% placed, , drop = FALSE]
     out <- data.frame(member_id = p$member_id, display_name = p$display_name, status = p$status,
                       known = p$known, kind = kind_or_na(p$kind, nrow(p)), stringsAsFactors = FALSE)
     missing <- setdiff(placed, out$member_id)   # placed, but no longer a recipient

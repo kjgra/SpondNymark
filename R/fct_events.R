@@ -35,7 +35,10 @@ ids_of <- function(x) {
 
 #' Keep only what the app needs from one raw event
 #' @return list(id, heading, start, end, cancelled, match, subgroup_ids,
-#'   responses = data.frame(member_id, status))
+#'   invite_time, not_sent, responses = data.frame(member_id, status)).
+#'   `not_sent`: the invitation has not been sent yet. Spond then gives the
+#'   planned send time in `inviteTime` (only on events not sent; see the spike
+#'   report, part 7).
 #' @noRd
 event_minimal <- function(e) {
   st <- event_statuses()
@@ -56,6 +59,8 @@ event_minimal <- function(e) {
     cancelled = isTRUE(e$cancelled),
     match = isTRUE(e$matchEvent),
     subgroup_ids = unique(ids_of(rec$group$subGroups %||% rec$subGroups)),
+    invite_time = spond_parse_time(e$inviteTime),
+    not_sent = !is.na(spond_parse_time(e$inviteTime)),
     responses = responses
   )
 }
@@ -152,4 +157,23 @@ event_when <- function(start, end = NA, tz = "Europe/Oslo", now = Sys.time()) {
 event_is_past <- function(event, now = Sys.time()) {
   t <- if (is.na(event$end)) event$start else event$end
   !is.na(t) && t < now
+}
+
+#' Round icon for a response: green tick (Kommer), yellow question mark
+#' (Ikke svart), red cross (Kommer ikke), grey V (Venteliste) and grey !
+#' (Ikke bekreftet). The status is also in the tooltip and for screen readers.
+#' @noRd
+status_icon <- function(status) {
+  sym <- c(accepted = "\u2713", unanswered = "?", declined = "\u2715", waiting = "V", unconfirmed = "!")
+  if (is.null(status) || length(status) != 1 || is.na(status) || !status %in% names(sym)) return(NULL)
+  st <- event_statuses()
+  label <- st$label[match(status, st$status)]
+  span(class = paste0("sn-st sn-st-", status), role = "img", `aria-label` = label, title = label, sym[[status]])
+}
+
+#' Statuses a player may be placed with in an event proposal: "Kommer"; before
+#' the invitation is sent, everyone invited (no one has answered yet).
+#' @noRd
+placeable_status <- function(status, not_sent = FALSE) {
+  if (isTRUE(not_sent)) !is.na(status) & status != "declined" else !is.na(status) & status == "accepted"
 }

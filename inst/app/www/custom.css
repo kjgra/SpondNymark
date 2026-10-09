@@ -352,3 +352,18 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-mcard-warn { box-shadow: 0 0 0 2px var(--sn-yellow); }
 .sn-mcard-warning { font-size: .72rem; font-weight: 600; color: var(--sn-yellow); }
 .sn-mcard:not(.sn-mcard-coach) .sn-mcard-warning { color: var(--sn-yellow-ink); }
+
+/* Events not sent yet: white date block with black border */
+.sn-event-unsent { background: #FAFAF8; box-shadow: inset 0 0 0 1.5px var(--sn-grey-2); }
+.sn-event-unsent .sn-event-date { background: var(--sn-white); color: var(--sn-black); box-shadow: inset 0 0 0 2px var(--sn-black); }
+.sn-event-unsent .sn-event-wday { color: var(--sn-grey); }
+.sn-tag-unsent { background: var(--sn-white); color: var(--sn-grey); box-shadow: inset 0 0 0 1px var(--sn-grey); }
+
+/* Response icons: green tick, yellow ?, red cross, grey V (waiting list) and ! (unconfirmed) */
+.sn-st { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 18px; height: 18px;
+  border-radius: 50%; font-size: .68rem; font-weight: 800; line-height: 1; margin-right: 2px; }
+.sn-st-accepted { background: var(--sn-green); color: var(--sn-white); }
+.sn-st-unanswered { background: var(--sn-yellow); color: var(--sn-black); }
+.sn-st-declined { background: var(--sn-red-dark); color: var(--sn-white); }
+.sn-st-waiting, .sn-st-unconfirmed { background: var(--sn-grey-2); color: var(--sn-black); }
+.sn-mcard-name { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }

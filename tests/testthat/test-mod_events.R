@@ -43,12 +43,12 @@ test_that("past events use a window that can be widened", {
     session$setInputs(tab = "past")
     html <- view_html(output)
     expect_match(html, "Viser siste 30 dager")
-    q <- api$calls()[[2]]
+    q <- api$calls()[[3]]                   # 1-2: upcoming (sent, and not sent yet)
     expect_equal(q$max_end, fake_now())
     expect_equal(q$min_end, fake_now() - 30 * 86400)
     session$setInputs(older = "x")
     expect_match(view_html(output), "Viser siste 60 dager")
-    expect_equal(api$calls()[[3]]$min_end, fake_now() - 60 * 86400)
+    expect_equal(api$calls()[[4]]$min_end, fake_now() - 60 * 86400)
     # Back to upcoming uses the cached result
     n <- length(api$calls())
     session$setInputs(tab = "upcoming")
@@ -115,7 +115,7 @@ test_that("refresh fetches again", {
     view_html(output)
     session$setInputs(refresh = "x")
     view_html(output)
-    expect_equal(length(api$calls()), 2)
+    expect_equal(length(api$calls()), 4)      # two calls per fetch of upcoming events
   })
 })
 
@@ -254,4 +254,78 @@ test_that("only players get clickable chips", {
   expect_match(html, "data-sn-value=\"M-p\"")
   expect_false(grepl("data-sn-value=\"M-a\"", html))
   expect_false(grepl("data-sn-value=\"M-c\"", html))
+})
+
+test_that("trainers are not placed in event groups, but shown on the event page", {
+  g <- fake_group()                                   # M-me is Teamleder
+  ev <- event_minimal(fake_spond_events()[[1]])       # M-1 and M-3 are coming
+  ev$responses <- rbind(ev$responses, data.frame(member_id = "M-me", status = "accepted"))
+  d <- list(event = ev, labels = "A", assignments = character())
+  m <- draft_members(d, g, members_in_context(g))
+  expect_false("M-me" %in% m$member_id)
+  expect_true(all(c("M-1", "M-3") %in% m$member_id))
+  # A trainer placed before this change can still be moved out
+  d$assignments <- c(`M-me` = "A")
+  expect_true("M-me" %in% draft_members(d, g, members_in_context(g))$member_id)
+
+  line <- as.character(event_coaches_line(ev, g))
+  expect_match(line, "Trenere:")
+  expect_match(line, "Kjetil G.")
+  expect_match(line, "fordeles ikke")
+  expect_null(event_coaches_line(event_minimal(fake_spond_events()[[1]]), g))
+  ev$responses$status[ev$responses$member_id == "M-me"] <- "declined"
+  expect_null(event_coaches_line(ev, g))
+})
+
+test_that("events not sent yet are fetched for a window, marked, and the window can be widened", {
+  unsent <- list(id = "E-plan", heading = "Mandagstrening", startTimestamp = "2026-10-12T16:00:00Z",
+                 endTimestamp = "2026-10-12T17:30:00Z", inviteTime = "2026-10-09T16:00:00Z",
+                 recipients = list(group = list(id = "G2016", subGroups = list(list(id = "S-ulv")))),
+                 responses = list(unansweredIds = list("M-1", "M-3", "M-me")))
+  calls <- list()
+  api <- fake_spond_api()
+  api$events <- function(sess, ...) {
+    q <- list(...)
+    calls[[length(calls) + 1]] <<- q
+    if (isTRUE(q$include_scheduled)) c(fake_spond_events(), list(unsent)) else fake_spond_events()
+  }
+  ctx <- reactiveVal(teams_context(fake_group()))
+  testServer(mod_events_server, args = list(context = ctx, user = reactive(fake_user(fake_spond_groups_two())),
+                                            spond = api, now = fake_now), {
+    html <- view_html(output)
+    expect_match(html, "Mandagstrening")
+    expect_match(html, "sn-event-unsent")
+    expect_match(html, "Ikke sendt ut · sendes fre. 9. okt.")
+    expect_match(html, "3 får invitasjonen")
+    expect_equal(sum(gregexpr("Trening Ulv", html)[[1]] > 0), 1)   # no duplicates from the two calls
+    expect_true(isTRUE(calls[[2]]$include_scheduled))
+    expect_equal(calls[[2]]$max_start, fake_now() + 28 * 86400)
+    expect_match(html, "neste 4 ukene")
+    session$setInputs(later = "x")
+    view_html(output)
+    expect_equal(calls[[length(calls)]]$max_start, fake_now() + 56 * 86400)
+  })
+})
+
+test_that("before the invitation is sent, every invited player can be placed", {
+  g <- fake_group()
+  ev <- event_minimal(list(id = "E-plan", heading = "Trening", inviteTime = "2026-10-09T16:00:00Z",
+                           responses = list(unansweredIds = list("M-1", "M-3", "M-me"))))
+  expect_true(ev$not_sent)
+  m <- draft_members(list(event = ev, labels = "A", assignments = character()), g, members_in_context(g))
+  expect_setequal(m$member_id, c("M-1", "M-3"))            # not the trainer
+  sent <- ev; sent$not_sent <- FALSE
+  expect_equal(nrow(draft_members(list(event = sent, labels = "A", assignments = character()), g,
+                                  members_in_context(g))), 0)
+})
+
+test_that("response icons: tick, question mark, cross, and nothing for unknown", {
+  expect_match(as.character(status_icon("accepted")), "sn-st sn-st-accepted.*aria-label=\"Kommer\"")
+  expect_match(as.character(status_icon("unanswered")), ">\\?<")
+  expect_match(as.character(status_icon("declined")), "Kommer ikke")
+  expect_null(status_icon(NA))
+  expect_null(status_icon(NULL))
+  expect_null(status_icon("noe annet"))
+  chip <- as.character(member_chip("M-1", "Emma H.", status = "declined"))
+  expect_match(chip, "sn-st-declined")
 })
