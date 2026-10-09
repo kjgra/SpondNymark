@@ -200,12 +200,12 @@ tab_switch <- function(ns, tab) {
 
 #' @noRd
 mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond = spond_api(),
-                              now = Sys.time, past_days = 30, upcoming_days = 28) {
+                              now = Sys.time, past_days = 30, unsent_shown = 5, unsent_horizon_days = 183) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     tab <- reactiveVal("upcoming")
     past_window <- reactiveVal(past_days)
-    upcoming_window <- reactiveVal(upcoming_days)   # how far ahead events not sent yet are shown
+    unsent_limit <- reactiveVal(unsent_shown)   # how many events not sent yet are shown ("Vis flere" adds more)
     selected <- reactiveVal(NULL)   # minimal event, or NULL for the list
     refresh <- reactiveVal(0)
 
@@ -220,7 +220,7 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
       selected(NULL)
       tab("upcoming")
       past_window(past_days)
-      upcoming_window(upcoming_days)
+      unsent_limit(unsent_shown)
       group_id(context()$group_id)
     })
 
@@ -244,16 +244,16 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
       refresh()
       t <- now()
       # Events whose invitation is sent, as before, and events not sent yet
-      # (scheduled) within the window. Spond lists the latest first and stops
-      # at `max`, so the window keeps far-off series from crowding out the
-      # next weeks.
+      # (scheduled) up to about half a year ahead. Spond lists the latest first
+      # and stops at `max`, so the horizon keeps far-off series from crowding
+      # out the next weeks. How many of them are shown is decided below.
       res <- fetch(ctx, min_end = t, max_events = 100, subgroup_id = NULL)
       if (!is.null(res$error)) {
         res$events <- list()
         return(res)
       }
-      unsent <- fetch(ctx, min_end = t, max_start = t + upcoming_window() * 86400,
-                      include_scheduled = TRUE, max_events = 200, subgroup_id = NULL)
+      unsent <- fetch(ctx, min_end = t, max_start = t + unsent_horizon_days * 86400,
+                      include_scheduled = TRUE, max_events = 300, subgroup_id = NULL)
       raw <- c(res$events, if (is.null(unsent$error)) unsent$events)
       ids <- vapply(raw, function(e) as.character(e$id %||% NA), character(1))
       res$events <- events_for_context(raw[!duplicated(ids)], NULL)
@@ -267,6 +267,11 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
       if (!is.null(ctx$subgroup_id)) {
         res$events <- Filter(function(e) ctx$subgroup_id %in% e$subgroup_ids, res$events)
       }
+      # All events that are sent, and the next few that are not sent yet.
+      not_sent <- vapply(res$events, function(e) isTRUE(e$not_sent), logical(1))
+      keep <- !not_sent | cumsum(not_sent) <= unsent_limit()
+      res$n_unsent_hidden <- sum(not_sent & !keep)
+      res$events <- res$events[keep]
       res
     })
 
@@ -297,7 +302,7 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
       if (identical(input$tab, "approvals")) selected(NULL)
     })
     observeEvent(input$older, past_window(past_window() + past_days))
-    observeEvent(input$later, upcoming_window(upcoming_window() + upcoming_days))
+    observeEvent(input$later, unsent_limit(unsent_limit() + unsent_shown))
     observeEvent(input$refresh, refresh(refresh() + 1))
     observeEvent(input$back, selected(NULL))
     observeEvent(input$open, {
@@ -382,10 +387,9 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
                 tags$button(type = "button", class = "btn btn-sm btn-outline-secondary",
                             onclick = set_input_js(ns("older"), "x"), "Vis eldre"))
           },
-          if (!is_past && !is_approvals && is.null(res$error)) {
+          if (!is_past && !is_approvals && is.null(res$error) && isTRUE(res$n_unsent_hidden > 0)) {
             div(class = "sn-more",
-                span(class = "sn-hint", paste0("Arrangementer som ikke er sendt ut, vises for de neste ",
-                                               upcoming_window() %/% 7, " ukene.")),
+                span(class = "sn-hint", paste0(res$n_unsent_hidden, " flere som ikke er sendt ut.")),
                 tags$button(type = "button", class = "btn btn-sm btn-outline-secondary",
                             onclick = set_input_js(ns("later"), "x"), "Vis flere"))
           }

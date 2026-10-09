@@ -278,33 +278,40 @@ test_that("trainers are not placed in event groups, but shown on the event page"
   expect_null(event_coaches_line(ev, g))
 })
 
-test_that("events not sent yet are fetched for a window, marked, and the window can be widened", {
-  unsent <- list(id = "E-plan", heading = "Mandagstrening", startTimestamp = "2026-10-12T16:00:00Z",
-                 endTimestamp = "2026-10-12T17:30:00Z", inviteTime = "2026-10-09T16:00:00Z",
-                 recipients = list(group = list(id = "G2016", subGroups = list(list(id = "S-ulv")))),
-                 responses = list(unansweredIds = list("M-1", "M-3", "M-me")))
+test_that("events not sent yet are marked, and only the next five are shown until 'Vis flere'", {
+  plan <- function(k) {
+    list(id = paste0("E-plan", k), heading = paste0("Plantrening ", k),
+         startTimestamp = sprintf("2026-10-%02dT16:00:00Z", 10 + k), endTimestamp = sprintf("2026-10-%02dT17:30:00Z", 10 + k),
+         inviteTime = sprintf("2026-10-%02dT16:00:00Z", 7 + k),
+         recipients = list(group = list(id = "G2016", subGroups = list(list(id = "S-ulv")))),
+         responses = list(unansweredIds = list("M-1", "M-3", "M-me")))
+  }
   calls <- list()
   api <- fake_spond_api()
   api$events <- function(sess, ...) {
     q <- list(...)
     calls[[length(calls) + 1]] <<- q
-    if (isTRUE(q$include_scheduled)) c(fake_spond_events(), list(unsent)) else fake_spond_events()
+    if (isTRUE(q$include_scheduled)) c(fake_spond_events(), lapply(1:7, plan)) else fake_spond_events()
   }
   ctx <- reactiveVal(teams_context(fake_group()))
   testServer(mod_events_server, args = list(context = ctx, user = reactive(fake_user(fake_spond_groups_two())),
                                             spond = api, now = fake_now), {
     html <- view_html(output)
-    expect_match(html, "Mandagstrening")
     expect_match(html, "sn-event-unsent")
-    expect_match(html, "Ikke sendt ut · sendes fre. 9. okt.")
+    expect_match(html, "Ikke sendt ut · sendes tor. 8. okt.")      # Plantrening 1
     expect_match(html, "3 får invitasjonen")
+    expect_match(html, "Plantrening 5")
+    expect_false(grepl("Plantrening 6", html))
+    expect_match(html, "2 flere som ikke er sendt ut")
     expect_equal(sum(gregexpr("Trening Ulv", html)[[1]] > 0), 1)   # no duplicates from the two calls
     expect_true(isTRUE(calls[[2]]$include_scheduled))
-    expect_equal(calls[[2]]$max_start, fake_now() + 28 * 86400)
-    expect_match(html, "neste 4 ukene")
+    expect_equal(calls[[2]]$max_start, fake_now() + 183 * 86400)
+    n <- length(calls)
     session$setInputs(later = "x")
-    view_html(output)
-    expect_equal(calls[[length(calls)]]$max_start, fake_now() + 56 * 86400)
+    html <- view_html(output)
+    expect_match(html, "Plantrening 7")
+    expect_false(grepl("flere som ikke er sendt ut", html))
+    expect_equal(length(calls), n)                                   # no new fetch
   })
 })
 
