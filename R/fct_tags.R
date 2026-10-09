@@ -90,18 +90,22 @@ tag_suggestions_for <- function(tags, member_id, fixed = tag_suggestions()) {
 #' @param short Show tags as short labels (see `tag_abbrev()`), for narrow
 #'   places such as group boxes. The full tag is in the tooltip.
 #' @param universe All tags in use in the group (for unique short labels).
+#' @param status Response status for an event (`event_statuses()`), shown as
+#'   a round icon before the name; NULL for none.
 member_chip <- function(member_id, name, member_tags = character(), open_input = NULL, note = NULL,
-                        short = FALSE, universe = member_tags) {
+                        short = FALSE, universe = member_tags, status = NULL) {
   mini <- tagList(minitags(member_tags, short, universe),
                   if (!is.null(note)) span(class = "sn-note", note))
-  if (is.null(open_input)) return(span(class = "sn-chip", name, mini))
+  icon <- status_icon(status)
+  if (is.null(open_input)) return(span(class = "sn-chip", icon, name, mini))
   tags$button(
     type = "button", class = "sn-chip sn-chip-btn",
     `data-sn-input` = open_input, `data-sn-value` = member_id,
-    `aria-label` = paste0(name, if (!is.null(note)) paste0(" (", note, ")"),
+    `aria-label` = paste0(name, if (!is.null(icon)) paste0(" (", event_statuses()$label[match(status, event_statuses()$status)], ")"),
+                          if (!is.null(note)) paste0(" (", note, ")"),
                           if (length(member_tags)) paste0(", tagger: ", paste(member_tags, collapse = ", ")),
                           ". Endre tagger."),
-    name, mini
+    icon, name, mini
   )
 }
 
@@ -124,13 +128,15 @@ remembered_details <- function(input_id, open, default, summary, ..., class = NU
 #'   (e.g. former members).
 #' @param kinds Optional member kinds ("coach", "player", "adult"). Only
 #'   players get tags; trainers get a black chip.
-member_chips <- function(ids, names, tagger = NULL, clickable = TRUE, kinds = NULL) {
+#' @param statuses Optional response statuses, shown as icons.
+member_chips <- function(ids, names, tagger = NULL, clickable = TRUE, kinds = NULL, statuses = NULL) {
   clickable <- rep_len(clickable, length(ids))
   kinds <- if (is.null(kinds)) rep("player", length(ids)) else ifelse(is.na(kinds), "player", kinds)
+  st <- function(i) if (is.null(statuses)) NULL else statuses[i]
   div(class = "sn-chips", lapply(seq_along(ids), function(i) {
-    if (identical(kinds[i], "coach")) return(span(class = "sn-chip sn-chip-coach", names[i]))
-    if (is.null(tagger) || !clickable[i] || !identical(kinds[i], "player")) member_chip(ids[i], names[i])
-    else tagger$chip(ids[i], names[i])
+    if (identical(kinds[i], "coach")) return(span(class = "sn-chip sn-chip-coach", status_icon(st(i)), names[i]))
+    if (is.null(tagger) || !clickable[i] || !identical(kinds[i], "player")) return(member_chip(ids[i], names[i], status = st(i)))
+    if (is.null(st(i)) || is.na(st(i))) tagger$chip(ids[i], names[i]) else tagger$chip(ids[i], names[i], status = st(i))
   }))
 }
 

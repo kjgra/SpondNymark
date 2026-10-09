@@ -141,3 +141,53 @@ test_that("history and times read well in Norwegian", {
   expect_equal(short_time(t, now = fake_now()), "5. okt. kl. 18:40")
   expect_equal(short_time(as.POSIXct("2025-12-24 10:00:00", tz = "UTC"), now = fake_now()), "24. des. 2025 kl. 11:00")
 })
+
+# Gruppeutkast: a trainer follows their child --------------------------------------
+follow_draft <- function() list(event = NULL, labels = c("A", "B"), assignments = character())
+follow_links <- data.frame(parent_id = c("P", "P2", "P2"), child_id = c("K", "K1", "K2"))
+allowed <- c("P", "K", "P2", "K1", "K2", "X")
+
+test_that("a trainer follows their child, also back to the pool", {
+  r <- draft_move_follow(follow_draft(), "K", "A", allowed, follow_links)
+  expect_equal(r$draft$assignments[["K"]], "A")
+  expect_equal(r$draft$assignments[["P"]], "A")
+  expect_equal(r$followed, "P")
+  # The trainer can then be moved alone
+  r2 <- draft_move_follow(r$draft, "P", "B", allowed, follow_links)
+  expect_equal(r2$draft$assignments[["P"]], "B")
+  expect_equal(r2$draft$assignments[["K"]], "A")
+  expect_length(r2$followed, 0)
+  # Child back to the pool: the trainer follows
+  r3 <- draft_move_follow(r2$draft, "K", "", allowed, follow_links)
+  expect_false("K" %in% names(r3$draft$assignments))
+  expect_false("P" %in% names(r3$draft$assignments))
+})
+
+test_that("with several children the last one moved decides; no links, no following", {
+  d <- draft_move_follow(follow_draft(), "K1", "A", allowed, follow_links)$draft
+  d <- draft_move_follow(d, "K2", "B", allowed, follow_links)$draft
+  expect_equal(d$assignments[["P2"]], "B")
+  r <- draft_move_follow(follow_draft(), "K", "A", allowed, NULL)
+  expect_false("P" %in% names(r$draft$assignments))
+  # A trainer who may not be placed does not follow
+  r <- draft_move_follow(follow_draft(), "K", "A", setdiff(allowed, "P"), follow_links)
+  expect_false("P" %in% names(r$draft$assignments))
+  # A move that is not allowed changes nothing
+  expect_length(draft_move_follow(follow_draft(), "K", "Finnes ikke", allowed, follow_links)$followed, 0)
+})
+
+test_that("a trainer placed away from all their placed children gets a warning", {
+  nm <- function(ids) paste0("Navn-", ids)
+  expect_equal(parent_notes(c(P = "B", K = "A"), follow_links, nm), c(P = "Forelder til Navn-K (A)"))
+  expect_length(parent_notes(c(P = "B"), follow_links, nm), 0)                   # child not placed
+  expect_length(parent_notes(c(P2 = "A", K1 = "A", K2 = "B"), follow_links, nm), 0)  # with one child
+  expect_length(parent_notes(c(K = "A"), follow_links, nm), 0)                   # trainer not placed
+  expect_length(parent_notes(c(P = "B", K = "A"), NULL, nm), 0)
+})
+
+test_that("draft members carry their kind", {
+  g <- fake_group()
+  m <- draft_members(follow_draft(), g, members_in_context(g))
+  expect_equal(m$kind[m$member_id == "M-me"], "coach")
+  expect_equal(m$kind[m$member_id == "M-1"], "player")
+})

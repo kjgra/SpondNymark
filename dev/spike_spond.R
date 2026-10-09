@@ -8,6 +8,8 @@
 #   4. at både kommende og gjennomførte arrangementer kan hentes,
 #   6. (runde 1, punkt B) hvilke roller som finnes, og om trenere kan kobles
 #      til barna sine via foresatte (profil-ID). Bare antall, ingen navn.
+#   7. (runde 1, punkt C) hvordan arrangementer som ikke er sendt ut ennå
+#      (planlagt utsending) ser ut. Bare feltnavn, tidspunkter og antall.
 #
 # Kjør fra prosjektmappen:  source("dev/spike_spond.R")
 # Krever pakkene pkgload, httr2 og askpass (askpass følger med httr2).
@@ -232,6 +234,55 @@ for (g in led) {
       inn <- vapply(sgs, function(x) sg_tab$id[j] %in% x, logical(1))
       say("- ", sg_tab$name[j], ": ", sum(inn), " | ", sum(inn & is_coach), " | ",
           sum(inn & vapply(member_roles, length, integer(1)) > 0))
+    }
+  }
+}
+
+# Arrangementer som ikke er sendt ut (runde 1, punkt C) ------------------------------
+# Henter kommende arrangementer med og uten scheduled=true og ser på dem som
+# bare kommer med når scheduled=true. Viser feltnavn, felt som har med
+# utsending å gjøre, og antall svar. Ingen navn på personer.
+section("7. Arrangementer som ikke er sendt ut")
+if (!is.null(target)) {
+  normal <- safely("kommende uten scheduled",
+                   spond_get_events(session, group_id = target$id, min_end = Sys.time(), max_events = 100))
+  with_sched <- safely("kommende med scheduled",
+                       spond_get_events(session, group_id = target$id, min_end = Sys.time(),
+                                        include_scheduled = TRUE, max_events = 100))
+  if (!is.null(normal) && !is.null(with_sched)) {
+    ids_normal <- vapply(normal, function(e) as.character(e$id), character(1))
+    only_sched <- Filter(function(e) !as.character(e$id) %in% ids_normal, with_sched)
+    say("Kommende uten scheduled: ", length(normal), " | med scheduled: ", length(with_sched),
+        " | bare med scheduled (ikke sendt ut): ", length(only_sched))
+    fields_normal <- field_names(normal)
+    if (length(only_sched)) {
+      fs <- field_names(only_sched)
+      say("Felter bare på ikke-utsendte: ", paste(setdiff(fs, fields_normal), collapse = ", "))
+      say("Felter bare på utsendte: ", paste(setdiff(fields_normal, fs), collapse = ", "))
+    }
+    show_flags <- function(e) {
+      keys <- grep("invite|sched|draft|publish|sent|send|remind|visib|hidden|open", names(e), value = TRUE, ignore.case = TRUE)
+      vals <- vapply(keys, function(k) {
+        v <- e[[k]]
+        if (is.null(v)) "NULL" else if (is.atomic(v) && length(v) == 1) as.character(v)
+        else paste0("<", class(v)[1], " ", length(v), ">")
+      }, character(1))
+      if (length(keys)) paste0(keys, "=", vals, collapse = ", ") else "(ingen)"
+    }
+    resp_counts <- function(e) {
+      r <- e$responses
+      if (length(r)) paste0(names(r), "=", vapply(r, length, integer(1)), collapse = ", ") else "(ingen)"
+    }
+    say("\nIkke sendt ut (maks 5):")
+    for (e in head(only_sched, 5)) {
+      say("- ", e$heading %||% "?", " | start ", e$startTimestamp %||% "?",
+          " | ", show_flags(e), " | svar: ", resp_counts(e),
+          " | mottakere-felter: ", paste(names(e$recipients), collapse = ", "))
+    }
+    say("\nSendt ut (maks 3, til sammenligning):")
+    for (e in head(normal, 3)) {
+      say("- ", e$heading %||% "?", " | start ", e$startTimestamp %||% "?",
+          " | ", show_flags(e), " | svar: ", resp_counts(e))
     }
   }
 }

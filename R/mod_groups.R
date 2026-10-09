@@ -125,16 +125,20 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
       l <- l[is.na(l$proposal_id), , drop = FALSE]
       if (!is.null(event_id)) return(l[!is.na(l$event_id) & l$event_id == event_id, , drop = FALSE])
       l <- l[is.na(l$event_id), , drop = FALSE]
-      if (is.null(subgroup_id)) l else l[!is.na(l$subgroup_id) & l$subgroup_id == subgroup_id, , drop = FALSE]
+      if (is.null(subgroup_id)) l[is.na(l$subgroup_id), , drop = FALSE]
+      else l[!is.na(l$subgroup_id) & l$subgroup_id == subgroup_id, , drop = FALSE]
     }
 
     # Editor ----------------------------------------------------------------
 
+    # A gruppeutkast offers the members of its own (sub)group, also when it is
+    # opened from "Godkjenning" in another context.
     eligible <- reactive({
       d <- draft()
       req(d)
       ctx <- context()
-      draft_members(d, ctx$group, ctx$members)
+      members <- if (is.null(d$event)) members_in_context(ctx$group, d$subgroup_id) else ctx$members
+      draft_members(d, ctx$group, members)
     })
 
     # Database work the trainer does not need to wait for (taking and
@@ -236,11 +240,27 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
 
     # Moves come from the browser. Only members that may be placed, and only
     # existing groups, are accepted.
+    # In a gruppeutkast a trainer follows their child (see draft_move_follow()).
+    # The browser moves only the card that was dragged, so the board is
+    # redrawn when a trainer or a trainer's child is moved.
     observeEvent(input$move, {
       d <- draft()
       req(d)
       m <- input$move
-      draft(draft_move(d, m$member, m$group, eligible()$member_id))
+      ctx <- context()
+      links <- if (is.null(d$event)) ctx$group$parent_links else NULL
+      res <- draft_move_follow(d, m$member, m$group, eligible()$member_id, links)
+      draft(res$draft)
+      if (!is.null(links) && nrow(links) > 0 && isTRUE(m$member %in% c(links$parent_id, links$child_id))) {
+        board_version(board_version() + 1)
+      }
+      if (length(res$followed)) {
+        all <- members_in_context(ctx$group, NULL)
+        nm <- function(id) all$display_name[match(id, all$id)]
+        where <- if (is.null(m$group) || !nzchar(m$group)) " ble tatt ut av gruppene" else paste0(" ble flyttet til ", m$group)
+        showNotification(paste0(paste(nm(res$followed), collapse = ", "), where, " sammen med ", nm(m$member), "."),
+                         type = "message", duration = 5)
+      }
     })
 
     change_groups <- function(res) {
@@ -412,8 +432,8 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
     # Output: proposal cards -----------------------------------------------
 
     # Group boxes are narrow, so tags are shown as short labels there.
-    chip <- function(id, name, note = NULL) {
-      if (is.null(tagger)) member_chip(id, name, note = note) else tagger$chip(id, name, note, short = TRUE)
+    chip <- function(id, name, status = NULL) {
+      if (is.null(tagger)) member_chip(id, name, status = status) else tagger$chip(id, name, short = TRUE, status = status)
     }
 
     action_button <- function(prop, action, label) {
@@ -464,7 +484,9 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
     }
 
     event_line <- function(prop) {
-      if (is.null(prop$event_id)) return(div(class = "sn-proposal-for", "Gruppeutkast"))
+      if (is.null(prop$event_id)) {
+        return(div(class = "sn-proposal-for", paste0("Gruppeutkast \u00b7 ", draft_context_name(context()$group, prop$subgroup_id))))
+      }
       evs <- Filter(function(e) identical(e$id, prop$event_id), events())
       if (length(evs) == 0) return(NULL)
       ev <- evs[[1]]
@@ -479,20 +501,30 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
     proposal_card <- function(prop, ctx, ev = NULL, show_event = FALSE) {
       all <- members_in_context(ctx$group, NULL)
       parts <- if (is.null(ev)) NULL else event_participants(ev, ctx$group)
-      coming <- if (is.null(parts)) character() else parts$member_id[parts$status == "accepted" & is_player_kind(parts$kind)]
+      coming <- if (is.null(parts)) character()
+                else parts$member_id[placeable_status(parts$status, ev$not_sent) & is_player_kind(parts$kind)]
       lay <- proposal_layout(prop$labels, prop$assignments, coming)
       name_of <- function(ids) {
         n <- all$display_name[match(ids, all$id)]
         ifelse(is.na(n), "Tidligere medlem", n)
       }
+      kind_of <- function(ids) kind_or_na(all$kind, nrow(all))[match(ids, all$id)]
+      # Trainers first (black, no tags), then a break, then the players.
       chips <- function(ids) {
         if (length(ids) == 0) return(p(class = "sn-hint sn-empty-group", "Ingen her"))
-        o <- order(tolower(name_of(ids)))
-        ids <- ids[o]
-        div(class = "sn-chips", lapply(ids, function(id) {
-          note <- if (is.null(parts)) NULL else response_note(parts$status[match(id, parts$member_id)])
-          if (id %in% all$id) chip(id, name_of(id), note) else member_chip(id, "Tidligere medlem")
-        }))
+        is_c <- function(x) !is.na(kind_of(x)) & kind_of(x) == "coach"
+        ids <- ids[order(!is_c(ids), tolower(name_of(ids)))]
+        coach <- is_c(ids)
+        one <- function(id) {
+          status <- if (is.null(parts)) NULL else parts$status[match(id, parts$member_id)]
+          if (!id %in% all$id) return(member_chip(id, "Tidligere medlem", status = status))
+          if (identical(kind_of(id), "coach")) return(span(class = "sn-chip sn-chip-coach", status_icon(status), name_of(id)))
+          chip(id, name_of(id), status)
+        }
+        div(class = "sn-chips",
+            lapply(ids[coach], one),
+            if (any(coach) && any(!coach)) div(class = "sn-chips-break", `aria-hidden` = "true"),
+            lapply(ids[!coach], one))
       }
       l <- lock_on(prop$id)
       actions <- proposal_actions(prop$status)
@@ -512,7 +544,8 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
         })),
         if (length(lay$unplaced)) {
           div(class = "sn-unplaced",
-              span(class = "sn-hint", paste0("Kommer, men ikke fordelt (", length(lay$unplaced), "):")),
+              span(class = "sn-hint", paste0(if (isTRUE(ev$not_sent)) "Inviteres, men ikke fordelt (" else "Kommer, men ikke fordelt (",
+                                             length(lay$unplaced), "):")),
               chips(lay$unplaced))
         },
         if (length(actions)) {
@@ -557,7 +590,12 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
       )
     })
 
-    drafts <- reactive(proposals_sorted(Filter(function(p) is.null(p$event_id), proposals())))
+    # Gruppeutkast of this context only (pending ones from other contexts are
+    # loaded too, for "Godkjenning").
+    drafts <- reactive({
+      sid <- context()$subgroup_id
+      proposals_sorted(Filter(function(p) is.null(p$event_id) && identical(p$subgroup_id, sid), proposals()))
+    })
     pending <- reactive(Filter(function(p) identical(p$status, "pending"), proposals()))
 
     output$pending_cards <- renderUI({
@@ -635,16 +673,33 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
       req(d)
       el <- isolate(eligible())
       tag_table <- if (is.null(tagger)) tags_empty() else isolate(tagger$table())
+      ctx <- isolate(context())
+      links <- if (is.null(d$event)) ctx$group$parent_links else NULL
+      is_coach <- !is.na(el$kind) & el$kind == "coach"
+      kids <- if (is.null(links)) character() else links$child_id[links$parent_id %in% el$member_id]
+      notes <- parent_notes(d$assignments, links, function(ids) el$display_name[match(ids, el$member_id)])
+      # Trainers sort first in every column ("0 ..."), players after ("1 ...");
+      # the browser keeps that order when it moves a card.
       card <- function(i) {
-        div(class = "sn-mcard", tabindex = "0", role = "button", `data-member` = el$member_id[i],
-            `data-sort` = tolower(el$display_name[i]), `aria-label` = el$display_name[i],
-            span(class = "sn-mcard-name", el$display_name[i]),
+        id <- el$member_id[i]
+        warn <- if (id %in% names(notes)) notes[[id]] else NULL
+        div(class = paste("sn-mcard", if (is_coach[i]) "sn-mcard-coach", if (!is.null(warn)) "sn-mcard-warn"),
+            tabindex = "0", role = "button", `data-member` = id,
+            `data-sort` = paste(if (is_coach[i]) "0" else "1", tolower(el$display_name[i])),
+            `aria-label` = paste0(el$display_name[i], if (is_coach[i]) ", trener", if (!is.null(warn)) paste0(". ", warn)),
+            span(class = "sn-mcard-name",
+                 status_icon(el$status[i]),
+                 if (is_coach[i]) span(class = "sn-mcard-role", `aria-hidden` = "true", "Trener"),
+                 el$display_name[i],
+                 if (id %in% c(links$parent_id, kids)) span(class = "sn-mcard-link", title = "Trener og barn flyttes sammen", `aria-hidden` = "true", "\u2194")),
+            if (!is.null(warn)) span(class = "sn-mcard-warning", warn),
             span(class = "sn-mcard-tags",
-                 minitags(tags_for(tag_table, el$member_id[i]), short = TRUE, universe = unique(tag_table$tag)),
-                 if (!is.null(response_note(el$status[i]))) span(class = "sn-note", response_note(el$status[i]))))
+                 if (!is_coach[i]) minitags(tags_for(tag_table, id), short = TRUE, universe = unique(tag_table$tag)),
+                 NULL))
       }
       column <- function(label, title, ids, pool = FALSE) {
         idx <- which(el$member_id %in% ids)
+        idx <- idx[order(!is_coach[idx])]   # stable: trainers first, then by name
         div(class = paste("sn-col", if (pool) "sn-col-pool"), `data-group` = label,
             div(class = "sn-col-head",
                 if (pool) span(class = "sn-col-title", title)
@@ -670,7 +725,7 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
             div(class = "sn-armed-targets")),
         div(
           class = "sn-board-cols",
-          column("", if (is.null(d$event)) "Ikke fordelt" else "Kommer, ikke fordelt",
+          column("", if (is.null(d$event)) "Ikke fordelt" else if (isTRUE(d$event$not_sent)) "Inviteres, ikke fordelt" else "Kommer, ikke fordelt",
                  setdiff(el$member_id, placed), pool = TRUE),
           lapply(d$labels, function(l) column(l, l, names(d$assignments)[d$assignments == l])),
           div(class = "sn-col sn-col-add",

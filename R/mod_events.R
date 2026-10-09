@@ -77,13 +77,24 @@ event_badges <- function(event, ctx) {
       lapply(event_sent_to(event, ctx$group), function(n) span(class = "sn-tag sn-tag-to", n))
     },
     if (event$match) span(class = "sn-tag sn-tag-match", "Kamp"),
-    if (event$cancelled) span(class = "sn-tag sn-tag-cancelled", "Avlyst")
+    if (event$cancelled) span(class = "sn-tag sn-tag-cancelled", "Avlyst"),
+    unsent_badge(event)
   )
+}
+
+# "Ikke sendt ut · sendes tor. 2. apr." for an event whose invitation is not sent.
+unsent_badge <- function(event, tz = "Europe/Oslo") {
+  if (!isTRUE(event$not_sent)) return(NULL)
+  t <- event$invite_time
+  when <- if (is.na(t)) "" else paste0(" \u00b7 sendes ", no_weekday(t, tz), " ",
+                                       as.integer(format(t, "%d", tz = tz)), ". ", no_month(t, tz))
+  span(class = "sn-tag sn-tag-unsent", paste0("Ikke sendt ut", when))
 }
 
 # "12 kommer · 3 ikke svart"
 event_count_text <- function(event) {
   r <- event$responses$status
+  if (isTRUE(event$not_sent)) return(paste(length(r), "får invitasjonen"))
   parts <- c(paste(sum(r == "accepted"), "kommer"),
              if (any(r == "unanswered")) paste(sum(r == "unanswered"), "ikke svart"))
   paste(parts, collapse = " · ")
@@ -155,7 +166,8 @@ event_coaches_line <- function(event, group) {
 
 # Classes shared by the event row and the event page header.
 event_state_class <- function(event) {
-  paste(c(if (isTRUE(event$match)) "sn-event-match", if (isTRUE(event$cancelled)) "sn-event-cancelled"),
+  paste(c(if (isTRUE(event$match)) "sn-event-match", if (isTRUE(event$cancelled)) "sn-event-cancelled",
+          if (isTRUE(event$not_sent)) "sn-event-unsent"),
         collapse = " ")
 }
 
@@ -188,24 +200,33 @@ tab_switch <- function(ns, tab) {
 
 #' @noRd
 mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond = spond_api(),
-                              now = Sys.time, past_days = 30) {
+                              now = Sys.time, past_days = 30, unsent_shown = 5, unsent_horizon_days = 183) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     tab <- reactiveVal("upcoming")
     past_window <- reactiveVal(past_days)
+    unsent_limit <- reactiveVal(unsent_shown)   # how many events not sent yet are shown ("Vis flere" adds more)
     selected <- reactiveVal(NULL)   # minimal event, or NULL for the list
     refresh <- reactiveVal(0)
+
+    # Upcoming events are fetched for the whole main group and filtered per
+    # subgroup here, so switching subgroup needs no new fetch, and
+    # "Godkjenning" knows every event in the group. `group_id` only changes
+    # when another main group is chosen (reactiveVal ignores equal values).
+    group_id <- reactiveVal(NULL)
 
     # A new context starts on the list of upcoming events.
     observeEvent(context(), ignoreNULL = FALSE, {
       selected(NULL)
       tab("upcoming")
       past_window(past_days)
+      unsent_limit(unsent_shown)
+      group_id(context()$group_id)
     })
 
-    fetch <- function(ctx, ...) {
+    fetch <- function(ctx, ..., subgroup_id = ctx$subgroup_id) {
       tryCatch(
-        list(events = spond$events(user()$spond, group_id = ctx$group_id, subgroup_id = ctx$subgroup_id, ...),
+        list(events = spond$events(user()$spond, group_id = ctx$group_id, subgroup_id = subgroup_id, ...),
              error = NULL),
         spond_error = function(e) list(events = NULL, error = conditionMessage(e),
                                        expired = inherits(e, "spond_expired")),
@@ -216,12 +237,41 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
       )
     }
 
+    group_upcoming <- reactive({
+      req(group_id())
+      ctx <- isolate(context())
+      req(ctx)
+      refresh()
+      t <- now()
+      # Events whose invitation is sent, as before, and events not sent yet
+      # (scheduled) up to about half a year ahead. Spond lists the latest first
+      # and stops at `max`, so the horizon keeps far-off series from crowding
+      # out the next weeks. How many of them are shown is decided below.
+      res <- fetch(ctx, min_end = t, max_events = 100, subgroup_id = NULL)
+      if (!is.null(res$error)) {
+        res$events <- list()
+        return(res)
+      }
+      unsent <- fetch(ctx, min_end = t, max_start = t + unsent_horizon_days * 86400,
+                      include_scheduled = TRUE, max_events = 300, subgroup_id = NULL)
+      raw <- c(res$events, if (is.null(unsent$error)) unsent$events)
+      ids <- vapply(raw, function(e) as.character(e$id %||% NA), character(1))
+      res$events <- events_for_context(raw[!duplicated(ids)], NULL)
+      res
+    })
+
     upcoming <- reactive({
       ctx <- context()
       req(ctx)
-      refresh()
-      res <- fetch(ctx, min_end = now(), max_events = 100)
-      res$events <- events_for_context(res$events, ctx$subgroup_id)
+      res <- group_upcoming()
+      if (!is.null(ctx$subgroup_id)) {
+        res$events <- Filter(function(e) ctx$subgroup_id %in% e$subgroup_ids, res$events)
+      }
+      # All events that are sent, and the next few that are not sent yet.
+      not_sent <- vapply(res$events, function(e) isTRUE(e$not_sent), logical(1))
+      keep <- !not_sent | cumsum(not_sent) <= unsent_limit()
+      res$n_unsent_hidden <- sum(not_sent & !keep)
+      res$events <- res$events[keep]
       res
     })
 
@@ -252,11 +302,12 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
       if (identical(input$tab, "approvals")) selected(NULL)
     })
     observeEvent(input$older, past_window(past_window() + past_days))
+    observeEvent(input$later, unsent_limit(unsent_limit() + unsent_shown))
     observeEvent(input$refresh, refresh(refresh() + 1))
     observeEvent(input$back, selected(NULL))
     observeEvent(input$open, {
       # Also upcoming events, so "Åpne arrangement" works from the approvals list.
-      ev <- Filter(function(e) identical(e$id, input$open), c(shown()$events, upcoming()$events))
+      ev <- Filter(function(e) identical(e$id, input$open), c(shown()$events, group_upcoming()$events))
       if (length(ev)) selected(ev[[1]])
     })
 
@@ -274,7 +325,7 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
       # Proposals are loaded for the upcoming events (for "Godkjenning") and
       # for the events in the tab that is shown.
       known_events <- reactive({
-        ev <- c(upcoming()$events, if (identical(tab(), "past")) past()$events)
+        ev <- c(group_upcoming()$events, if (identical(tab(), "past")) past()$events)
         ev[!duplicated(vapply(ev, function(e) e$id, ""))]
       })
       mod_groups_server("groups", context, user, db, tagger, event = selected, now = now,
@@ -335,6 +386,12 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
                 span(class = "sn-hint", paste0("Viser siste ", past_window(), " dager.")),
                 tags$button(type = "button", class = "btn btn-sm btn-outline-secondary",
                             onclick = set_input_js(ns("older"), "x"), "Vis eldre"))
+          },
+          if (!is_past && !is_approvals && is.null(res$error) && isTRUE(res$n_unsent_hidden > 0)) {
+            div(class = "sn-more",
+                span(class = "sn-hint", paste0(res$n_unsent_hidden, " flere som ikke er sendt ut.")),
+                tags$button(type = "button", class = "btn btn-sm btn-outline-secondary",
+                            onclick = set_input_js(ns("later"), "x"), "Vis flere"))
           }
         )
       )
@@ -363,7 +420,8 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
                       span(class = "sn-hint", "Sendt til:"),
                       lapply(event_sent_to(ev, ctx$group), function(n) span(class = "sn-tag sn-tag-to", n)),
                       if (ev$match) span(class = "sn-tag sn-tag-match", "Kamp"),
-                      if (ev$cancelled) span(class = "sn-tag sn-tag-cancelled", "Avlyst")))
+                      if (ev$cancelled) span(class = "sn-tag sn-tag-cancelled", "Avlyst"),
+                      unsent_badge(ev)))
             ),
             bslib::card_body(
               if (!is.null(groups)) div(class = "sn-event-groups", mod_groups_event_ui(ns("groups"))),

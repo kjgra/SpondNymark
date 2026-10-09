@@ -45,7 +45,8 @@ mod_participants_server <- function(id, event, group, tagger = NULL) {
             class = paste0("sn-status sn-status-", s),
             paste0(present$label[i], " (", nrow(rows), ")"),
             # Former members cannot be tagged: they are no longer in the group.
-            member_chips(rows$member_id, rows$display_name, tagger, clickable = rows$known, kinds = rows$kind)
+            member_chips(rows$member_id, rows$display_name, tagger, clickable = rows$known, kinds = rows$kind,
+                         statuses = rows$status)
           )
         })
       )
