@@ -185,3 +185,50 @@ test_that("the date block shows weekday, day and month, and marks matches and ca
   expect_equal(event_state_class(list(match = TRUE, cancelled = TRUE)), "sn-event-match sn-event-cancelled")
   expect_equal(event_state_class(list(match = FALSE, cancelled = FALSE)), "")
 })
+
+test_that("the tabs are only upcoming and past, and the approvals button shows the count", {
+  ns <- NS("ev")
+  tabs <- as.character(tab_switch(ns, "past"))
+  expect_match(tabs, "Kommende")
+  expect_match(tabs, "sn-seg-btn is-on\" aria-pressed=\"true\"[^>]*>Gjennomførte")
+  expect_false(grepl("Godkjenning", tabs))
+  expect_false(grepl("is-on", as.character(tab_switch(ns, "approvals"))))
+
+  b <- as.character(approvals_button(ns, 3))
+  expect_match(b, "aria-label=\"Godkjenning, 3 venter\"")
+  expect_match(b, "sn-approve-count\" aria-hidden=\"true\">3<")
+  expect_match(b, "ev-tab', 'approvals'")
+  b0 <- as.character(approvals_button(ns, 0, active = TRUE))
+  expect_false(grepl("sn-approve-count", b0))
+  expect_match(b0, "is-active")
+})
+
+test_that("without the database there is no approvals button and the tab is ignored", {
+  api <- fake_events_api()
+  ctx <- reactiveVal(teams_context(fake_group()))
+  testServer(mod_events_server, args = events_args(api, ctx), {
+    expect_false(grepl("sn-approve", paste(unlist(output$bar), collapse = "")))
+    session$setInputs(tab = "approvals")
+    expect_match(view_html(output), "Ingen kommende|Trening Ulv")
+    expect_false(grepl("Til godkjenning", view_html(output)))
+  })
+})
+
+test_that("with the database the top bar button shows the count and opens the approvals list", {
+  con <- local_test_db()
+  acc <- fake_user(fake_spond_groups_two())$access
+  id <- ds_save_proposal(con, acc, "P-me", "G2016", "Rød/blå", c("Rød", "Blå"), event_id = "E-ulv")
+  ds_transition(con, acc, id, "submit", "P-me")
+  api <- fake_events_api()
+  ctx <- reactiveVal(teams_context(fake_group()))
+  testServer(mod_events_server, args = c(events_args(api, ctx), db = list(db_handle(function() con))), {
+    session$flushReact()
+    expect_match(paste(unlist(output$bar), collapse = ""), "Godkjenning, 1 venter")
+    session$setInputs(open = "E-ulv")
+    expect_false(is.null(selected()))
+    session$setInputs(tab = "approvals")            # from an open event: back to the list
+    expect_null(selected())
+    expect_match(view_html(output), "Til godkjenning")
+    expect_match(paste(unlist(output$bar), collapse = ""), "is-active")
+  })
+})

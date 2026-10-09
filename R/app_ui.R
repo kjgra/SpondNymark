@@ -22,6 +22,7 @@ app_ui <- function(request) {
             app_env_badge()
           ),
           mod_teams_bar_ui("teams"),
+          mod_events_bar_ui("events"),
           mod_login_bar_ui("login")
         )
       ),

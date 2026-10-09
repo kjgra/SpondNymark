@@ -57,8 +57,31 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 /* Top bar: black, full width */
 .sn-topbar { background: var(--sn-black); color: var(--sn-white);
   margin: 0 calc(var(--bs-gutter-x, 1.5rem) * -.5) 4px; padding: 10px calc(var(--bs-gutter-x, 1.5rem) * .5); }
-.sn-topbar-inner { max-width: 720px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between;
+.sn-topbar-inner { max-width: 720px; margin: 0 auto; display: flex; align-items: center; justify-content: flex-start;
   gap: 10px 14px; flex-wrap: wrap; min-height: 44px; }
+.sn-approve-slot { margin-left: auto; }
+.sn-approve-slot:empty { display: none; }
+/* "Godkjenning" in the top bar: yellow, with the number waiting */
+.sn-approve { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border: 0; border-radius: 999px;
+  background: var(--sn-yellow); color: var(--sn-black); font-weight: 700; position: relative; }
+.sn-approve:hover, .sn-approve:focus-visible { background: var(--sn-yellow-dark); color: var(--sn-black); }
+.sn-approve.is-active { box-shadow: 0 0 0 2px var(--sn-black), 0 0 0 4px var(--sn-yellow); }
+.sn-approve-count { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; background: var(--sn-black); color: var(--sn-yellow);
+  font-size: .75rem; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+.sn-approve-icon { display: none; }
+@media (max-width: 575.98px) {
+  .sn-brand { order: 1; flex: 1; min-width: 0; }
+  .sn-approve-slot { order: 2; }
+  .sn-ctx { order: 3; flex: 1 1 100%; }
+  .sn-topbar .sn-ctx .form-group { flex: 1 1 0; min-width: 0; }
+  .sn-topbar .sn-ctx select { width: 100%; max-width: none; }
+  .sn-bar { order: 4; flex: 1 1 100%; }
+  .sn-approve { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 12px; }
+  .sn-approve-text { display: none; }
+  .sn-approve-icon { display: block; }
+  .sn-approve-count { position: absolute; top: -6px; right: -6px; background: var(--sn-red); color: var(--sn-white);
+    box-shadow: 0 0 0 2px var(--sn-black); }
+}
 .sn-brand { display: flex; align-items: center; gap: 10px; }
 .sn-logo { width: 32px; height: 32px; flex: none; }
 .sn-appname { font-family: var(--sn-font-display); font-weight: 800; font-size: 1.45rem; letter-spacing: .02em; line-height: 1; }
@@ -121,8 +144,16 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-detail-head .sn-event-date { width: 72px; height: 76px; border-radius: 14px; }
 .sn-detail-head .sn-event-day { font-size: 2.1rem; }
 .sn-detail-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
-.sn-head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.sn-refresh { padding: 0 4px; text-decoration: none; }
+.sn-list-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* Segmented control: Kommende / Gjennomførte */
+.sn-seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 12px;
+  background: var(--sn-line); max-width: 420px; width: 100%; }
+.sn-seg-btn { height: 40px; border: 0; border-radius: 9px; background: transparent; color: var(--sn-black);
+  font-weight: 600; font-size: .95rem; }
+.sn-seg-btn:hover { background: rgba(255,255,255,.6); }
+.sn-seg-btn:focus-visible { outline: 2px solid var(--sn-black); outline-offset: 1px; }
+.sn-seg-btn.is-on { background: var(--sn-black); color: var(--sn-white); font-weight: 700; }
+.sn-refresh { padding: 0 4px; text-decoration: none; white-space: nowrap; }
 .sn-events { display: flex; flex-direction: column; gap: 10px; }
 .sn-event { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; border: 0; border-radius: 16px;
   background: var(--sn-white); box-shadow: var(--sn-shadow); padding: 12px; transition: box-shadow .12s ease, transform .12s ease; }
@@ -289,5 +320,3 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-comment-add { display: flex; gap: 6px; margin-top: 8px; }
 .sn-comment-add .form-control { flex: 1; min-width: 0; }
 .sn-history { font-size: .8rem; color: var(--bs-secondary); padding: 1px 0; }
-.sn-tab-count { display: inline-block; min-width: 1.3em; margin-left: 4px; padding: 0 5px; border-radius: 999px;
-  background: var(--sn-black); color: var(--sn-yellow); font-size: .72rem; font-weight: 700; line-height: 1.5; }
