@@ -51,8 +51,15 @@ test-database (aldri produksjon). De lager og sletter et eget skjema.
 
 ## Publisering
 
-Se `dev/03_deploy.R`. Kort: `rsconnect::deployApp()` med `app.R`, og
-miljøvariabelen `SPONDNYMARK_DB_URL` lagt inn i Posit Connect.
+Appen publiseres på Posit Connect fra GitHub (git-backed). Se `dev/03_deploy.R`.
+Kort:
+
+1. Kjør testene.
+2. Ved databaseendringer: `source("dev/setup_db.R")` fra IDE, før push.
+3. `rsconnect::writeManifest(appFiles = c("app.R", "DESCRIPTION", "NAMESPACE", "LICENSE", "R", "inst"))`
+4. Commit (med `manifest.json`) og push til `main`. Connect henter endringen selv.
+
+Miljøvariabelen `SPONDNYMARK_DB_URL` legges inn i Posit Connect, aldri i git.
 
 ## Endringer i databasen
 
