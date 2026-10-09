@@ -2,7 +2,8 @@ test_that("migrations create the tables and are only applied once", {
   con <- local_test_db()
   tables <- DBI::dbGetQuery(con, "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()")$table_name
   expect_setequal(tables, c("schema_migrations", "member_tags", "group_proposals", "group_proposal_labels",
-                            "group_proposal_members", "proposal_history", "proposal_comments", "edit_locks"))
+                            "group_proposal_members", "proposal_history", "proposal_comments", "edit_locks",
+                            "season_themes", "team_settings", "exercises"))
   expect_length(ds_migrate(con, dir = test_migrations_dir()), 0)
 })
 
@@ -351,4 +352,94 @@ test_that("comments and history of several proposals come in one query", {
   expect_equal(th$kind[th$proposal_id == a], c("history", "history", "comment"))
   expect_false("hemmelig" %in% th$text)
   expect_equal(names(ds_proposal_threads(con, acc, "G1", integer())), c("proposal_id", "kind", "actor", "text", "created_at"))
+})
+
+# Training plans, phase T1 (migration 002) ---------------------------------------
+
+test_that("season plan: save a year, change it, and other years are left alone", {
+  con <- local_test_db(); acc <- test_access()
+  themes <- rep("", 12); themes[c(9, 10)] <- c("Vending", "Samhandling")
+  desc <- rep("", 12); desc[10] <- "Spille på lag"
+  ds_save_season(con, acc, "G1", 2026, themes, desc, "P1")
+  ds_save_season(con, acc, "G1", 2027, c("Ballmestring", rep("", 11)), actor = "P1")
+  s <- ds_list_season_themes(con, acc, "G1", 2026)
+  expect_equal(s$month, c(9L, 10L))
+  expect_equal(s$description, c("", "Spille på lag"))
+  expect_equal(ds_season_theme(con, acc, "G1", as.Date("2026-10-14"))$theme, "Samhandling")
+  expect_null(ds_season_theme(con, acc, "G1", as.Date("2026-11-01")))
+
+  themes[9] <- ""; themes[11] <- "Avslutning"
+  ds_save_season(con, acc, "G1", 2026, themes, desc, "P2")
+  s <- ds_list_season_themes(con, acc, "G1", 2026)
+  expect_equal(s$month, c(10L, 11L))
+  expect_equal(s$updated_by, c("P1", "P2"))        # unchanged months keep who wrote them
+  expect_equal(nrow(ds_list_season_themes(con, acc, "G1", 2027)), 1)
+  ds_save_season(con, acc, "G1", 2026, rep("", 12), actor = "P1")
+  expect_equal(nrow(ds_list_season_themes(con, acc, "G1", 2026)), 0)
+})
+
+test_that("team settings: empty until saved, then updated in place", {
+  con <- local_test_db(); acc <- test_access()
+  s <- ds_get_team_settings(con, acc, "G1")
+  expect_equal(s$session_minutes, "")
+  ds_save_team_settings(con, acc, "G1", list(age_group = "G10", session_minutes = "75", pitch = "7er"), "P1")
+  ds_save_team_settings(con, acc, "G1", list(age_group = "G10", session_minutes = "60", equipment = "Kjegler"), "P2")
+  s <- ds_get_team_settings(con, acc, "G1")
+  expect_equal(s$session_minutes, "60")
+  expect_equal(s$pitch, "")
+  expect_equal(s$equipment, "Kjegler")
+  expect_equal(s$updated_by, "P2")
+  expect_equal(DBI::dbGetQuery(con, "SELECT count(*)::integer AS n FROM team_settings")$n, 1L)
+})
+
+test_that("exercises: create, list, update (code stays), delete", {
+  con <- local_test_db(); acc <- test_access()
+  id <- ds_save_exercise(con, acc, "G1", list(name = "Rondo 4 mot 1", category = "pasning_mottak",
+                                              themes = c("Samhandling", "Pasning"), min_players = "5",
+                                              learning_points = "Åpne kroppen"), "P1")
+  id2 <- ds_save_exercise(con, acc, "G1", list(name = "Rondo 4 mot 1", category = "smaaspill"), "P1")
+  ex <- ds_list_exercises(con, acc, "G1")
+  expect_equal(ex$code, c("rondo-4-mot-1", "rondo-4-mot-1-2"))
+  expect_equal(ex$themes[[1]], c("Samhandling", "Pasning"))
+  expect_equal(ex$themes[[2]], character())
+  expect_equal(ex$min_players[1], 5L)
+  expect_true(is.na(ex$max_players[1]))
+  expect_equal(ex$learning_points[1], "Åpne kroppen")
+  expect_equal(ex$easier[1], "")
+  expect_equal(ex$source[1], "manual")
+
+  ds_save_exercise(con, acc, "G1", list(name = "Rondo med to touch", category = "pasning_mottak",
+                                        themes = "Samhandling"), "P2", id = id)
+  e <- ds_get_exercise(con, acc, id)
+  expect_equal(e$name, "Rondo med to touch")
+  expect_equal(e$code, "rondo-4-mot-1")
+  expect_equal(e$learning_points, "")
+  expect_equal(c(e$created_by, e$updated_by), c("P1", "P2"))
+
+  ds_delete_exercise(con, acc, id2)
+  expect_equal(nrow(ds_list_exercises(con, acc, "G1")), 1)
+  expect_error(ds_get_exercise(con, acc, id2), "Fant ikke")
+})
+
+test_that("training data in other groups cannot be read or changed", {
+  con <- local_test_db(); acc <- test_access()
+  expect_error(ds_list_season_themes(con, acc, "G2", 2026), "ikke tilgang")
+  expect_error(ds_save_season(con, acc, "G2", 2026, rep("", 12), actor = "P1"), "ikke tilgang")
+  expect_error(ds_get_team_settings(con, acc, "G2"), "ikke tilgang")
+  expect_error(ds_save_team_settings(con, acc, "G2", list(), "P1"), "ikke tilgang")
+  expect_error(ds_list_exercises(con, acc, "G2"), "ikke tilgang")
+  DBI::dbExecute(con, "INSERT INTO exercises (spond_group_id, code, name, category, created_by, updated_by)
+                       VALUES ('G2', 'fremmed', 'Fremmed', 'annet', 'P9', 'P9')")
+  other <- DBI::dbGetQuery(con, "SELECT id FROM exercises WHERE spond_group_id = 'G2'")$id
+  expect_error(ds_get_exercise(con, acc, other), "ikke tilgang")
+  expect_error(ds_save_exercise(con, acc, "G1", list(name = "X", category = "annet"), "P1", id = other), "ikke tilgang")
+  expect_error(ds_delete_exercise(con, acc, other), "ikke tilgang")
+  expect_equal(DBI::dbGetQuery(con, "SELECT name FROM exercises WHERE id = $1", list(other))$name, "Fremmed")
+})
+
+test_that("invalid training data is rejected before anything is written", {
+  con <- local_test_db(); acc <- test_access()
+  expect_error(ds_save_exercise(con, acc, "G1", list(name = "X", category = "tull"), "P1"), "kategori")
+  expect_error(ds_save_season(con, acc, "G1", 2026, c("Skadeforebygging", rep("", 11)), actor = "P1"), "sensitive")
+  expect_equal(DBI::dbGetQuery(con, "SELECT ((SELECT count(*) FROM exercises) + (SELECT count(*) FROM season_themes))::integer AS n")$n, 0L)
 })

@@ -530,6 +530,182 @@ ds_active_locks <- function(con, access, group_id, max_age = ds_lock_max_age) {
                   ORDER BY started_at", list(group_id, as.numeric(max_age)))
 }
 
+# Season plan (årshjul) ---------------------------------------------------------
+# One theme per month and year for a main group (migration 002).
+
+#' The season plan for one year
+#' @return data.frame(month, theme, description, updated_by, updated_at),
+#'   only months with a theme, in month order. description is "" if empty.
+#' @noRd
+ds_list_season_themes <- function(con, access, group_id, year) {
+  assert_group_access(access, group_id)
+  ds_query(con, "SELECT month, theme, coalesce(description, '') AS description, updated_by, updated_at
+                   FROM season_themes WHERE spond_group_id = $1 AND year = $2 ORDER BY month",
+           list(group_id, as.integer(year)))
+}
+
+#' Replace the season plan for one year
+#'
+#' Months with an empty theme are removed. One statement (one round trip).
+#' @param themes,descriptions Character vectors for January to December.
+#' @noRd
+ds_save_season <- function(con, access, group_id, year, themes, descriptions = rep("", 12), actor) {
+  assert_group_access(access, group_id)
+  v <- season_validate(year, themes, descriptions)
+  ds_exec(con, "
+    WITH d AS (
+      DELETE FROM season_themes
+       WHERE spond_group_id = $1 AND year = $2 AND NOT (month = ANY($3::integer[])))
+    INSERT INTO season_themes (spond_group_id, year, month, theme, description, updated_by)
+    SELECT $1, $2, x.m, x.t, NULLIF(x.d, ''), $6
+      FROM unnest($3::integer[], $4::text[], $5::text[]) AS x(m, t, d)
+    ON CONFLICT (spond_group_id, year, month) DO UPDATE
+      SET theme = EXCLUDED.theme, description = EXCLUDED.description,
+          updated_by = EXCLUDED.updated_by, updated_at = now()
+      WHERE season_themes.theme IS DISTINCT FROM EXCLUDED.theme
+         OR season_themes.description IS DISTINCT FROM EXCLUDED.description",
+    list(group_id, as.integer(year), ds_text_array(v$month), ds_text_array(v$theme),
+         ds_text_array(v$description), actor))
+  invisible(nrow(v))
+}
+
+#' The theme for the month of `date`, or NULL if there is none
+#' @return list(theme, description) or NULL.
+#' @noRd
+ds_season_theme <- function(con, access, group_id, date) {
+  date <- as.Date(date)
+  rows <- ds_list_season_themes(con, access, group_id, as.integer(format(date, "%Y")))
+  hit <- rows[rows$month == as.integer(format(date, "%m")), , drop = FALSE]
+  if (nrow(hit) == 0) return(NULL)
+  list(theme = hit$theme[1], description = hit$description[1])
+}
+
+# Team settings -----------------------------------------------------------------
+
+ds_team_settings_empty <- list(age_group = "", session_minutes = "", pitch = "", equipment = "", principles = "",
+                               updated_by = "", updated_at = as.POSIXct(NA))
+
+#' The team settings for a main group
+#' @return list with age_group, session_minutes, pitch, equipment and
+#'   principles as strings ("" if not set), plus updated_by and updated_at.
+#' @noRd
+ds_get_team_settings <- function(con, access, group_id) {
+  assert_group_access(access, group_id)
+  row <- ds_query(con, "
+    SELECT coalesce(age_group, '') AS age_group, coalesce(session_minutes::text, '') AS session_minutes,
+           coalesce(pitch, '') AS pitch, coalesce(equipment, '') AS equipment,
+           coalesce(principles, '') AS principles, updated_by, updated_at
+      FROM team_settings WHERE spond_group_id = $1", list(group_id))
+  if (nrow(row) == 0) return(ds_team_settings_empty)
+  as.list(row[1, , drop = FALSE])
+}
+
+ds_save_team_settings <- function(con, access, group_id, settings, actor) {
+  assert_group_access(access, group_id)
+  s <- team_settings_validate(settings)
+  ds_exec(con, "
+    INSERT INTO team_settings (spond_group_id, age_group, session_minutes, pitch, equipment, principles, updated_by)
+    VALUES ($1, NULLIF($2, ''), NULLIF($3, '')::integer, NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), $7)
+    ON CONFLICT (spond_group_id) DO UPDATE
+      SET age_group = EXCLUDED.age_group, session_minutes = EXCLUDED.session_minutes, pitch = EXCLUDED.pitch,
+          equipment = EXCLUDED.equipment, principles = EXCLUDED.principles,
+          updated_by = EXCLUDED.updated_by, updated_at = now()",
+    list(group_id, s$age_group, s$session_minutes, s$pitch, s$equipment, s$principles, actor))
+  invisible(TRUE)
+}
+
+# Exercises ---------------------------------------------------------------------
+
+# Columns returned for exercises. Empty text is returned as "" and missing
+# numbers as NA. Themes are joined with the unit separator (never typed) and
+# split again in ds_exercise_rows().
+ds_exercise_select <- "
+  SELECT id, code, name, category, array_to_string(themes, chr(31)) AS themes,
+         min_players, max_players, duration_minutes,
+         coalesce(area, '') AS area, coalesce(organisation, '') AS organisation,
+         coalesce(execution, '') AS execution, coalesce(learning_points, '') AS learning_points,
+         coalesce(questions, '') AS questions, coalesce(easier, '') AS easier,
+         coalesce(harder, '') AS harder, coalesce(nff_url, '') AS nff_url,
+         drawing::text AS drawing, source, created_by, created_at, updated_by, updated_at
+    FROM exercises"
+
+ds_exercise_rows <- function(rows) {
+  rows$themes <- lapply(rows$themes, function(x) {
+    if (is.na(x) || !nzchar(x)) character() else strsplit(x, "\x1f", fixed = TRUE)[[1]]
+  })
+  rows
+}
+
+# The group an exercise belongs to, after checking the user may see it.
+ds_exercise_group <- function(con, access, exercise_id) {
+  row <- ds_query(con, "SELECT spond_group_id FROM exercises WHERE id = $1", list(as.integer(exercise_id)))
+  if (nrow(row) == 0) stop("Fant ikke øvelsen.", call. = FALSE)
+  assert_group_access(access, row$spond_group_id)
+  row$spond_group_id
+}
+
+#' All exercises in a main group, sorted by category and name
+#' @return data.frame; `themes` is a list column of character vectors.
+#' @noRd
+ds_list_exercises <- function(con, access, group_id) {
+  assert_group_access(access, group_id)
+  rows <- ds_query(con, paste(ds_exercise_select, "WHERE spond_group_id = $1 ORDER BY category, lower(name), id"),
+                   list(group_id))
+  ds_exercise_rows(rows)
+}
+
+ds_get_exercise <- function(con, access, exercise_id) {
+  ds_exercise_group(con, access, exercise_id)
+  ds_exercise_rows(ds_query(con, paste(ds_exercise_select, "WHERE id = $1"), list(as.integer(exercise_id))))
+}
+
+#' Create or update an exercise
+#'
+#' The code is made from the name when the exercise is created and is not
+#' changed afterwards (evaluations are collected per code).
+#' @param ex List of fields, see `exercise_validate()`.
+#' @param id NULL to create, or the id of the exercise to update.
+#' @return The exercise id.
+#' @noRd
+ds_save_exercise <- function(con, access, group_id, ex, actor, id = NULL) {
+  assert_group_access(access, group_id)
+  v <- exercise_validate(ex)
+  fields <- list(v$name, v$category, ds_text_array(v$themes), v$min_players, v$max_players, v$duration_minutes,
+                 v$area, v$organisation, v$execution, v$learning_points, v$questions, v$easier, v$harder,
+                 v$nff_url, actor)
+  if (is.null(id)) {
+    taken <- ds_query(con, "SELECT code FROM exercises WHERE spond_group_id = $1", list(group_id))$code
+    code <- exercise_code(v$name, taken)
+    res <- ds_query(con, "
+      INSERT INTO exercises (spond_group_id, code, name, category, themes, min_players, max_players,
+                             duration_minutes, area, organisation, execution, learning_points, questions,
+                             easier, harder, nff_url, created_by, updated_by)
+      VALUES ($1, $2, $3, $4, $5::text[], NULLIF($6, '')::integer, NULLIF($7, '')::integer,
+              NULLIF($8, '')::integer, NULLIF($9, ''), NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''),
+              NULLIF($13, ''), NULLIF($14, ''), NULLIF($15, ''), NULLIF($16, ''), $17, $17)
+      RETURNING id", c(list(group_id, code), fields))
+    return(as.integer(res$id))
+  }
+  if (!identical(ds_exercise_group(con, access, id), group_id)) {
+    stop("Øvelsen hører til en annen gruppe.", call. = FALSE)
+  }
+  ds_exec(con, "
+    UPDATE exercises
+       SET name = $3, category = $4, themes = $5::text[], min_players = NULLIF($6, '')::integer,
+           max_players = NULLIF($7, '')::integer, duration_minutes = NULLIF($8, '')::integer,
+           area = NULLIF($9, ''), organisation = NULLIF($10, ''), execution = NULLIF($11, ''),
+           learning_points = NULLIF($12, ''), questions = NULLIF($13, ''), easier = NULLIF($14, ''),
+           harder = NULLIF($15, ''), nff_url = NULLIF($16, ''), updated_by = $17, updated_at = now()
+     WHERE id = $1 AND spond_group_id = $2", c(list(as.integer(id), group_id), fields))
+  as.integer(id)
+}
+
+ds_delete_exercise <- function(con, access, exercise_id) {
+  group_id <- ds_exercise_group(con, access, exercise_id)
+  ds_exec(con, "DELETE FROM exercises WHERE id = $1 AND spond_group_id = $2", list(as.integer(exercise_id), group_id))
+  invisible(TRUE)
+}
+
 # Database setup (admin only) -----------------------------------------------------
 # These functions are used by dev/setup_db.R with the admin connection. The
 # running app never calls them, and the app user is not allowed to.
@@ -537,7 +713,8 @@ ds_active_locks <- function(con, access, group_id, max_age = ds_lock_max_age) {
 # The tables the app reads and writes. schema_migrations is deliberately not
 # included: only the admin runs migrations.
 ds_app_tables <- c("member_tags", "group_proposals", "group_proposal_labels", "group_proposal_members",
-                   "proposal_history", "proposal_comments", "edit_locks")
+                   "proposal_history", "proposal_comments", "edit_locks",
+                   "season_themes", "team_settings", "exercises")
 
 #' A random password of letters and digits (cryptographically secure)
 #'
