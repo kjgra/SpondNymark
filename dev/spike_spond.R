@@ -5,7 +5,9 @@
 #   2. at roller finnes på gruppe og medlem, og at innlogget profil kan
 #      kobles til medlemsoppføringen,
 #   3. hvordan undergrupper og arrangementenes mottakere ser ut,
-#   4. at både kommende og gjennomførte arrangementer kan hentes.
+#   4. at både kommende og gjennomførte arrangementer kan hentes,
+#   6. (runde 1, punkt B) hvilke roller som finnes, og om trenere kan kobles
+#      til barna sine via foresatte (profil-ID). Bare antall, ingen navn.
 #
 # Kjør fra prosjektmappen:  source("dev/spike_spond.R")
 # Krever pakkene pkgload, httr2 og askpass (askpass følger med httr2).
@@ -152,6 +154,84 @@ if (!is.null(target)) {
     if (!is.null(sg_events)) {
       say("Undergruppe ", sgs$name[i], ": ", length(sg_events), " kommende",
           if (length(sg_events)) paste0(" (", paste(head(vapply(sg_events, function(e) e$heading %||% "?", character(1)), 3), collapse = "; "), ")") else "")
+    }
+  }
+}
+
+# Trenere og foresatte (runde 1, punkt B) -----------------------------------------
+# Bare gruppene du har tilgang til. Rapporten viser rollenavn og antall, ingen
+# navn eller ID-er på personer. En trener er forelder til et barn når trenerens
+# profil-ID står blant barnets foresatte.
+section("6. Trenere og foresatte")
+coach_candidates <- c("Teamleder", "Trener", "Lagleder", "Hovedlagleder", "Hjelpetrener", "Keepertrener", "Hjelper")
+say("Kandidater for trenerroller: ", paste(coach_candidates, collapse = ", "))
+led <- if (!is.null(accessible) && nrow(accessible) > 0) {
+  Filter(function(g) as.character(g$id) %in% accessible$id, groups)
+} else list()
+if (length(led) == 0) say("Ingen grupper å se på.")
+
+for (g in led) {
+  say("\n### ", g$name %||% "(uten navn)")
+  members <- g$members %||% list()
+  roles <- g$roles %||% list()
+  role_ids <- vapply(roles, function(r) as.character(r$id %||% NA), character(1))
+  role_nms <- vapply(roles, function(r) as.character(r$name %||% "?"), character(1))
+  member_roles <- lapply(members, function(m) role_nms[role_ids %in% as.character(unlist(m$roles))])
+  member_profile <- vapply(members, function(m) as.character(m$profile$id %||% NA), character(1))
+  guardian_profiles <- lapply(members, function(m) {
+    p <- vapply(m$guardians %||% list(), function(gd) as.character(gd$profile$id %||% NA), character(1))
+    unique(p[!is.na(p)])
+  })
+  # For each member: how many members in the group list this member's profile as guardian.
+  n_children <- vapply(member_profile, function(p) {
+    if (is.na(p)) return(0L)
+    sum(vapply(guardian_profiles, function(x) p %in% x, logical(1)))
+  }, integer(1))
+
+  all_guardians <- unlist(lapply(members, function(m) m$guardians %||% list()), recursive = FALSE)
+  gp <- vapply(all_guardians, function(gd) as.character(gd$profile$id %||% NA), character(1))
+  say("Foresatt-oppføringer: ", length(all_guardians), " | med profil: ", sum(!is.na(gp)),
+      " | unike foresatte (profil): ", length(unique(gp[!is.na(gp)])),
+      " | foresatte som også er medlem her: ", sum(unique(gp[!is.na(gp)]) %in% member_profile))
+
+  say("Roller: antall medlemmer | med profil | forelder til minst ett medlem her | rettigheter")
+  for (i in seq_along(roles)) {
+    has <- vapply(member_roles, function(x) role_nms[i] %in% x, logical(1))
+    perms <- sort(unique(as.character(unlist(roles[[i]]$permissions))))
+    say("- ", role_nms[i], ": ", sum(has), " | ", sum(has & !is.na(member_profile)), " | ",
+        sum(has & n_children > 0), " | ", if (length(perms)) paste(perms, collapse = ", ") else "(ingen)")
+  }
+  n_multi <- sum(vapply(member_roles, length, integer(1)) > 1)
+  say("Medlemmer med flere roller: ", n_multi)
+
+  is_coach <- vapply(member_roles, function(x) any(normalise_role_name(x) %in% normalise_role_name(coach_candidates)),
+                     logical(1))
+  say("Trenere etter kandidatlisten: ", sum(is_coach),
+      " | med profil: ", sum(is_coach & !is.na(member_profile)),
+      " | forelder til minst ett medlem her: ", sum(is_coach & n_children > 0))
+  kids <- table(n_children[is_coach & n_children > 0])
+  if (length(kids)) say("Barn per trener-forelder: ", paste0(names(kids), " barn: ", as.integer(kids), " trenere", collapse = ", "))
+  parents_no_role <- sum(!is_coach & n_children > 0)
+  say("Medlemmer uten trenerrolle som er forelder til et medlem her: ", parents_no_role)
+
+  # Do coach-parents share a subgroup with their child?
+  sgs <- lapply(members, function(m) as.character(unlist(m$subGroups)))
+  links <- 0L; same_sg <- 0L
+  for (ci in which(is_coach & n_children > 0)) {
+    for (ki in which(vapply(guardian_profiles, function(x) member_profile[ci] %in% x, logical(1)))) {
+      links <- links + 1L
+      if (length(intersect(sgs[[ci]], sgs[[ki]]))) same_sg <- same_sg + 1L
+    }
+  }
+  if (links > 0) say("Trener-barn-koblinger: ", links, " | i minst én felles undergruppe: ", same_sg)
+
+  sg_tab <- spond_subgroups(g)
+  if (nrow(sg_tab)) {
+    say("Undergrupper: medlemmer | trenere (kandidatlisten) | med en eller annen rolle")
+    for (j in seq_len(nrow(sg_tab))) {
+      inn <- vapply(sgs, function(x) sg_tab$id[j] %in% x, logical(1))
+      say("- ", sg_tab$name[j], ": ", sum(inn), " | ", sum(inn & is_coach), " | ",
+          sum(inn & vapply(member_roles, length, integer(1)) > 0))
     }
   }
 }
