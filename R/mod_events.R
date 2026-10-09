@@ -28,6 +28,30 @@ mod_events_ui <- function(id) {
   tagList(uiOutput(ns("view")))
 }
 
+#' The "Godkjenning" button in the top bar (only with the database)
+#' @noRd
+mod_events_bar_ui <- function(id) {
+  ns <- NS(id)
+  uiOutput(ns("bar"), class = "sn-approve-slot")
+}
+
+# Yellow button with the number of proposals waiting. On narrow screens only
+# the icon and the number show (see custom.css); the button keeps its name for
+# screen readers via aria-label.
+approvals_button <- function(ns, n_pending, active = FALSE) {
+  label <- if (n_pending > 0) paste0("Godkjenning, ", n_pending, " venter") else "Godkjenning, ingen venter"
+  tags$button(
+    type = "button", class = paste("btn sn-approve", if (active) "is-active"),
+    `aria-label` = label, `aria-pressed` = if (active) "true" else "false",
+    onclick = set_input_js(ns("tab"), "approvals"),
+    HTML(paste0('<svg class="sn-approve-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" ',
+                'fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" ',
+                'stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>')),
+    span(class = "sn-approve-text", "Godkjenning"),
+    if (n_pending > 0) span(class = "sn-approve-count", `aria-hidden` = "true", n_pending)
+  )
+}
+
 # Card title that always shows which main group a subgroup belongs to:
 # "Nymark G/J 2016" or "Nymark G/J 2016 › Nymark Ulv G10".
 context_title <- function(ctx) {
@@ -96,20 +120,17 @@ event_row <- function(ns, event, ctx, groups = NULL) {
   )
 }
 
-# Switch between upcoming and past events, and (with the database) the
-# proposals waiting for approval, with their number.
-tab_switch <- function(ns, tab, n_pending = NULL) {
+# Segmented control: upcoming or past events. "Godkjenning" is a button in the
+# top bar (approvals_button()); while it is shown, neither segment is pressed.
+tab_switch <- function(ns, tab) {
   btn <- function(value, ...) {
-    tags$button(type = "button", class = paste("btn btn-sm", if (tab == value) "btn-primary" else "btn-outline-primary"),
-                `aria-pressed` = if (tab == value) "true" else "false",
+    on <- identical(tab, value)
+    tags$button(type = "button", class = paste("sn-seg-btn", if (on) "is-on"),
+                `aria-pressed` = if (on) "true" else "false",
                 onclick = set_input_js(ns("tab"), value), ...)
   }
-  div(class = "btn-group", role = "group", `aria-label` = "Vis arrangementer",
-      btn("upcoming", "Kommende"), btn("past", "Gjennomførte"),
-      if (!is.null(n_pending)) {
-        btn("approvals", "Godkjenning",
-            if (n_pending > 0) span(class = "sn-tab-count", `aria-label` = paste(n_pending, "venter"), n_pending))
-      })
+  div(class = "sn-seg", role = "group", `aria-label` = "Vis arrangementer",
+      btn("upcoming", "Kommende"), btn("past", "Gjennomførte"))
 }
 
 #' @noRd
@@ -171,7 +192,12 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
       }
     })
 
-    observeEvent(input$tab, if (input$tab %in% c("upcoming", "past", if (!is.null(db)) "approvals")) tab(input$tab))
+    observeEvent(input$tab, {
+      if (!input$tab %in% c("upcoming", "past", if (!is.null(db)) "approvals")) return()
+      tab(input$tab)
+      # The top bar button also works from an open event: back to the list.
+      if (identical(input$tab, "approvals")) selected(NULL)
+    })
     observeEvent(input$older, past_window(past_window() + past_days))
     observeEvent(input$refresh, refresh(refresh() + 1))
     observeEvent(input$back, selected(NULL))
@@ -203,6 +229,16 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
     }
     editing <- if (is.null(groups)) function() FALSE else groups$editing
 
+    # "Godkjenning" in the top bar: only with the database, once a team is
+    # chosen, and not while the group editor is open.
+    output$bar <- renderUI({
+      if (is.null(groups) || is.null(context()) || editing()) return(NULL)
+      approvals_button(ns, groups$n_pending(), active = identical(tab(), "approvals") && is.null(selected()))
+    })
+    # The slot starts empty, and Shiny does not render outputs it thinks are
+    # hidden. Render it anyway, so the button can appear.
+    outputOptions(output, "bar", suspendWhenHidden = FALSE)
+
     # Members of the context, with tags. Rendered on its own so new tags do
     # not redraw the event list.
     output$members <- renderUI({
@@ -227,16 +263,16 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
         class = "sn-list-card",
         bslib::card_header(
           class = "sn-card-head",
-          h2(class = "sn-title", context_title(ctx)),
-          div(class = "sn-head-actions",
-              tab_switch(ns, tab(), if (!is.null(groups)) groups$n_pending()),
+          div(class = "sn-list-top",
+              h2(class = "sn-title", context_title(ctx)),
               tags$button(type = "button", class = "btn btn-sm btn-link sn-refresh",
                           onclick = set_input_js(ns("refresh"), "x"), title = "Hent på nytt fra Spond",
-                          "Oppdater"))
+                          "↻ Oppdater")),
+          tab_switch(ns, tab())
         ),
         bslib::card_body(
           if (is_approvals) {
-            mod_groups_pending_ui(ns("groups"))
+            tagList(h3(class = "sn-section-title", "Til godkjenning"), mod_groups_pending_ui(ns("groups")))
           } else if (!is.null(res$error)) {
             div(class = "sn-alert", role = "alert", res$error)
           } else if (length(res$events) == 0) {
