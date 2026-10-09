@@ -338,3 +338,17 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-event-coaches-label { font-weight: 700; }
 .sn-event-coaches .sn-hint { margin: 0; font-size: .85rem; }
 .sn-login-sub { font-size: .8rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--sn-black) !important; margin-bottom: 6px !important; }
+
+/* Gruppeutkast: trainers on top of each group, then a dashed line, then players */
+.sn-chips-break { flex-basis: 100%; height: 0; border-top: 1.5px dashed var(--sn-line); margin: 2px 0; }
+.sn-mcard-coach { background: var(--sn-black); color: var(--sn-white); border-color: var(--sn-black); }
+.sn-mcard-coach + .sn-mcard:not(.sn-mcard-coach) { margin-top: 12px; position: relative; }
+.sn-mcard-coach + .sn-mcard:not(.sn-mcard-coach)::before { content: ""; position: absolute; left: 0; right: 0; top: -8px;
+  border-top: 1.5px dashed var(--sn-grey-2); }
+.sn-mcard-role { font-size: .62rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--sn-yellow);
+  margin-right: 6px; }
+.sn-mcard-link { margin-left: 6px; color: var(--sn-grey); font-weight: 400; }
+.sn-mcard-coach .sn-mcard-link { color: var(--sn-yellow); }
+.sn-mcard-warn { box-shadow: 0 0 0 2px var(--sn-yellow); }
+.sn-mcard-warning { font-size: .72rem; font-weight: 600; color: var(--sn-yellow); }
+.sn-mcard:not(.sn-mcard-coach) .sn-mcard-warning { color: var(--sn-yellow-ink); }

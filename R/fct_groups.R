@@ -209,7 +209,8 @@ is_player_kind <- function(kind) is.na(kind) | kind == "player"
 #' context, plus those already placed.
 #' @param members Context members (`members_in_context()`), for gruppeutkast.
 #' @return data.frame: member_id, display_name, status (NA for gruppeutkast),
-#'   known (still in the group), sorted by name.
+#'   known (still in the group), kind (see `spond_member_kinds()`, NA if
+#'   unknown), sorted by name.
 #' @noRd
 draft_members <- function(draft, group, members) {
   all <- members_in_context(group, NULL)
@@ -218,20 +219,71 @@ draft_members <- function(draft, group, members) {
     p <- event_participants(draft$event, group)
     p <- p[(p$status == "accepted" & is_player_kind(p$kind)) | p$member_id %in% placed, , drop = FALSE]
     out <- data.frame(member_id = p$member_id, display_name = p$display_name, status = p$status,
-                      known = p$known, stringsAsFactors = FALSE)
+                      known = p$known, kind = kind_or_na(p$kind, nrow(p)), stringsAsFactors = FALSE)
     missing <- setdiff(placed, out$member_id)   # placed, but no longer a recipient
   } else {
     out <- data.frame(member_id = members$id, display_name = members$display_name,
-                      status = NA_character_, known = TRUE, stringsAsFactors = FALSE)
+                      status = NA_character_, known = TRUE, kind = kind_or_na(members$kind, nrow(members)),
+                      stringsAsFactors = FALSE)
     missing <- setdiff(placed, out$member_id)
   }
   if (length(missing)) {
     nm <- all$display_name[match(missing, all$id)]
     out <- rbind(out, data.frame(member_id = missing, display_name = ifelse(is.na(nm), "Tidligere medlem", nm),
-                                 status = NA_character_, known = !is.na(nm), stringsAsFactors = FALSE))
+                                 status = NA_character_, known = !is.na(nm),
+                                 kind = kind_or_na(all$kind, nrow(all))[match(missing, all$id)],
+                                 stringsAsFactors = FALSE))
   }
   out <- out[order(tolower(out$display_name)), , drop = FALSE]
   rownames(out) <- NULL
+  out
+}
+
+kind_or_na <- function(kind, n) if (is.null(kind)) rep(NA_character_, n) else as.character(kind)
+
+#' Move a member, and let a trainer follow their child (gruppeutkast)
+#'
+#' When a member is moved, every trainer who is parent of that member (and
+#' may be placed) is moved to the same group, or back to the pool. With
+#' several children, the child moved last decides. A trainer can afterwards
+#' be moved on their own.
+#' @param links Trainer -> child links (`parent_links` from
+#'   `spond_session_data()`), or NULL for no following (event proposals).
+#' @return list(draft, followed = ids of the trainers who were moved along).
+#' @noRd
+draft_move_follow <- function(draft, member_id, label, allowed, links = NULL) {
+  new <- draft_move(draft, member_id, label, allowed)
+  if (identical(new, draft) || is.null(links) || nrow(links) == 0) return(list(draft = new, followed = character()))
+  parents <- intersect(unique(links$parent_id[links$child_id == member_id]), allowed)
+  parents <- setdiff(parents, member_id)
+  followed <- character()
+  for (p in parents) {
+    before <- new
+    new <- draft_move(new, p, label, allowed)
+    if (!identical(before, new)) followed <- c(followed, p)
+  }
+  list(draft = new, followed = followed)
+}
+
+#' Warnings for trainers placed away from their child
+#'
+#' A trainer who is in a group, while none of their placed children is in the
+#' same group, gets "Forelder til Emma H. (Gruppe A)". Children who are not
+#' placed give no warning.
+#' @param name_of Function giving display names for member ids.
+#' @return Named character vector: trainer id -> warning.
+#' @noRd
+parent_notes <- function(assignments, links, name_of) {
+  a <- unlist(assignments)
+  if (is.null(links) || nrow(links) == 0 || length(a) == 0) return(character())
+  out <- character()
+  for (p in unique(links$parent_id)) {
+    if (!p %in% names(a)) next
+    kids <- links$child_id[links$parent_id == p]
+    kids <- kids[kids %in% names(a)]
+    if (length(kids) == 0 || any(a[kids] == a[[p]])) next
+    out[[p]] <- paste0("Forelder til ", paste0(name_of(kids), " (", unname(a[kids]), ")", collapse = ", "))
+  }
   out
 }
 
