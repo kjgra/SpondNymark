@@ -60,14 +60,18 @@ test_that("visibility: event proposals follow events, gruppeutkast follow subgro
   ut_whole <- ds_save_proposal(con, acc, "P1", "G1", "Utkast hele", "A")
   ut_sub <- ds_save_proposal(con, acc, "P1", "G1", "Utkast gutter", "A", subgroup_id = "S-gutter")
 
-  # Whole group: all events visible -> all proposals
+  # Whole group: all events visible, and only its own utkast
   all <- ds_list_proposals(con, acc, "G1", event_ids = c("E-ulv", "E-gutter"))
-  expect_setequal(all$id, c(ev1, ev2, ut_whole, ut_sub))
+  expect_setequal(all$id, c(ev1, ev2, ut_whole))
   # Subgroup "Gutter": only its event and its own utkast
   sub <- ds_list_proposals(con, acc, "G1", event_ids = "E-gutter", subgroup_id = "S-gutter")
   expect_setequal(sub$id, c(ev2, ut_sub))
   # No visible events
   expect_setequal(ds_list_proposals(con, acc, "G1", subgroup_id = "S-annen")$id, integer())
+  # An utkast waiting for approval is returned everywhere (for "Godkjenning")
+  ds_transition(con, acc, ut_sub, "submit", "P1")
+  expect_true(ut_sub %in% ds_list_proposals(con, acc, "G1")$id)
+  expect_true(ut_sub %in% ds_list_proposals(con, acc, "G1", subgroup_id = "S-annen")$id)
 })
 
 test_that("status flow: submit, approve, rollback, edit, delete (soft)", {

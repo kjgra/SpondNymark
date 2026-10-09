@@ -209,17 +209,24 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
     selected <- reactiveVal(NULL)   # minimal event, or NULL for the list
     refresh <- reactiveVal(0)
 
+    # Upcoming events are fetched for the whole main group and filtered per
+    # subgroup here, so switching subgroup needs no new fetch, and
+    # "Godkjenning" knows every event in the group. `group_id` only changes
+    # when another main group is chosen (reactiveVal ignores equal values).
+    group_id <- reactiveVal(NULL)
+
     # A new context starts on the list of upcoming events.
     observeEvent(context(), ignoreNULL = FALSE, {
       selected(NULL)
       tab("upcoming")
       past_window(past_days)
       upcoming_window(upcoming_days)
+      group_id(context()$group_id)
     })
 
-    fetch <- function(ctx, ...) {
+    fetch <- function(ctx, ..., subgroup_id = ctx$subgroup_id) {
       tryCatch(
-        list(events = spond$events(user()$spond, group_id = ctx$group_id, subgroup_id = ctx$subgroup_id, ...),
+        list(events = spond$events(user()$spond, group_id = ctx$group_id, subgroup_id = subgroup_id, ...),
              error = NULL),
         spond_error = function(e) list(events = NULL, error = conditionMessage(e),
                                        expired = inherits(e, "spond_expired")),
@@ -230,8 +237,9 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
       )
     }
 
-    upcoming <- reactive({
-      ctx <- context()
+    group_upcoming <- reactive({
+      req(group_id())
+      ctx <- isolate(context())
       req(ctx)
       refresh()
       t <- now()
@@ -239,16 +247,26 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
       # (scheduled) within the window. Spond lists the latest first and stops
       # at `max`, so the window keeps far-off series from crowding out the
       # next weeks.
-      res <- fetch(ctx, min_end = t, max_events = 100)
+      res <- fetch(ctx, min_end = t, max_events = 100, subgroup_id = NULL)
       if (!is.null(res$error)) {
         res$events <- list()
         return(res)
       }
       unsent <- fetch(ctx, min_end = t, max_start = t + upcoming_window() * 86400,
-                      include_scheduled = TRUE, max_events = 200)
+                      include_scheduled = TRUE, max_events = 200, subgroup_id = NULL)
       raw <- c(res$events, if (is.null(unsent$error)) unsent$events)
       ids <- vapply(raw, function(e) as.character(e$id %||% NA), character(1))
-      res$events <- events_for_context(raw[!duplicated(ids)], ctx$subgroup_id)
+      res$events <- events_for_context(raw[!duplicated(ids)], NULL)
+      res
+    })
+
+    upcoming <- reactive({
+      ctx <- context()
+      req(ctx)
+      res <- group_upcoming()
+      if (!is.null(ctx$subgroup_id)) {
+        res$events <- Filter(function(e) ctx$subgroup_id %in% e$subgroup_ids, res$events)
+      }
       res
     })
 
@@ -284,7 +302,7 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
     observeEvent(input$back, selected(NULL))
     observeEvent(input$open, {
       # Also upcoming events, so "Åpne arrangement" works from the approvals list.
-      ev <- Filter(function(e) identical(e$id, input$open), c(shown()$events, upcoming()$events))
+      ev <- Filter(function(e) identical(e$id, input$open), c(shown()$events, group_upcoming()$events))
       if (length(ev)) selected(ev[[1]])
     })
 
@@ -302,7 +320,7 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
       # Proposals are loaded for the upcoming events (for "Godkjenning") and
       # for the events in the tab that is shown.
       known_events <- reactive({
-        ev <- c(upcoming()$events, if (identical(tab(), "past")) past()$events)
+        ev <- c(group_upcoming()$events, if (identical(tab(), "past")) past()$events)
         ev[!duplicated(vapply(ev, function(e) e$id, ""))]
       })
       mod_groups_server("groups", context, user, db, tagger, event = selected, now = now,

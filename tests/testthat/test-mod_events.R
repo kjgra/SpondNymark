@@ -31,7 +31,7 @@ test_that("a subgroup asks Spond for its own events and shows only those", {
     expect_match(html, "Trening Ulv")
     expect_false(grepl("Kamp mot Fana", html))
     expect_false(grepl("sn-tag-to", html))   # no subgroup labels inside a subgroup
-    expect_equal(api$calls()[[1]]$subgroup_id, "S-ulv")
+    expect_null(api$calls()[[1]]$subgroup_id)   # upcoming: whole group, filtered here
   })
 })
 
@@ -86,7 +86,8 @@ test_that("changing context closes the event and starts on upcoming", {
     html <- view_html(output)
     expect_false(grepl("Sendt til:", html))
     expect_match(html, "aria-pressed=\"true\"[^>]*>Kommende|Kommende</button>")
-    expect_equal(api$calls()[[length(api$calls())]]$subgroup_id, "S-gaupe")
+    expect_match(html, "Trening Gaupe")
+    expect_false(grepl("Trening Ulv", html))
   })
 })
 

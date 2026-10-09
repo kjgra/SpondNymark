@@ -125,16 +125,20 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
       l <- l[is.na(l$proposal_id), , drop = FALSE]
       if (!is.null(event_id)) return(l[!is.na(l$event_id) & l$event_id == event_id, , drop = FALSE])
       l <- l[is.na(l$event_id), , drop = FALSE]
-      if (is.null(subgroup_id)) l else l[!is.na(l$subgroup_id) & l$subgroup_id == subgroup_id, , drop = FALSE]
+      if (is.null(subgroup_id)) l[is.na(l$subgroup_id), , drop = FALSE]
+      else l[!is.na(l$subgroup_id) & l$subgroup_id == subgroup_id, , drop = FALSE]
     }
 
     # Editor ----------------------------------------------------------------
 
+    # A gruppeutkast offers the members of its own (sub)group, also when it is
+    # opened from "Godkjenning" in another context.
     eligible <- reactive({
       d <- draft()
       req(d)
       ctx <- context()
-      draft_members(d, ctx$group, ctx$members)
+      members <- if (is.null(d$event)) members_in_context(ctx$group, d$subgroup_id) else ctx$members
+      draft_members(d, ctx$group, members)
     })
 
     # Database work the trainer does not need to wait for (taking and
@@ -480,7 +484,9 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
     }
 
     event_line <- function(prop) {
-      if (is.null(prop$event_id)) return(div(class = "sn-proposal-for", "Gruppeutkast"))
+      if (is.null(prop$event_id)) {
+        return(div(class = "sn-proposal-for", paste0("Gruppeutkast \u00b7 ", draft_context_name(context()$group, prop$subgroup_id))))
+      }
       evs <- Filter(function(e) identical(e$id, prop$event_id), events())
       if (length(evs) == 0) return(NULL)
       ev <- evs[[1]]
@@ -584,7 +590,12 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
       )
     })
 
-    drafts <- reactive(proposals_sorted(Filter(function(p) is.null(p$event_id), proposals())))
+    # Gruppeutkast of this context only (pending ones from other contexts are
+    # loaded too, for "Godkjenning").
+    drafts <- reactive({
+      sid <- context()$subgroup_id
+      proposals_sorted(Filter(function(p) is.null(p$event_id) && identical(p$subgroup_id, sid), proposals()))
+    })
     pending <- reactive(Filter(function(p) identical(p$status, "pending"), proposals()))
 
     output$pending_cards <- renderUI({

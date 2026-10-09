@@ -198,11 +198,14 @@ ds_remove_tag <- function(con, access, group_id, member_id, tag) {
 
 #' Proposals visible in a context
 #'
-#' @param event_ids The Spond events visible in the current context (from
-#'   Spond). Proposals tied to these events are returned.
+#' @param event_ids The Spond events the app knows about (the whole group's
+#'   upcoming events, so approval works from any context). Proposals tied to
+#'   these events are returned.
 #' @param subgroup_id The selected subgroup, or NULL for the whole group.
-#'   Gruppeutkast (no event) are returned for this context; the whole group
-#'   sees all of them.
+#'   Gruppeutkast (no event) are returned only for their own context (made in
+#'   the whole group: only there; made in a subgroup: only there), except
+#'   those waiting for approval, which are returned everywhere for
+#'   "Godkjenning".
 #' @noRd
 ds_list_proposals <- function(con, access, group_id, event_ids = character(), subgroup_id = NULL) {
   assert_group_access(access, group_id)
@@ -214,7 +217,8 @@ ds_list_proposals <- function(con, access, group_id, event_ids = character(), su
      WHERE p.spond_group_id = $1
        AND p.status <> 'deleted'
        AND (p.spond_event_id = ANY($2::text[])
-            OR (p.spond_event_id IS NULL AND ($3 = '' OR p.spond_subgroup_id = $3)))
+            OR (p.spond_event_id IS NULL
+                AND (p.spond_subgroup_id IS NOT DISTINCT FROM NULLIF($3, '') OR p.status = 'pending')))
      ORDER BY p.created_at, p.id",
     list(group_id, ds_text_array(event_ids), ds_opt(subgroup_id)))
 }

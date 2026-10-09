@@ -401,3 +401,12 @@ proposal_upsert <- function(proposals, id, draft, name, actor, now = Sys.time(),
     c(proposals, list(rec))
   }
 }
+
+#' Name of the (sub)group a gruppeutkast belongs to: the subgroup's name, or
+#' the main group's name for an utkast made in the whole group.
+#' @noRd
+draft_context_name <- function(group, subgroup_id = NULL) {
+  if (is.null(subgroup_id)) return(group$name)
+  n <- group$subgroups$name[group$subgroups$id == subgroup_id]
+  if (length(n) == 1) n else "ukjent undergruppe"
+}
