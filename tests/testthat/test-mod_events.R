@@ -172,3 +172,16 @@ test_that("an expired Spond session sends the trainer to the login page", {
     expect_gte(called, 1)
   })
 })
+
+test_that("the date block shows weekday, day and month, and marks matches and cancellations", {
+  s <- as.POSIXct("2026-10-10 10:00", tz = "Europe/Oslo")
+  html <- as.character(event_date_block(s))
+  expect_match(html, "sn-event-wday\">lør<")
+  expect_match(html, "sn-event-day\">10<")
+  expect_match(html, "sn-event-month\">okt<")
+  expect_match(html, "aria-hidden=\"true\"")
+  expect_match(as.character(event_date_block(as.POSIXct(NA))), "sn-event-day\">\\?<")
+  expect_equal(event_state_class(list(match = TRUE, cancelled = FALSE)), "sn-event-match")
+  expect_equal(event_state_class(list(match = TRUE, cancelled = TRUE)), "sn-event-match sn-event-cancelled")
+  expect_equal(event_state_class(list(match = FALSE, cancelled = FALSE)), "")
+})
