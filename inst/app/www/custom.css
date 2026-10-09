@@ -1,4 +1,4 @@
-/* SpondNymark: layout and details on top of the bslib theme (app_theme() in R/app_ui.R).
+/* Nymark – Gruppeorganisering: layout and details on top of the bslib theme (app_theme() in R/app_ui.R).
    Colours: black, yellow, white and Spond red. Change them here (and in app_theme()). */
 
 /* Barlow and Barlow Condensed (SIL Open Font License, see fonts/OFL.txt), served
@@ -83,7 +83,9 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 }
 .sn-brand { display: flex; align-items: center; gap: 10px; }
 .sn-logo { width: 32px; height: 32px; flex: none; }
-.sn-appname { font-family: var(--sn-font-display); font-weight: 800; font-size: 1.45rem; letter-spacing: .02em; line-height: 1; }
+.sn-appname { display: flex; flex-direction: column; line-height: 1; }
+.sn-appname-main { font-family: var(--sn-font-display); font-weight: 800; font-size: 1.45rem; letter-spacing: .02em; }
+.sn-appname-sub { font-size: .66rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--sn-yellow); margin-top: 2px; }
 .sn-env { font-size: .7rem; font-weight: 800; letter-spacing: .08em; padding: 2px 8px; border-radius: 999px; background: var(--sn-red); color: var(--sn-white); }
 .sn-bar { display: flex; align-items: center; gap: 12px; font-size: .9rem; color: #D6D6D6; }
 .sn-bar strong { color: var(--sn-white); }
@@ -335,3 +337,4 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-event-coaches { font-size: .9rem; }
 .sn-event-coaches-label { font-weight: 700; }
 .sn-event-coaches .sn-hint { margin: 0; font-size: .85rem; }
+.sn-login-sub { font-size: .8rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--sn-black) !important; margin-bottom: 6px !important; }

@@ -18,7 +18,8 @@ app_ui <- function(request) {
           div(
             class = "sn-brand",
             tags$img(src = "www/favicon.svg", class = "sn-logo", alt = "", width = 32, height = 32),
-            span(class = "sn-appname", "SpondNymark"),
+            span(class = "sn-appname", span(class = "sn-appname-main", "Nymark"),
+                 span(class = "sn-appname-sub", "Gruppeorganisering")),
             app_env_badge()
           ),
           mod_teams_bar_ui("teams"),

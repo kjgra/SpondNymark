@@ -1,4 +1,8 @@
-# SpondNymark
+# Nymark – Gruppeorganisering
+
+R-pakken, miljøvariablene (`SPONDNYMARK_*`) og databasebrukeren
+(`spondnymark_app`) heter fortsatt SpondNymark internt. Brukerne ser bare
+navnet over.
 
 Shiny-app for trenere og lagledere i Nymark. Appen leser lag, medlemmer og
 arrangementer fra Spond, og lar trenerne
