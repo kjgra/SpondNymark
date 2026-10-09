@@ -1753,8 +1753,11 @@
     }
   },
   "files": {
+    ".here": {
+      "checksum": "d41d8cd98f00b204e9800998ecf8427e"
+    },
     ".Rbuildignore": {
-      "checksum": "17f847933966777e7397760158d3dc05"
+      "checksum": "c81240138348798e86c85a0078f8bbfb"
     },
     "app.R": {
       "checksum": "83f7784fbb8bb2059f3b11bdd12dae4f"
@@ -1763,7 +1766,7 @@
       "checksum": "b6992bedb812649dd3358aee87a88d8c"
     },
     "inst/app/www/custom.css": {
-      "checksum": "fde6fe8f2830ad8bf513b53fac4429fa"
+      "checksum": "aa03205ebc487a3e5baadfe08103b13e"
     },
     "inst/app/www/favicon.ico": {
       "checksum": "81560d1b906a530c87fa0acbb2f5cca4"
@@ -1783,6 +1786,9 @@
     "LICENSE": {
       "checksum": "e3ad0d9dd33d2ed6b893fd1efb346b26"
     },
+    "man/run_app.Rd": {
+      "checksum": "eb32a8dff09564aea287fdd742e2140d"
+    },
     "NAMESPACE": {
       "checksum": "9096f7f5795633f990d3fe1352f8f9fc"
     },
@@ -1796,7 +1802,7 @@
       "checksum": "1a5b59606ee6af6b1d229656fca92722"
     },
     "R/app_ui.R": {
-      "checksum": "d9831733c0238ec31b584021100ded56"
+      "checksum": "a87e0728544c4844ab368e4b9a55f456"
     },
     "R/data_store.R": {
       "checksum": "53ed35a006553fad0e4b0c83e5d7298a"
@@ -1808,7 +1814,7 @@
       "checksum": "000e0b0ce7000a314bcf49536a785400"
     },
     "R/fct_env.R": {
-      "checksum": "2f3652c239524a6f9f6cabc12b2ca44e"
+      "checksum": "f8ceb63a9a09c34c810dc08c33452407"
     },
     "R/fct_events.R": {
       "checksum": "1bbe98eea685dd34d3ae7a597aea27ef"

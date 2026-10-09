@@ -25,10 +25,23 @@ SPONDNYMARK_DB_URL=
 # slipper å lime den inn. Admin-passordet skriver du inn når skriptet spør.
 SUPABASE_POOLER_URL=
 
-# Test-database for tests/testthat/test-data_store.R. Bruk ALDRI produksjonsdatabasen.
-# Testene lager og sletter et eget midlertidig skjema.
-# Står den tom, hoppes databasetestene over.
+# Admin-tilkobling (postgres-brukeren) til test-prosjektet i Supabase. Bruk ALDRI
+# produksjonsdatabasen. Brukes av:
+#   - testene, som lager og sletter et eget midlertidig skjema
+#     (står den tom, hoppes databasetestene over),
+#   - dev/setup_db.R når du svarer «test».
+# Appen skal aldri bruke denne (den er admin).
 SPONDNYMARK_TEST_DB_URL=
+
+# App-brukerens tilkobling til test-databasen. dev/setup_db.R fyller inn denne
+# når du svarer «test». Verdien legges inn i test-appen på Posit Connect som
+# SPONDNYMARK_DB_URL. Vil du kjøre appen lokalt mot test, bytt verdien av
+# SPONDNYMARK_DB_URL midlertidig.
+SPONDNYMARK_TEST_APP_DB_URL=
+
+# Miljø: tom (= prod) eller test. «test» gir et TEST-merke i toppfeltet og i
+# fanetittelen. Settes til test i test-appen på Posit Connect.
+SPONDNYMARK_ENV=
 
 # E-postadressen din i Spond, brukt av dev/spike_spond.R så du slipper å skrive den.
 # Passordet ditt i Spond skal aldri stå her.

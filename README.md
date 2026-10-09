@@ -61,6 +61,14 @@ Kort:
 
 Miljøvariabelen `SPONDNYMARK_DB_URL` legges inn i Posit Connect, aldri i git.
 
+### Test-app
+
+Grenen `test` publiseres som en egen app mot test-prosjektet i Supabase.
+`source("dev/setup_db.R")` med svaret «test» lager tabellene og app-brukeren
+der og skriver `SPONDNYMARK_TEST_APP_DB_URL` i `.Renviron`. I test-appen på
+Connect settes `SPONDNYMARK_DB_URL` til den verdien og `SPONDNYMARK_ENV=test`
+(gir et TEST-merke). Se `dev/03_deploy.R`.
+
 ## Endringer i databasen
 
 Se `inst/db/migrations/README.md`.

@@ -10,12 +10,12 @@ app_ui <- function(request) {
     golem_add_external_resources(),
     bslib::page_fluid(
       theme = app_theme(),
-      title = "SpondNymark",
+      title = app_title(),
       div(
         class = "sn-wrap",
         tags$header(
           class = "sn-topbar",
-          div(class = "sn-brand", span(class = "sn-dot"), "SpondNymark"),
+          div(class = "sn-brand", span(class = "sn-dot"), "SpondNymark", app_env_badge()),
           mod_teams_bar_ui("teams"),
           mod_login_bar_ui("login")
         ),
@@ -56,7 +56,7 @@ golem_add_external_resources <- function() {
     favicon(),
     bundle_resources(
       path = app_sys("app/www"),
-      app_title = "SpondNymark"
+      app_title = app_title()
     )
     # Add here other external resources
     # for example, you can add shinyalert::useShinyalert()

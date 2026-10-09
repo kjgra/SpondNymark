@@ -3,6 +3,7 @@
 .sn-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; min-height: 40px; }
 .sn-brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.15rem; }
 .sn-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bs-primary); display: inline-block; }
+.sn-env { font-size: .7rem; font-weight: 800; letter-spacing: .08em; padding: 2px 8px; border-radius: 999px; background: #EC3469; color: #FFFFFF; }
 .sn-bar { display: flex; align-items: center; gap: 12px; font-size: .9rem; color: var(--bs-secondary); }
 .sn-bar a { font-weight: 600; }
 .sn-login { max-width: 380px; width: 100%; margin: 6vh auto 0; display: flex; flex-direction: column; gap: 14px; }

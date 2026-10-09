@@ -12,6 +12,18 @@ test_that("check_env names missing variables and never prints values", {
   expect_match(err, "Posit Connect")
 })
 
+test_that("the environment label is empty in production and shown otherwise", {
+  expect_equal(app_env_label(""), "")
+  expect_equal(app_env_label("prod"), "")
+  expect_equal(app_env_label("Production"), "")
+  expect_equal(app_env_label(" test "), "TEST")
+  expect_equal(app_env_label("<script>"), "SCRIPT")
+  expect_equal(app_title(""), "SpondNymark")
+  expect_equal(app_title("test"), "SpondNymark (TEST)")
+  expect_null(app_env_badge(""))
+  expect_match(as.character(app_env_badge("test")), "sn-env")
+})
+
 test_that(".Renviron.example lists every required variable", {
   example <- testthat::test_path("..", "..", ".Renviron.example")
   skip_if_not(file.exists(example), ".Renviron.example finnes bare i kildekoden")
