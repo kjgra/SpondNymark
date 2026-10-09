@@ -161,3 +161,28 @@ test_that("a database error gives a general message, and the details go to the l
   expect_true(any(grepl("Lesing i adminpanelet feilet: ingen database", logged)))
   expect_true(any(grepl("Lagring i adminpanelet feilet: ingen database", logged)))
 })
+
+test_that("the drawing of an exercise can be previewed and is saved with it", {
+  con <- local_test_db()
+  acc <- fake_user(fake_spond_groups_two())$access
+  testServer(mod_admin_server, args = admin_args(con), {
+    session$setInputs(open = 1, ex_new = 1)
+    expect_match(as.character(output$ex_body$html), "Tegning \\(JSON")
+    session$setInputs(ex_drawing = "{ikke json", ex_preview = 1)
+    expect_match(as.character(output$ex_preview_box$html), "ikke gyldig JSON")
+    session$setInputs(ex_drawing = drawing_example_json(), ex_preview = 2)
+    box <- as.character(output$ex_preview_box$html)
+    expect_match(box, "data:image/png;base64,")
+    expect_match(box, "Ingen kollisjoner")
+    session$setInputs(ex_name = "Med tegning", ex_category = "annet", ex_save = 1)
+    expect_equal(msg()$type, "ok")
+    ex <- ds_list_exercises(con, acc, "G2016")
+    expect_false(is.na(ex$drawing))
+    expect_match(as.character(output$ex_body$html), "med tegning")
+    session$setInputs(ex_edit = as.character(ex$id))
+    expect_null(preview())                        # a new form starts without a preview
+    form <- as.character(output$ex_body$html)
+    expect_match(form, '"skisser"')
+    expect_match(form, '\\{"type":"kjegle","x":0,"y":0\\}')   # readable key order after jsonb
+  })
+})

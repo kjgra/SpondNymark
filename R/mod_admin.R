@@ -140,7 +140,7 @@ exercise_meta <- function(ex) {
              else if (!is.na(ex$min_players)) paste0("minst ", ex$min_players, " spillere")
              else if (!is.na(ex$max_players)) paste0("maks ", ex$max_players, " spillere")
   parts <- c(players, if (!is.na(ex$duration_minutes)) paste(ex$duration_minutes, "min"),
-             if (nzchar(ex$area)) ex$area)
+             if (nzchar(ex$area)) ex$area, if (!is.na(ex$drawing)) "med tegning")
   paste(parts, collapse = " · ")
 }
 
@@ -215,8 +215,16 @@ exercise_form <- function(ns, e, theme_choices) {
         area("ex_harder", "Vanskeligere", e$harder, rows = 2)),
     textInput(ns("ex_nff_url"), "Lenke til øvelsen hos NFF (valgfri)", value = e$nff_url %||% "",
               placeholder = "https://", width = "100%"),
-    p(class = "sn-hint", "Beskriv øvelsen med egne ord. Ikke kopier tekst eller tegninger fra NFF.",
-      " Tegningen legges til senere."),
+    p(class = "sn-hint", "Beskriv øvelsen med egne ord. Ikke kopier tekst eller tegninger fra NFF."),
+    div(class = "sn-ex-drawing",
+        htmltools::tagAppendAttributes(
+          textAreaInput(ns("ex_drawing"), "Tegning (JSON, valgfri)", value = drawing_pretty(e$drawing),
+                        rows = 8, width = "100%", placeholder = "Lim inn tegning, eller trykk «Sett inn eksempel»"),
+          spellcheck = "false", class = "sn-code", .cssSelector = "textarea"),
+        div(class = "sn-ex-drawbtns",
+            actionButton(ns("ex_preview"), "Vis tegning", class = "btn-sm btn-outline-primary"),
+            actionButton(ns("ex_example"), "Sett inn eksempel", class = "btn-sm btn-link")),
+        uiOutput(ns("ex_preview_box"))),
     uiOutput(ns("ex_form_msg")),
     div(class = "sn-ex-formbtns",
         actionButton(ns("ex_save"), "Lagre øvelsen", class = "btn-primary"),
@@ -429,13 +437,39 @@ mod_admin_server <- function(id, context, user, db, superadmin = Sys.getenv("SPO
       editing(NULL)
     })
 
+    # Drawing preview: drawn on request, cleared when another exercise is opened.
+    preview <- reactiveVal(NULL)   # list(src, problems) or list(error)
+    observeEvent(editing(), preview(NULL), ignoreNULL = FALSE)
+    observeEvent(input$ex_preview, {
+      preview(tryCatch(drawing_preview(input$ex_drawing), error = function(e) list(error = conditionMessage(e))))
+    })
+    observeEvent(input$ex_example, {
+      updateTextAreaInput(session, "ex_drawing", value = drawing_example_json())
+      preview(NULL)
+    })
+    output$ex_preview_box <- renderUI({
+      pv <- preview()
+      if (is.null(pv)) return(NULL)
+      if (!is.null(pv$error)) return(div(class = "alert alert-danger sn-alert", role = "alert", pv$error))
+      tagList(
+        tags$img(src = pv$src, class = "sn-ex-preview", alt = "Forhåndsvisning av tegningen"),
+        if (nrow(pv$problems)) {
+          div(class = "alert alert-warning sn-alert", role = "status",
+              strong("Sjekk tegningen: "), tags$ul(lapply(pv$problems$melding, tags$li)))
+        } else {
+          p(class = "sn-hint", "Ingen kollisjoner funnet.")
+        }
+      )
+    })
+
     exercise_input <- function() {
       list(name = input$ex_name, category = input$ex_category, themes = input$ex_themes,
            min_players = input$ex_min_players, max_players = input$ex_max_players,
            duration_minutes = input$ex_duration_minutes, area = input$ex_area,
            organisation = input$ex_organisation, execution = input$ex_execution,
            learning_points = input$ex_learning_points, questions = input$ex_questions,
-           easier = input$ex_easier, harder = input$ex_harder, nff_url = input$ex_nff_url)
+           easier = input$ex_easier, harder = input$ex_harder, nff_url = input$ex_nff_url,
+           drawing = input$ex_drawing)
     }
 
     observeEvent(input$ex_save, {

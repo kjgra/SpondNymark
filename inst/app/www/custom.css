@@ -403,6 +403,10 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-ex-actions { display: flex; gap: 6px; align-items: center; flex: none; }
 .sn-ex-confirm span { font-weight: 600; font-size: .9rem; }
 .sn-ex-formbtns { display: flex; gap: 8px; }
+.sn-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .8rem; }
+.sn-ex-drawing { display: flex; flex-direction: column; gap: 6px; }
+.sn-ex-drawbtns { display: flex; gap: 8px; align-items: center; }
+.sn-ex-preview { max-width: 100%; max-height: 460px; width: auto; height: auto; border-radius: .75rem; display: block; margin: 0 auto; }
 @media (max-width: 575.98px) {
   .sn-admin-slot { order: 2; }
   .sn-admin { width: 44px; height: 44px; border-radius: 12px; }

@@ -123,7 +123,20 @@ exercise_validate <- function(ex) {
   if (nzchar(out$nff_url) && !grepl("^https://[^[:space:]]+$", out$nff_url)) {
     stop("Lenken må starte med https://.", call. = FALSE)
   }
+  out$drawing <- exercise_drawing_json(ex$drawing)
   out
+}
+
+#' A drawing as compact JSON for the database, or "" for none
+#'
+#' Accepts JSON text or a list; the drawing is checked with
+#' `drawing_validate()` and stored compact (`drawing_json()`).
+#' @noRd
+exercise_drawing_json <- function(x) {
+  if (is.null(x) || (is.character(x) && !nzchar(txt1(x)))) return("")
+  d <- tryCatch(drawing_validate(x), error = function(e) stop("Tegning: ", conditionMessage(e), call. = FALSE))
+  if (is.null(d)) return("")
+  drawing_json(d)
 }
 
 #' Clean and check one year of the season plan

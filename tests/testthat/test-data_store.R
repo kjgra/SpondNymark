@@ -443,3 +443,15 @@ test_that("invalid training data is rejected before anything is written", {
   expect_error(ds_save_season(con, acc, "G1", 2026, c("Skadeforebygging", rep("", 11)), actor = "P1"), "sensitive")
   expect_equal(DBI::dbGetQuery(con, "SELECT ((SELECT count(*) FROM exercises) + (SELECT count(*) FROM season_themes))::integer AS n")$n, 0L)
 })
+
+test_that("an exercise keeps its drawing as JSON, and can drop it again", {
+  con <- local_test_db(); acc <- test_access()
+  id <- ds_save_exercise(con, acc, "G1", list(name = "Rondo", category = "annet", drawing = drawing_example_json()), "P1")
+  e <- ds_get_exercise(con, acc, id)
+  d <- drawing_validate(e$drawing)
+  expect_equal(d$skisser[[1]]$tittel, "3 mot 1")
+  expect_length(d$skisser[[1]]$objekter, 9)
+  ds_save_exercise(con, acc, "G1", list(name = "Rondo", category = "annet", drawing = ""), "P1", id = id)
+  expect_true(is.na(ds_get_exercise(con, acc, id)$drawing))
+  expect_error(ds_save_exercise(con, acc, "G1", list(name = "Y", category = "annet", drawing = "{x"), "P1"), "Tegning")
+})

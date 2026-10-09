@@ -672,17 +672,18 @@ ds_save_exercise <- function(con, access, group_id, ex, actor, id = NULL) {
   v <- exercise_validate(ex)
   fields <- list(v$name, v$category, ds_text_array(v$themes), v$min_players, v$max_players, v$duration_minutes,
                  v$area, v$organisation, v$execution, v$learning_points, v$questions, v$easier, v$harder,
-                 v$nff_url, actor)
+                 v$nff_url, actor, v$drawing)
   if (is.null(id)) {
     taken <- ds_query(con, "SELECT code FROM exercises WHERE spond_group_id = $1", list(group_id))$code
     code <- exercise_code(v$name, taken)
     res <- ds_query(con, "
       INSERT INTO exercises (spond_group_id, code, name, category, themes, min_players, max_players,
                              duration_minutes, area, organisation, execution, learning_points, questions,
-                             easier, harder, nff_url, created_by, updated_by)
+                             easier, harder, nff_url, created_by, updated_by, drawing)
       VALUES ($1, $2, $3, $4, $5::text[], NULLIF($6, '')::integer, NULLIF($7, '')::integer,
               NULLIF($8, '')::integer, NULLIF($9, ''), NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''),
-              NULLIF($13, ''), NULLIF($14, ''), NULLIF($15, ''), NULLIF($16, ''), $17, $17)
+              NULLIF($13, ''), NULLIF($14, ''), NULLIF($15, ''), NULLIF($16, ''), $17, $17,
+              NULLIF($18, '')::jsonb)
       RETURNING id", c(list(group_id, code), fields))
     return(as.integer(res$id))
   }
@@ -695,7 +696,8 @@ ds_save_exercise <- function(con, access, group_id, ex, actor, id = NULL) {
            max_players = NULLIF($7, '')::integer, duration_minutes = NULLIF($8, '')::integer,
            area = NULLIF($9, ''), organisation = NULLIF($10, ''), execution = NULLIF($11, ''),
            learning_points = NULLIF($12, ''), questions = NULLIF($13, ''), easier = NULLIF($14, ''),
-           harder = NULLIF($15, ''), nff_url = NULLIF($16, ''), updated_by = $17, updated_at = now()
+           harder = NULLIF($15, ''), nff_url = NULLIF($16, ''), drawing = NULLIF($18, '')::jsonb,
+           updated_by = $17, updated_at = now()
      WHERE id = $1 AND spond_group_id = $2", c(list(as.integer(id), group_id), fields))
   as.integer(id)
 }
