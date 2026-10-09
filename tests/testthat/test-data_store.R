@@ -185,13 +185,21 @@ test_that(".Renviron lines are replaced, not duplicated", {
 
 test_that("the app user can use the app tables but cannot change the schema", {
   con <- local_test_db(); acc <- test_access()
+  url <- Sys.getenv("SPONDNYMARK_TEST_DB_URL")
+  # Remove test users left behind by earlier runs that were stopped halfway.
+  drop_test_roles(con)
   role <- paste0("spondnymark_app_t", paste(sample(letters, 6, replace = TRUE), collapse = ""))
   pw <- ds_random_password()
   expect_true(ds_setup_app_role(con, role, pw))
+  # The test user is removed after the temporary schema is gone (priority
+  # "last"): its rights and policies disappear with the schema, so DROP ROLE
+  # works without superuser rights (Supabase's postgres user is not superuser
+  # and may not run DROP OWNED BY on roles it is not a member of).
   withr::defer({
-    DBI::dbExecute(con, paste0("DROP OWNED BY ", role))
-    DBI::dbExecute(con, paste0("DROP ROLE ", role))
-  })
+    admin <- test_db_connect(url)
+    on.exit(DBI::dbDisconnect(admin))
+    DBI::dbExecute(admin, paste0("DROP ROLE IF EXISTS ", DBI::dbQuoteIdentifier(admin, role)))
+  }, priority = "last")
   expect_false(ds_setup_app_role(con, role))   # second run: no new user, same rights
   expect_error(ds_setup_app_role(con, "Robert'); DROP TABLE x;--", pw), "Ugyldig rollenavn")
   expect_error(ds_setup_app_role(con, role, "kort"), "minst 24")
@@ -199,7 +207,7 @@ test_that("the app user can use the app tables but cannot change the schema", {
   schema <- DBI::dbGetQuery(con, "SELECT current_schema() AS s")$s
   admin_made <- ds_save_proposal(con, acc, "P1", "G1", "Laget av admin", "A")
 
-  app <- test_db_connect(ds_app_url(Sys.getenv("SPONDNYMARK_TEST_DB_URL"), role, pw))
+  app <- test_db_connect(ds_app_url(url, role, pw))
   withr::defer(DBI::dbDisconnect(app))
   DBI::dbExecute(app, paste0("SET search_path TO ", schema))
   DBI::dbExecute(app, "SET client_min_messages TO warning")
@@ -217,7 +225,7 @@ test_that("the app user can use the app tables but cannot change the schema", {
   expect_error(suppressWarnings(DBI::dbExecute(app, "CREATE TABLE x (a int)")))
   expect_error(suppressWarnings(DBI::dbExecute(app, "DROP TABLE group_proposals")))
   expect_error(suppressWarnings(DBI::dbExecute(app, "ALTER TABLE group_proposals DISABLE ROW LEVEL SECURITY")))
-  # (checked via the catalog: RPostgreSQL does not raise on a failed SELECT)
+  # (checked via the catalog, which works the same with every driver)
   priv <- function(table, what) DBI::dbGetQuery(con, "SELECT has_table_privilege($1, $2, $3) AS ok",
                                                params = list(role, paste0(schema, ".", table), what))$ok
   expect_false(priv("schema_migrations", "SELECT"))

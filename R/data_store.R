@@ -9,7 +9,7 @@
 #'
 #' Driver note: SQL uses `$1`-style parameters and never binds `NA`/`NULL`
 #' directly. Optional IDs are passed as "" and turned into NULL with
-#' `NULLIF($n, '')`, which behaves the same in RPostgres and RPostgreSQL.
+#' `NULLIF($n, '')`, which behaves the same with every Postgres driver.
 #'
 #' Speed: with RPostgres, a parameterised statement costs three round trips
 #' to the server (prepare, describe, execute). Supabase is in Ireland, so
@@ -96,8 +96,8 @@ ds_interpolate <- function(con, sql, params) {
   sql
 }
 
-# One round trip with RPostgres; other drivers (RPostgreSQL in some test
-# setups) get ordinary parameter binding.
+# One round trip with RPostgres (the driver the app uses). Any other DBI
+# driver gets ordinary parameter binding.
 ds_fast <- function(con) inherits(con, "PqConnection")
 
 ds_query <- function(con, sql, params = list()) {
