@@ -65,16 +65,29 @@ event_count_text <- function(event) {
   paste(parts, collapse = " · ")
 }
 
+# Date block: weekday, day and month ("LØR / 10 / OKT"). Black, red for a
+# match and grey when cancelled (see custom.css). Hidden from screen readers,
+# which get the full date from event_when().
+event_date_block <- function(s, tz = "Europe/Oslo") {
+  short <- function(x) sub("\\.$", "", x)
+  div(class = "sn-event-date", `aria-hidden` = "true",
+      span(class = "sn-event-wday", if (is.na(s)) "" else short(no_weekday(s, tz))),
+      span(class = "sn-event-day", if (is.na(s)) "?" else as.integer(format(s, "%d", tz = tz))),
+      span(class = "sn-event-month", if (is.na(s)) "" else short(no_month(s, tz))))
+}
+
+# Classes shared by the event row and the event page header.
+event_state_class <- function(event) {
+  paste(c(if (isTRUE(event$match)) "sn-event-match", if (isTRUE(event$cancelled)) "sn-event-cancelled"),
+        collapse = " ")
+}
+
 event_row <- function(ns, event, ctx, groups = NULL) {
-  s <- event$start
-  tz <- "Europe/Oslo"
   tags$button(
     type = "button",
-    class = paste("btn sn-event", if (event$cancelled) "sn-event-cancelled"),
+    class = paste("btn sn-event", event_state_class(event)),
     onclick = set_input_js(ns("open"), event$id),
-    div(class = "sn-event-date", `aria-hidden` = "true",
-        span(class = "sn-event-day", if (is.na(s)) "?" else as.integer(format(s, "%d", tz = tz))),
-        span(class = "sn-event-month", if (is.na(s)) "" else no_month(s, tz))),
+    event_date_block(event$start),
     div(class = "sn-event-main",
         span(class = "sn-event-title", event$heading),
         span(class = "sn-event-when", event_when(event$start, event$end)),
@@ -211,6 +224,7 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
       is_past <- identical(tab(), "past")
       is_approvals <- identical(tab(), "approvals") && !is.null(groups)
       bslib::card(
+        class = "sn-list-card",
         bslib::card_header(
           class = "sn-card-head",
           h2(class = "sn-title", context_title(ctx)),
@@ -253,15 +267,17 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
                       onclick = set_input_js(ns("back"), "x"), "← Arrangementer"),
           bslib::card(
             bslib::card_header(
-              class = "sn-card-head",
-              div(class = "sn-crumbs", context_title(ctx)),
-              h2(class = "sn-title", ev$heading),
-              div(class = "sn-event-when", event_when(ev$start, ev$end)),
-              div(class = "sn-tags",
-                  span(class = "sn-hint", "Sendt til:"),
-                  lapply(event_sent_to(ev, ctx$group), function(n) span(class = "sn-tag sn-tag-to", n)),
-                  if (ev$match) span(class = "sn-tag sn-tag-match", "Kamp"),
-                  if (ev$cancelled) span(class = "sn-tag sn-tag-cancelled", "Avlyst"))
+              class = paste("sn-card-head sn-detail-head", event_state_class(ev)),
+              event_date_block(ev$start),
+              div(class = "sn-detail-main",
+                  div(class = "sn-crumbs", context_title(ctx)),
+                  h2(class = "sn-title", ev$heading),
+                  div(class = "sn-event-when", event_when(ev$start, ev$end)),
+                  div(class = "sn-tags",
+                      span(class = "sn-hint", "Sendt til:"),
+                      lapply(event_sent_to(ev, ctx$group), function(n) span(class = "sn-tag sn-tag-to", n)),
+                      if (ev$match) span(class = "sn-tag sn-tag-match", "Kamp"),
+                      if (ev$cancelled) span(class = "sn-tag sn-tag-cancelled", "Avlyst")))
             ),
             bslib::card_body(
               if (!is.null(groups)) div(class = "sn-event-groups", mod_groups_event_ui(ns("groups"))),
