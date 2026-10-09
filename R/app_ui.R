@@ -25,6 +25,7 @@ app_ui <- function(request) {
           ),
           mod_teams_bar_ui("teams"),
           mod_events_bar_ui("events"),
+          mod_admin_bar_ui("admin"),
           mod_login_bar_ui("login")
         )
       ),

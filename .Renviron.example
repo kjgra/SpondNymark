@@ -43,6 +43,12 @@ SPONDNYMARK_TEST_APP_DB_URL=
 # fanetittelen. Settes til test i test-appen på Posit Connect.
 SPONDNYMARK_ENV=
 
+# Spond-profil-ID-en til superadmin (Kjetil). Gir tannhjulet i toppfeltet med
+# innstillinger (årshjul, lagets standard, øvelser). Står den tom, ser ingen
+# tannhjulet. Settes både lokalt og i appene på Posit Connect. Den er ikke
+# hemmelig, men hører ikke hjemme i git.
+SPONDNYMARK_SUPERADMIN=
+
 # E-postadressen din i Spond, brukt av dev/spike_spond.R så du slipper å skrive den.
 # Passordet ditt i Spond skal aldri stå her.
 SPOND_EMAIL=
