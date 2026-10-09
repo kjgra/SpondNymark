@@ -51,12 +51,15 @@ mod_tags_server <- function(id, context, user, db, poll_ms = 15000, suggestions 
     })
 
     # Members are looked up in the main group, so ids from the browser can
-    # never point outside the group the trainer has access to.
+    # never point outside the group the trainer has access to. Only players
+    # get tags (not trainers or other adults).
     member_row <- function(id) {
       ctx <- context()
       if (is.null(ctx) || is.null(id)) return(NULL)
       m <- ctx$group$members[ctx$group$members$id == id, , drop = FALSE]
-      if (nrow(m) == 1) m else NULL
+      if (nrow(m) != 1) return(NULL)
+      if (!is.null(m$kind) && !identical(m$kind, "player")) return(NULL)
+      m
     }
 
     write <- function(f, fail_msg) {
@@ -170,8 +173,10 @@ mod_tags_server <- function(id, context, user, db, poll_ms = 15000, suggestions 
     list(
       table = reactive(tag_data()),
       error = reactive(load_error()),
-      chip = function(member_id, name, note = NULL) {
-        member_chip(member_id, name, tags_for(tag_data(), member_id), ns("open"), note)
+      chip = function(member_id, name, note = NULL, short = FALSE) {
+        td <- tag_data()
+        member_chip(member_id, name, tags_for(td, member_id), ns("open"), note,
+                    short = short, universe = unique(td$tag))
       }
     )
   })

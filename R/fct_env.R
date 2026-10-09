@@ -30,11 +30,15 @@ app_env_label <- function(env = Sys.getenv("SPONDNYMARK_ENV")) {
   substr(gsub("[^A-Z0-9 _-]", "", env), 1, 12)
 }
 
-#' Browser tab title, e.g. "SpondNymark" or "SpondNymark (TEST)"
+# The name users see. The R package, environment variables and database user
+# keep the old internal name (SpondNymark), which users never see.
+app_name <- "Nymark \u2013 Gruppeorganisering"
+
+#' Browser tab title, e.g. "Nymark – Gruppeorganisering (TEST)"
 #' @noRd
 app_title <- function(env = Sys.getenv("SPONDNYMARK_ENV")) {
   label <- app_env_label(env)
-  if (nzchar(label)) paste0("SpondNymark (", label, ")") else "SpondNymark"
+  if (nzchar(label)) paste0(app_name, " (", label, ")") else app_name
 }
 
 #' Label next to the app name in the top bar, or NULL in production

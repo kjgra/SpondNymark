@@ -1,4 +1,4 @@
-/* SpondNymark: layout and details on top of the bslib theme (app_theme() in R/app_ui.R).
+/* Nymark – Gruppeorganisering: layout and details on top of the bslib theme (app_theme() in R/app_ui.R).
    Colours: black, yellow, white and Spond red. Change them here (and in app_theme()). */
 
 /* Barlow and Barlow Condensed (SIL Open Font License, see fonts/OFL.txt), served
@@ -83,7 +83,9 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 }
 .sn-brand { display: flex; align-items: center; gap: 10px; }
 .sn-logo { width: 32px; height: 32px; flex: none; }
-.sn-appname { font-family: var(--sn-font-display); font-weight: 800; font-size: 1.45rem; letter-spacing: .02em; line-height: 1; }
+.sn-appname { display: flex; flex-direction: column; line-height: 1; }
+.sn-appname-main { font-family: var(--sn-font-display); font-weight: 800; font-size: 1.45rem; letter-spacing: .02em; }
+.sn-appname-sub { font-size: .66rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--sn-yellow); margin-top: 2px; }
 .sn-env { font-size: .7rem; font-weight: 800; letter-spacing: .08em; padding: 2px 8px; border-radius: 999px; background: var(--sn-red); color: var(--sn-white); }
 .sn-bar { display: flex; align-items: center; gap: 12px; font-size: .9rem; color: #D6D6D6; }
 .sn-bar strong { color: var(--sn-white); }
@@ -119,7 +121,9 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-pickrow-detail { font-size: .85rem; color: var(--bs-secondary); }
 .sn-back { align-self: flex-start; padding: 0; margin-bottom: 6px; text-decoration: none; font-weight: 600; }
 .sn-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.sn-chip { border: 1px solid var(--sn-line); border-radius: 999px; padding: 4px 12px; font-size: .9rem; font-weight: 500; background: var(--sn-ground); }
+.sn-chip { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; max-width: 100%; overflow-wrap: anywhere;
+  border: 1px solid var(--sn-line); border-radius: 999px; padding: 4px 12px; font-size: .9rem; font-weight: 500; background: var(--sn-ground); }
+.sn-minitag-short { min-width: 1.5em; text-align: center; cursor: help; }
 
 /* Hierarchy: main group with its subgroups nested underneath */
 .sn-pickrow-main .sn-pickrow-title { font-size: 1.05rem; }
@@ -319,3 +323,18 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-comment-add { display: flex; gap: 6px; margin-top: 8px; }
 .sn-comment-add .form-control { flex: 1; min-width: 0; }
 .sn-history { font-size: .8rem; color: var(--bs-secondary); padding: 1px 0; }
+
+/* Members: trainers, players, other adults */
+.sn-members-section + .sn-members-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--sn-line); }
+.sn-members-title { font-family: var(--sn-font-display); font-size: 1.1rem; font-weight: 800; margin: 0 0 8px; }
+.sn-coach-list { display: flex; flex-direction: column; gap: 6px; }
+.sn-coach { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 6px 12px; border-radius: 12px;
+  background: var(--sn-black); color: var(--sn-white); font-weight: 600; }
+.sn-coach-icon { color: var(--sn-yellow); flex: none; }
+.sn-coach-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.sn-coach-role { font-size: .8rem; font-weight: 600; color: var(--sn-yellow); text-align: right; }
+.sn-chip-coach { background: var(--sn-black); color: var(--sn-white); border-color: var(--sn-black); }
+.sn-event-coaches { font-size: .9rem; }
+.sn-event-coaches-label { font-weight: 700; }
+.sn-event-coaches .sn-hint { margin: 0; font-size: .85rem; }
+.sn-login-sub { font-size: .8rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--sn-black) !important; margin-bottom: 6px !important; }

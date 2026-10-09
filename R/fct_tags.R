@@ -87,8 +87,12 @@ tag_suggestions_for <- function(tags, member_id, fixed = tag_suggestions()) {
 #'   `mod_tags_server()`), or NULL for a plain, non-clickable chip.
 #' @param note Optional short warning shown on the chip (e.g. "Kommer ikke").
 #' @noRd
-member_chip <- function(member_id, name, member_tags = character(), open_input = NULL, note = NULL) {
-  mini <- tagList(lapply(member_tags, function(t) span(class = "sn-minitag", t)),
+#' @param short Show tags as short labels (see `tag_abbrev()`), for narrow
+#'   places such as group boxes. The full tag is in the tooltip.
+#' @param universe All tags in use in the group (for unique short labels).
+member_chip <- function(member_id, name, member_tags = character(), open_input = NULL, note = NULL,
+                        short = FALSE, universe = member_tags) {
+  mini <- tagList(minitags(member_tags, short, universe),
                   if (!is.null(note)) span(class = "sn-note", note))
   if (is.null(open_input)) return(span(class = "sn-chip", name, mini))
   tags$button(
@@ -118,9 +122,50 @@ remembered_details <- function(input_id, open, default, summary, ..., class = NU
 #' @noRd
 #' @param clickable Logical, recycled: FALSE for members who cannot be tagged
 #'   (e.g. former members).
-member_chips <- function(ids, names, tagger = NULL, clickable = TRUE) {
+#' @param kinds Optional member kinds ("coach", "player", "adult"). Only
+#'   players get tags; trainers get a black chip.
+member_chips <- function(ids, names, tagger = NULL, clickable = TRUE, kinds = NULL) {
   clickable <- rep_len(clickable, length(ids))
+  kinds <- if (is.null(kinds)) rep("player", length(ids)) else ifelse(is.na(kinds), "player", kinds)
   div(class = "sn-chips", lapply(seq_along(ids), function(i) {
-    if (is.null(tagger) || !clickable[i]) member_chip(ids[i], names[i]) else tagger$chip(ids[i], names[i])
+    if (identical(kinds[i], "coach")) return(span(class = "sn-chip sn-chip-coach", names[i]))
+    if (is.null(tagger) || !clickable[i] || !identical(kinds[i], "player")) member_chip(ids[i], names[i])
+    else tagger$chip(ids[i], names[i])
   }))
+}
+
+#' Short labels for tags in narrow places
+#'
+#' The shortest start of the tag that no other tag in use begins with, at
+#' least one letter, first letter upper case: Angrep -> "A", Forsvar -> "F",
+#' Keeper and Kaptein -> "Ke" and "Ka". A tag that is the start of another
+#' tag is shown in full.
+#' @param tags Tags to shorten.
+#' @param universe All tags in use in the group.
+#' @noRd
+tag_abbrev <- function(tags, universe = tags) {
+  if (length(tags) == 0) return(character())
+  u <- unique(tolower(c(universe, tags)))
+  vapply(tags, function(t) {
+    lt <- tolower(t)
+    others <- setdiff(u, lt)
+    for (k in seq_len(nchar(t))) {
+      if (!any(startsWith(others, substr(lt, 1, k)))) {
+        p <- substr(t, 1, k)
+        return(paste0(toupper(substr(p, 1, 1)), substr(p, 2, k)))
+      }
+    }
+    t
+  }, character(1), USE.NAMES = FALSE)
+}
+
+#' Tag labels on a chip or card, full or short (full tag in the tooltip)
+#' @noRd
+minitags <- function(member_tags, short = FALSE, universe = member_tags) {
+  if (length(member_tags) == 0) return(NULL)
+  if (!short) return(lapply(member_tags, function(t) span(class = "sn-minitag", t)))
+  labels <- tag_abbrev(member_tags, universe)
+  lapply(seq_along(member_tags), function(i) {
+    span(class = "sn-minitag sn-minitag-short", title = member_tags[i], labels[i])
+  })
 }

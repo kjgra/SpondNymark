@@ -22,6 +22,18 @@ access_role_names <- function() {
   if (is.null(x)) c("Teamleder", "Trener", "Lagleder", "Hovedlagleder") else unlist(x)
 }
 
+# Role names that make a member a trainer, from golem-config.yml
+# (`coach_role_names`). Separate from the access list: a role can make someone
+# a trainer in the member list without giving access to the app.
+coach_role_names <- function() {
+  x <- tryCatch(get_golem_config("coach_role_names"), error = function(e) NULL)
+  if (is.null(x)) {
+    c("Teamleder", "Trener", "Lagleder", "Hovedlagleder", "Hjelpetrener", "Keepertrener", "Hjelper")
+  } else {
+    unlist(x)
+  }
+}
+
 normalise_role_name <- function(x) {
   tolower(trimws(x))
 }

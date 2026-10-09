@@ -1,4 +1,8 @@
-# SpondNymark
+# Nymark – Gruppeorganisering
+
+R-pakken, miljøvariablene (`SPONDNYMARK_*`) og databasebrukeren
+(`spondnymark_app`) heter fortsatt SpondNymark internt. Brukerne ser bare
+navnet over.
 
 Shiny-app for trenere og lagledere i Nymark. Appen leser lag, medlemmer og
 arrangementer fra Spond, og lar trenerne
@@ -19,7 +23,12 @@ Appen skriver aldri til Spond. Godkjente grupper settes opp i Spond for hånd.
   (`access_role_names` i `inst/golem-config.yml`).
 - Databasen lagrer bare Spond-ID-er, tagger, gruppeforslag, kommentarer og
   historikk. Navn hentes fra Spond ved visning. Fødselsdato, kontaktinfo,
-  foresatte og avslagsmeldinger fra Spond kastes med en gang.
+  foresatte og avslagsmeldinger fra Spond kastes med en gang. Det eneste som
+  brukes fra foresatte, er hvilken trener som er forelder til hvilket medlem
+  (medlems-ID-er). Det holdes bare i minnet under økten, så treneren kan
+  følge barnet sitt i gruppeutkast.
+- Trenere er medlemmer med en rolle i `coach_role_names`
+  (`inst/golem-config.yml`). De vises for seg og får ikke tagger.
 - Tagger og kommentarer skal ikke inneholde helseopplysninger eller andre
   sensitive opplysninger. Appen minner om det og avviser åpenbare ord.
 - Passordet til Spond sendes bare til Spond og lagres aldri.

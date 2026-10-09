@@ -67,3 +67,21 @@ test_that("remembered details keep their open state", {
   expect_false(grepl(" open", d(FALSE)))
   expect_match(as.character(remembered_details("x", NULL, TRUE, "T")), "open")
 })
+
+test_that("tags get the shortest unique short label", {
+  all <- c("Angrep", "Forsvar", "Keeper", "Kaptein", "Midtbane", "Ny")
+  expect_equal(tag_abbrev(c("Angrep", "Forsvar", "Midtbane"), all), c("A", "F", "M"))
+  expect_equal(tag_abbrev(c("Keeper", "Kaptein"), all), c("Ke", "Ka"))
+  expect_equal(tag_abbrev("ny", c("ny", "nybegynner")), "ny")   # start of another tag: in full
+  expect_equal(tag_abbrev("venstrebein", c("venstrebein", "Venstre kant")), "Venstreb")
+  expect_equal(tag_abbrev(character(), all), character())
+})
+
+test_that("short chips show short labels with the full tag as tooltip", {
+  html <- as.character(member_chip("M-1", "Emma H.", c("Angrep", "Keeper"), short = TRUE,
+                                   universe = c("Angrep", "Keeper", "Kaptein")))
+  expect_match(html, "title=\"Angrep\">A<")
+  expect_match(html, "title=\"Keeper\">Ke<")
+  full <- as.character(member_chip("M-1", "Emma H.", c("Angrep")))
+  expect_match(full, "sn-minitag\">Angrep<")
+})

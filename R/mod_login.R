@@ -42,8 +42,9 @@ login_form <- function(ns) {
     class = "sn-login",
     div(
       class = "sn-login-title",
-      h1("SpondNymark"),
-      p("Gruppeinndeling for trenere og lagledere.")
+      h1("Nymark"),
+      p(class = "sn-login-sub", "Gruppeorganisering"),
+      p("For trenere og lagledere. Logg inn med Spond-kontoen din.")
     ),
     bslib::card(
       bslib::card_body(

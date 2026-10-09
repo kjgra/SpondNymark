@@ -197,7 +197,8 @@ test_that("the tabs are only upcoming and past, and the approvals button shows t
   b <- as.character(approvals_button(ns, 3))
   expect_match(b, "aria-label=\"Godkjenning, 3 venter\"")
   expect_match(b, "sn-approve-count\" aria-hidden=\"true\">3<")
-  expect_match(b, "ev-tab', 'approvals'")
+  # htmltools writes the quotes in onclick as &#39;
+  expect_match(b, "ev-tab(&#39;|'), (&#39;|')approvals")
   b0 <- as.character(approvals_button(ns, 0, active = TRUE))
   expect_false(grepl("sn-approve-count", b0))
   expect_match(b0, "is-active")
@@ -231,4 +232,26 @@ test_that("with the database the top bar button shows the count and opens the ap
     expect_match(view_html(output), "Til godkjenning")
     expect_match(paste(unlist(output$bar), collapse = ""), "is-active")
   })
+})
+
+test_that("members are listed as trainers, players and (when any) other adults", {
+  m <- data.frame(id = c("M-c", "M-p1", "M-p2"), display_name = c("Kari T.", "Ida S.", "Jon B."),
+                  kind = c("coach", "player", "player"), roles = c("Teamleder", "", ""))
+  html <- as.character(member_sections(m))
+  expect_match(html, "Trenere · 1")
+  expect_match(html, "Spillere · 2")
+  expect_match(html, "sn-coach-role\">Teamleder")
+  expect_false(grepl("Andre voksne", html))
+  m2 <- rbind(m, data.frame(id = "M-a", display_name = "Anne V.", kind = "adult", roles = ""))
+  expect_match(as.character(member_sections(m2)), "Andre voksne · 1")
+})
+
+test_that("only players get clickable chips", {
+  tagger <- list(chip = function(id, name, note = NULL) tags$button(`data-sn-value` = id, name))
+  html <- as.character(member_chips(c("M-c", "M-p", "M-a"), c("Kari", "Ida", "Anne"), tagger,
+                                    kinds = c("coach", "player", "adult")))
+  expect_match(html, "sn-chip sn-chip-coach\">Kari")
+  expect_match(html, "data-sn-value=\"M-p\"")
+  expect_false(grepl("data-sn-value=\"M-a\"", html))
+  expect_false(grepl("data-sn-value=\"M-c\"", html))
 })

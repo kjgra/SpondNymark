@@ -411,8 +411,9 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
 
     # Output: proposal cards -----------------------------------------------
 
+    # Group boxes are narrow, so tags are shown as short labels there.
     chip <- function(id, name, note = NULL) {
-      if (is.null(tagger)) member_chip(id, name, note = note) else tagger$chip(id, name, note)
+      if (is.null(tagger)) member_chip(id, name, note = note) else tagger$chip(id, name, note, short = TRUE)
     }
 
     action_button <- function(prop, action, label) {
@@ -478,7 +479,7 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
     proposal_card <- function(prop, ctx, ev = NULL, show_event = FALSE) {
       all <- members_in_context(ctx$group, NULL)
       parts <- if (is.null(ev)) NULL else event_participants(ev, ctx$group)
-      coming <- if (is.null(parts)) character() else parts$member_id[parts$status == "accepted"]
+      coming <- if (is.null(parts)) character() else parts$member_id[parts$status == "accepted" & is_player_kind(parts$kind)]
       lay <- proposal_layout(prop$labels, prop$assignments, coming)
       name_of <- function(ids) {
         n <- all$display_name[match(ids, all$id)]
@@ -639,7 +640,7 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
             `data-sort` = tolower(el$display_name[i]), `aria-label` = el$display_name[i],
             span(class = "sn-mcard-name", el$display_name[i]),
             span(class = "sn-mcard-tags",
-                 lapply(tags_for(tag_table, el$member_id[i]), function(t) span(class = "sn-minitag", t)),
+                 minitags(tags_for(tag_table, el$member_id[i]), short = TRUE, universe = unique(tag_table$tag)),
                  if (!is.null(response_note(el$status[i]))) span(class = "sn-note", response_note(el$status[i]))))
       }
       column <- function(label, title, ids, pool = FALSE) {

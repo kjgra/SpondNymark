@@ -58,6 +58,8 @@ test_that("ids from the browser must be members of the group", {
     expect_null(member())
     session$setInputs(open = "M-9")                # member of another group (Nymark Senior)
     expect_null(member())
+    session$setInputs(open = "M-me")               # trainers get no tags
+    expect_null(member())
     session$setInputs(submit = "Keeper")
     expect_equal(nrow(DBI::dbGetQuery(con, "SELECT 1 FROM member_tags")), 0)
   })

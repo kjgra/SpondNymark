@@ -195,11 +195,18 @@ draft_from <- function(proposal, event = NULL) {
        labels = proposal$labels, assignments = proposal$assignments)
 }
 
+#' Players are placed in groups for an event; trainers and other adults are
+#' not (see `spond_member_kinds()`). Unknown kind (former members) counts as
+#' a player.
+#' @noRd
+is_player_kind <- function(kind) is.na(kind) | kind == "player"
+
 #' Members who can be placed in the editor
 #'
-#' For an event: everyone who has said "Kommer", plus those already placed
-#' (even if they later changed their answer). For a gruppeutkast: the members
-#' of the context, plus those already placed.
+#' For an event: every player who has said "Kommer", plus those already
+#' placed (even if they later changed their answer, or are trainers placed
+#' before trainers were left out). For a gruppeutkast: the members of the
+#' context, plus those already placed.
 #' @param members Context members (`members_in_context()`), for gruppeutkast.
 #' @return data.frame: member_id, display_name, status (NA for gruppeutkast),
 #'   known (still in the group), sorted by name.
@@ -209,7 +216,7 @@ draft_members <- function(draft, group, members) {
   placed <- names(draft$assignments)
   if (!is.null(draft$event)) {
     p <- event_participants(draft$event, group)
-    p <- p[p$status == "accepted" | p$member_id %in% placed, , drop = FALSE]
+    p <- p[(p$status == "accepted" & is_player_kind(p$kind)) | p$member_id %in% placed, , drop = FALSE]
     out <- data.frame(member_id = p$member_id, display_name = p$display_name, status = p$status,
                       known = p$known, stringsAsFactors = FALSE)
     missing <- setdiff(placed, out$member_id)   # placed, but no longer a recipient
