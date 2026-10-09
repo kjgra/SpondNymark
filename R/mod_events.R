@@ -141,6 +141,18 @@ member_sections <- function(m, tagger = NULL) {
   )
 }
 
+# "Trenere: Kari T., Per O. (fordeles ikke)" on the event page: trainers who
+# got the event and have not said no. NULL when there are none.
+event_coaches_line <- function(event, group) {
+  p <- event_participants(event, group)
+  p <- p[!is.na(p$kind) & p$kind == "coach" & p$status != "declined", , drop = FALSE]
+  if (nrow(p) == 0) return(NULL)
+  div(class = "sn-event-coaches",
+      span(class = "sn-event-coaches-label", "Trenere:"), " ",
+      paste(p$display_name[order(tolower(p$display_name))], collapse = ", "),
+      span(class = "sn-hint", " (fordeles ikke)"))
+}
+
 # Classes shared by the event row and the event page header.
 event_state_class <- function(event) {
   paste(c(if (isTRUE(event$match)) "sn-event-match", if (isTRUE(event$cancelled)) "sn-event-cancelled"),
@@ -346,6 +358,7 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
                   div(class = "sn-crumbs", context_title(ctx)),
                   h2(class = "sn-title", ev$heading),
                   div(class = "sn-event-when", event_when(ev$start, ev$end)),
+                  event_coaches_line(ev, ctx$group),
                   div(class = "sn-tags",
                       span(class = "sn-hint", "Sendt til:"),
                       lapply(event_sent_to(ev, ctx$group), function(n) span(class = "sn-tag sn-tag-to", n)),

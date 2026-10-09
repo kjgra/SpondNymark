@@ -197,7 +197,8 @@ test_that("the tabs are only upcoming and past, and the approvals button shows t
   b <- as.character(approvals_button(ns, 3))
   expect_match(b, "aria-label=\"Godkjenning, 3 venter\"")
   expect_match(b, "sn-approve-count\" aria-hidden=\"true\">3<")
-  expect_match(b, "ev-tab', 'approvals'")
+  # htmltools writes the quotes in onclick as &#39;
+  expect_match(b, "ev-tab(&#39;|'), (&#39;|')approvals")
   b0 <- as.character(approvals_button(ns, 0, active = TRUE))
   expect_false(grepl("sn-approve-count", b0))
   expect_match(b0, "is-active")

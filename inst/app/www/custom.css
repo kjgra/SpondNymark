@@ -332,3 +332,6 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-coach-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .sn-coach-role { font-size: .8rem; font-weight: 600; color: var(--sn-yellow); text-align: right; }
 .sn-chip-coach { background: var(--sn-black); color: var(--sn-white); border-color: var(--sn-black); }
+.sn-event-coaches { font-size: .9rem; }
+.sn-event-coaches-label { font-weight: 700; }
+.sn-event-coaches .sn-hint { margin: 0; font-size: .85rem; }

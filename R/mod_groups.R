@@ -479,7 +479,7 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
     proposal_card <- function(prop, ctx, ev = NULL, show_event = FALSE) {
       all <- members_in_context(ctx$group, NULL)
       parts <- if (is.null(ev)) NULL else event_participants(ev, ctx$group)
-      coming <- if (is.null(parts)) character() else parts$member_id[parts$status == "accepted"]
+      coming <- if (is.null(parts)) character() else parts$member_id[parts$status == "accepted" & is_player_kind(parts$kind)]
       lay <- proposal_layout(prop$labels, prop$assignments, coming)
       name_of <- function(ids) {
         n <- all$display_name[match(ids, all$id)]
