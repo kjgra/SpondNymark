@@ -37,3 +37,19 @@ rsconnect::writeManifest(
 #      SPONDNYMARK_DB_URL = (verdien fra .Renviron)
 #    Appen stopper ved oppstart med en tydelig melding til dette er gjort.
 # 3. Settings -> Access: begrens tilgangen, f.eks. til innloggede brukere.
+
+# Test-appen (grenen test) ------------------------------------------------------------
+# En egen app i Connect mot test-prosjektet i Supabase. Prod-appen røres ikke.
+# 1. Én gang: source("dev/setup_db.R") og svar «test». Det lager tabellene og
+#    app-brukeren i test-databasen og skriver SPONDNYMARK_TEST_APP_DB_URL i .Renviron.
+#    Nye migrasjoner: kjør skriptet med «test» før push til test, og med «prod»
+#    før merge til main.
+# 2. Lag manifest.json i grenen test (steg 3 over), commit og push til test.
+# 3. Publish -> Import from Git: samme repo, gren test, mappe "/".
+#    Gi appen et tydelig navn, f.eks. «SpondNymark TEST».
+# 4. Settings -> Runtime -> Environment Variables:
+#      SPONDNYMARK_DB_URL = (verdien av SPONDNYMARK_TEST_APP_DB_URL i .Renviron)
+#      SPONDNYMARK_ENV    = test
+#    Aldri SPONDNYMARK_TEST_DB_URL (admin) i Connect.
+# 5. Settings -> Access: samme begrensning som prod-appen. Appen viser ekte
+#    Spond-data, så samme personvernregler gjelder.

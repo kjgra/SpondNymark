@@ -1,16 +1,23 @@
-# Fase 0b: sett opp databasen i Supabase -----------------------------------------
+# Sett opp databasen i Supabase (prod eller test) -----------------------------------
 #
 # Forutsetning: Supabase-prosjektet er opprettet (se arbeidsplanen eller chatten).
 # Kjør fra prosjektmappen:  source("dev/setup_db.R")
 #
+# Skriptet spør først om du vil sette opp prod eller test:
+#
+#   prod: admin-tilkobling fra SUPABASE_POOLER_URL (eller innlimt) + admin-passord.
+#         Appens tilkoblingsstreng skrives til SPONDNYMARK_DB_URL.
+#   test: admin-tilkobling fra SPONDNYMARK_TEST_DB_URL (test-prosjektet).
+#         Appens tilkoblingsstreng skrives til SPONDNYMARK_TEST_APP_DB_URL.
+#         SPONDNYMARK_DB_URL (prod) røres ikke.
+#
 # Skriptet gjør dette:
-#   1. Ber om tilkoblingsstrengen (Session pooler) og admin-passordet.
-#      Ingen av dem lagres.
+#   1. Kobler til som admin. Passord som skrives inn, lagres ikke.
 #   2. Oppretter tabellene: migrasjoner som ikke er kjørt før.
 #   3. Oppretter app-brukeren «spondnymark_app» med et tilfeldig, sterkt passord.
 #      Brukeren kan bare lese og skrive rader i appens tabeller, ikke endre
 #      tabellene eller se noe annet i Supabase-prosjektet.
-#   4. Skriver appens tilkoblingsstreng til .Renviron (SPONDNYMARK_DB_URL).
+#   4. Skriver appens tilkoblingsstreng til .Renviron (se over).
 #      .Renviron står i .gitignore.
 #   5. Sjekker at app-brukeren kan koble til, og at den ikke kan endre tabellene.
 #
@@ -24,11 +31,21 @@ for (p in c("DBI", "RPostgres", "openssl", "askpass")) {
 
 role <- "spondnymark_app"
 
+# 0. Prod eller test ---------------------------------------------------------------
+target <- tolower(trimws(readline("Hvilken database vil du sette opp? Skriv prod eller test: ")))
+if (!target %in% c("prod", "test")) stop("Svar prod eller test.")
+admin_var <- if (target == "prod") "SUPABASE_POOLER_URL" else "SPONDNYMARK_TEST_DB_URL"
+app_var   <- if (target == "prod") "SPONDNYMARK_DB_URL" else "SPONDNYMARK_TEST_APP_DB_URL"
+cat("Setter opp ", toupper(target), ". Admin-tilkobling fra ", admin_var,
+    ", appens tilkobling skrives til ", app_var, ".\n", sep = "")
+
 # 1. Admin-tilkobling -------------------------------------------------------------
-# Tilkoblingsstrengen (uten passord) kan stå i .Renviron som SUPABASE_POOLER_URL,
-# så slipper du å lime den inn hver gang. Den er ikke hemmelig.
-template <- Sys.getenv("SUPABASE_POOLER_URL")
+# prod: tilkoblingsstrengen (uten passord) kan stå i .Renviron som
+# SUPABASE_POOLER_URL, så slipper du å lime den inn hver gang.
+# test: SPONDNYMARK_TEST_DB_URL må være satt (med eller uten passord).
+template <- Sys.getenv(admin_var)
 if (!nzchar(template)) {
+  if (target == "test") stop("SPONDNYMARK_TEST_DB_URL er ikke satt i .Renviron.")
   cat("Lim inn tilkoblingsstrengen fra Supabase (Connect -> Session pooler),\n",
       "slik den står med [YOUR-PASSWORD]:\n", sep = "")
   template <- trimws(readline("> "))
@@ -38,30 +55,50 @@ if (!grepl(":5432/", template, fixed = TRUE)) {
   warning("Strengen bruker ikke port 5432. Bruk «Session pooler», ikke «Transaction pooler».")
 }
 
-# Passorddialogen lukkes hvis du bytter vindu mens den er åpen. Derfor ber
-# skriptet deg kopiere passordet først, og spør på nytt hvis noe går galt.
+# Vern mot å sette opp test i prod-databasen: bruker (postgres.<prosjekt>) og vert
+# må være forskjellige fra SUPABASE_POOLER_URL.
+db_key <- function(u) sub("^postgres(?:ql)?://([^:@/]+)(?::[^@]*)?@([^/:?]+).*$", "\\1@\\2", u, perl = TRUE)
+prod_template <- Sys.getenv("SUPABASE_POOLER_URL")
+if (target == "test" && nzchar(prod_template) && identical(db_key(template), db_key(prod_template))) {
+  stop("SPONDNYMARK_TEST_DB_URL peker på samme database som SUPABASE_POOLER_URL (prod). Avbryter.")
+}
+
+has_password <- grepl("^postgres(?:ql)?://[^:/@]+:[^@]+@", template, perl = TRUE) &&
+  !grepl("[YOUR-PASSWORD]", template, fixed = TRUE)
+
 admin <- NULL
-for (forsok in 1:3) {
-  readline("Kopier admin-passordet nå (f.eks. fra passordbehandleren), og trykk Enter her når det er kopiert: ")
-  password <- askpass::askpass("Lim inn admin-passordet til Supabase: ")
-  if (is.null(password) || !nzchar(password)) {
-    cat("Fikk ikke noe passord. Dialogen lukkes hvis du bytter vindu mens den er åpen. Prøv igjen.\n")
-    next
-  }
-  admin_url <- ds_fill_password(template, password)
-  rm(password)
+if (has_password) {
+  # Strengen har passordet i seg (vanlig for SPONDNYMARK_TEST_DB_URL).
+  admin_url <- template
   admin <- tryCatch(ds_connect(admin_url), error = function(e) {
-    msg <- conditionMessage(e)
-    if (grepl("password authentication failed", msg, fixed = TRUE)) {
-      cat("Feil passord. Prøv igjen.\n")
-    } else {
-      cat("Fikk ikke koblet til databasen:", msg, "\n")
-    }
+    cat("Fikk ikke koblet til med ", admin_var, ": ", conditionMessage(e), "\n", sep = "")
     NULL
   })
-  if (!is.null(admin)) break
+} else {
+  # Passorddialogen lukkes hvis du bytter vindu mens den er åpen. Derfor ber
+  # skriptet deg kopiere passordet først, og spør på nytt hvis noe går galt.
+  for (forsok in 1:3) {
+    readline("Kopier admin-passordet nå (f.eks. fra passordbehandleren), og trykk Enter her når det er kopiert: ")
+    password <- askpass::askpass("Lim inn admin-passordet til Supabase: ")
+    if (is.null(password) || !nzchar(password)) {
+      cat("Fikk ikke noe passord. Dialogen lukkes hvis du bytter vindu mens den er åpen. Prøv igjen.\n")
+      next
+    }
+    admin_url <- ds_fill_password(template, password)
+    rm(password)
+    admin <- tryCatch(ds_connect(admin_url), error = function(e) {
+      msg <- conditionMessage(e)
+      if (grepl("password authentication failed", msg, fixed = TRUE)) {
+        cat("Feil passord. Prøv igjen.\n")
+      } else {
+        cat("Fikk ikke koblet til databasen:", msg, "\n")
+      }
+      NULL
+    })
+    if (!is.null(admin)) break
+  }
 }
-if (is.null(admin)) stop("Ga opp etter 3 forsøk. Kjør skriptet på nytt når du er klar.")
+if (is.null(admin)) stop("Fikk ikke admin-tilkobling. Kjør skriptet på nytt når du er klar.")
 
 tryCatch({
   DBI::dbExecute(admin, "SET client_min_messages TO warning")
@@ -78,7 +115,7 @@ tryCatch({
     new_password <- ds_random_password()
   } else {
     svar <- readline(paste0("App-brukeren finnes allerede. Lage nytt passord? ",
-                            "Svar ja hvis SPONDNYMARK_DB_URL mangler i .Renviron (ja/nei): "))
+                            "Svar ja hvis ", app_var, " mangler i .Renviron (ja/nei): "))
     if (tolower(trimws(svar)) %in% c("ja", "j", "yes", "y")) new_password <- ds_random_password()
   }
   ds_setup_app_role(admin, role, new_password)
@@ -87,25 +124,26 @@ tryCatch({
   # 4. .Renviron ------------------------------------------------------------------------
   if (!is.null(new_password)) {
     app_url <- ds_app_url(admin_url, role, new_password)
-    ds_write_renviron("SPONDNYMARK_DB_URL", app_url)
-    Sys.setenv(SPONDNYMARK_DB_URL = app_url)
-    cat("Appens tilkoblingsstreng er lagret i .Renviron som SPONDNYMARK_DB_URL.\n",
-        "Når appen publiseres på Posit Connect: kopier verdien fra .Renviron til\n",
-        "Settings -> Runtime -> Environment Variables (navn: SPONDNYMARK_DB_URL).\n",
+    ds_write_renviron(app_var, app_url)
+    do.call(Sys.setenv, stats::setNames(list(app_url), app_var))
+    cat("Appens tilkoblingsstreng er lagret i .Renviron som ", app_var, ".\n",
+        "Kopier verdien til Posit Connect (", if (target == "prod") "prod-appen" else "test-appen", "):\n",
+        "Settings -> Runtime -> Environment Variables, navn: SPONDNYMARK_DB_URL.\n",
         "Hvis du har byttet passord, må verdien oppdateres der også.\n", sep = "")
   }
 }, finally = DBI::dbDisconnect(admin))
-rm(admin_url, template)
+rm(admin_url, template, prod_template)
 
 # 5. Sjekk app-brukeren -------------------------------------------------------------------
-if (!nzchar(Sys.getenv("SPONDNYMARK_DB_URL")) && file.exists(".Renviron")) readRenviron(".Renviron")
-if (!nzchar(Sys.getenv("SPONDNYMARK_DB_URL"))) {
-  stop("SPONDNYMARK_DB_URL mangler. Kjør skriptet på nytt og svar ja til nytt passord.")
+if (!nzchar(Sys.getenv(app_var)) && file.exists(".Renviron")) readRenviron(".Renviron")
+app_url <- Sys.getenv(app_var)
+if (!nzchar(app_url)) {
+  stop(app_var, " mangler. Kjør skriptet på nytt og svar ja til nytt passord.")
 }
 # Supabase sin pooler kan bruke litt tid på å kjenne igjen en ny bruker.
 app <- NULL
 for (forsok in 1:6) {
-  app <- tryCatch(ds_connect(), error = function(e) {
+  app <- tryCatch(ds_connect(app_url), error = function(e) {
     if (forsok == 6) stop("App-brukeren fikk ikke koblet til: ", conditionMessage(e), call. = FALSE)
     cat("Venter på at Supabase skal kjenne igjen app-brukeren ...\n")
     Sys.sleep(10)
@@ -113,6 +151,7 @@ for (forsok in 1:6) {
   })
   if (!is.null(app)) break
 }
+rm(app_url)
 tryCatch({
   n <- DBI::dbGetQuery(app, "SELECT count(*)::integer AS n FROM group_proposals")$n
   can_create <- tryCatch({
@@ -126,5 +165,5 @@ tryCatch({
   } else {
     cat("OK: app-brukeren kan ikke endre tabellene.\n")
   }
-  cat("Databasen er klar. Start R på nytt før du kjører appen, så .Renviron leses inn.\n")
+  cat(toupper(target), "-databasen er klar. Start R på nytt før du kjører appen, så .Renviron leses inn.\n", sep = "")
 }, finally = DBI::dbDisconnect(app))
