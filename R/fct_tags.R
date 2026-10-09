@@ -135,8 +135,8 @@ member_chips <- function(ids, names, tagger = NULL, clickable = TRUE, kinds = NU
   st <- function(i) if (is.null(statuses)) NULL else statuses[i]
   div(class = "sn-chips", lapply(seq_along(ids), function(i) {
     if (identical(kinds[i], "coach")) return(span(class = "sn-chip sn-chip-coach", status_icon(st(i)), names[i]))
-    if (is.null(tagger) || !clickable[i] || !identical(kinds[i], "player")) member_chip(ids[i], names[i], status = st(i))
-    else tagger$chip(ids[i], names[i], status = st(i))
+    if (is.null(tagger) || !clickable[i] || !identical(kinds[i], "player")) return(member_chip(ids[i], names[i], status = st(i)))
+    if (is.null(st(i)) || is.na(st(i))) tagger$chip(ids[i], names[i]) else tagger$chip(ids[i], names[i], status = st(i))
   }))
 }
 

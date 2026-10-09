@@ -1,6 +1,8 @@
 test_that("only minimal fields are kept from an event", {
   e <- event_minimal(fake_spond_events()[[1]])
-  expect_setequal(names(e), c("id", "heading", "start", "end", "cancelled", "match", "subgroup_ids", "responses"))
+  expect_setequal(names(e), c("id", "heading", "start", "end", "cancelled", "match", "subgroup_ids",
+                              "invite_time", "not_sent", "responses"))
+  expect_false(e$not_sent)                    # sent: Spond gives no inviteTime
   expect_equal(e$subgroup_ids, "S-ulv")
   expect_equal(names(e$responses), c("member_id", "status"))
   flat <- paste(unlist(e), collapse = " ")

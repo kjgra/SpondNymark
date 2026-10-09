@@ -132,7 +132,7 @@ test_that("ui is a tag list", {
 test_that("members and participants are shown as chips with tags", {
   api <- fake_events_api()
   ctx <- reactiveVal(teams_context(fake_group()))
-  tagger <- list(chip = function(id, n) member_chip(id, n, if (id == "M-1") "Keeper" else character(), "tags-open"),
+  tagger <- list(chip = function(id, n, ...) member_chip(id, n, if (id == "M-1") "Keeper" else character(), "tags-open", ...),
                  error = function() NULL)
   testServer(mod_events_server, args = c(events_args(api, ctx), tagger = list(tagger)), {
     view_html(output)
