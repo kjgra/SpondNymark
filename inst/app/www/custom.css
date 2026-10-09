@@ -119,7 +119,9 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-pickrow-detail { font-size: .85rem; color: var(--bs-secondary); }
 .sn-back { align-self: flex-start; padding: 0; margin-bottom: 6px; text-decoration: none; font-weight: 600; }
 .sn-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.sn-chip { border: 1px solid var(--sn-line); border-radius: 999px; padding: 4px 12px; font-size: .9rem; font-weight: 500; background: var(--sn-ground); }
+.sn-chip { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; max-width: 100%; overflow-wrap: anywhere;
+  border: 1px solid var(--sn-line); border-radius: 999px; padding: 4px 12px; font-size: .9rem; font-weight: 500; background: var(--sn-ground); }
+.sn-minitag-short { min-width: 1.5em; text-align: center; cursor: help; }
 
 /* Hierarchy: main group with its subgroups nested underneath */
 .sn-pickrow-main .sn-pickrow-title { font-size: 1.05rem; }

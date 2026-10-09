@@ -173,8 +173,10 @@ mod_tags_server <- function(id, context, user, db, poll_ms = 15000, suggestions 
     list(
       table = reactive(tag_data()),
       error = reactive(load_error()),
-      chip = function(member_id, name, note = NULL) {
-        member_chip(member_id, name, tags_for(tag_data(), member_id), ns("open"), note)
+      chip = function(member_id, name, note = NULL, short = FALSE) {
+        td <- tag_data()
+        member_chip(member_id, name, tags_for(td, member_id), ns("open"), note,
+                    short = short, universe = unique(td$tag))
       }
     )
   })
