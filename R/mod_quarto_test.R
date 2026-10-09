@@ -5,8 +5,9 @@
 #' shows a diagnosis:
 #' 1. `quarto render test.qmd --to typst` (Markdown without R chunks, so no
 #'    knitr is needed).
-#' 2. `quarto typst compile test.typ`, where the Typst template reads its
-#'    data from data.json.
+#' 2. `quarto typst compile mal.typ`, where the Typst template reads its
+#'    data from data.json. Not test.typ: quarto render writes and then
+#'    deletes its own intermediate test.typ.
 #' Uses only base R, so the manifest does not change.
 #'
 #' Remove after T0: this file, tests/testthat/test-mod_quarto_test.R and the
@@ -133,7 +134,7 @@ quarto_test_write <- function(lines, path) {
   writeLines(enc2utf8(lines), path, useBytes = TRUE)
 }
 
-# Writes test.qmd, test.typ, data.json and (if the PNG device works)
+# Writes test.qmd, mal.typ, data.json and (if the PNG device works)
 # skisse.png. Returns the error from the sketch, or "" if it worked.
 quarto_test_inputs <- function(dir) {
   png_error <- tryCatch({
@@ -183,7 +184,7 @@ quarto_test_inputs <- function(dir) {
     if (img) "#image(\"skisse.png\", width: 100%)",
     "",
     "#table(columns: (1fr, auto), [*Del*], [*Tid*], ..data.tider.map(t => ([#t.del], [#str(t.min) min])).flatten())"
-  ), file.path(dir, "test.typ"))
+  ), file.path(dir, "mal.typ"))
 
   png_error
 }
@@ -208,12 +209,12 @@ quarto_test_run <- function(dir) {
   q <- function(p) shQuote(file.path(dir, p))
   res$version <- quarto_test_cmd(bin, "--version", timeout = 30)
   res$typst_version <- quarto_test_cmd(bin, c("typst", "--version"), timeout = 30)
+  res$typst <- quarto_test_cmd(bin, c("typst", "compile", q("mal.typ"), q("typst.pdf")))
+  res$typst$pdf <- file.path(dir, "typst.pdf")
+  res$typst$ok <- res$typst$ok && file.exists(res$typst$pdf)
   res$render <- quarto_test_cmd(bin, c("render", q("test.qmd"), "--to", "typst"))
   res$render$pdf <- file.path(dir, "test.pdf")
   res$render$ok <- res$render$ok && file.exists(res$render$pdf)
-  res$typst <- quarto_test_cmd(bin, c("typst", "compile", q("test.typ"), q("typst.pdf")))
-  res$typst$pdf <- file.path(dir, "typst.pdf")
-  res$typst$ok <- res$typst$ok && file.exists(res$typst$pdf)
   res
 }
 

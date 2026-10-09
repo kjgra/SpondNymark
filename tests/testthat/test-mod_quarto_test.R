@@ -12,7 +12,7 @@ test_that("the Quarto test is shown only outside production", {
 test_that("the test files are written as UTF-8", {
   dir <- withr::local_tempdir()
   png_error <- quarto_test_inputs(dir)
-  expect_true(all(file.exists(file.path(dir, c("test.qmd", "test.typ", "data.json")))))
+  expect_true(all(file.exists(file.path(dir, c("test.qmd", "mal.typ", "data.json")))))
   if (!nzchar(png_error)) expect_true(file.exists(file.path(dir, "skisse.png")))
   qmd <- readLines(file.path(dir, "test.qmd"), encoding = "UTF-8")
   expect_true(any(grepl("æøå", qmd)))
