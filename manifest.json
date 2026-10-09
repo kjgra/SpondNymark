@@ -2045,6 +2045,30 @@
     "inst/golem-config.yml": {
       "checksum": "2be972b76a51591a802e75bd38018489"
     },
+    "inst/typst/fonts/Barlow-Bold.ttf": {
+      "checksum": "6cbe034ff9c2bbad5a1e57a27a400a5d"
+    },
+    "inst/typst/fonts/Barlow-Italic.ttf": {
+      "checksum": "91902124b2fb364546629dafef03251f"
+    },
+    "inst/typst/fonts/Barlow-Regular.ttf": {
+      "checksum": "90af7baeeb14e5434bc8ea30bc25d340"
+    },
+    "inst/typst/fonts/Barlow-SemiBold.ttf": {
+      "checksum": "e1f2fbfbe3cc8b18508d1fffe5e14f76"
+    },
+    "inst/typst/fonts/BarlowCondensed-Bold.ttf": {
+      "checksum": "f599739e94768bec57f6899c422a5119"
+    },
+    "inst/typst/fonts/BarlowCondensed-ExtraBold.ttf": {
+      "checksum": "a53b6eaca2419b9b7b63a91c100eda0c"
+    },
+    "inst/typst/fonts/OFL.txt": {
+      "checksum": "46cbde1f44ff31807ec209f1b72acad2"
+    },
+    "inst/typst/opplegg.typ": {
+      "checksum": "502cd5564a15c870de7f7b40829910f6"
+    },
     "LICENSE": {
       "checksum": "e3ad0d9dd33d2ed6b893fd1efb346b26"
     },
@@ -2090,6 +2114,9 @@
     "R/fct_members.R": {
       "checksum": "0a394e241b6b33a57234f336253f17b3"
     },
+    "R/fct_plan.R": {
+      "checksum": "cb48e2068468f3859149087c16a3da77"
+    },
     "R/fct_spond_data.R": {
       "checksum": "c1439f8552b7e90ecb42e10706eeac0d"
     },
@@ -2115,7 +2142,7 @@
       "checksum": "12abc7b138c9d91b16944f795618838b"
     },
     "R/mod_quarto_test.R": {
-      "checksum": "c1b8bc747d1e1b137b680cfe0978a6ba"
+      "checksum": "ca5771a7ad99efa7e7684aa7c5388332"
     },
     "R/mod_tags.R": {
       "checksum": "991352776c7534175dadfb9615077aff"

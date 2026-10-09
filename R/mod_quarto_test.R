@@ -50,6 +50,7 @@ mod_quarto_test_server <- function(id, env = Sys.getenv("SPONDNYMARK_ENV")) {
         footer = tagList(
           if (res$render$ok) downloadButton(ns("pdf_render"), "PDF (quarto render)", class = "btn-primary"),
           if (res$typst$ok) downloadButton(ns("pdf_typst"), "PDF (typst compile)", class = "btn-primary"),
+          if (isTRUE(res$plan$ok)) downloadButton(ns("pdf_plan"), "Referanseøkta", class = "btn-primary"),
           modalButton("Lukk")
         )
       ))
@@ -62,6 +63,10 @@ mod_quarto_test_server <- function(id, env = Sys.getenv("SPONDNYMARK_ENV")) {
     output$pdf_typst <- downloadHandler(
       filename = "quarto-test-typst.pdf",
       content = function(file) file.copy(result()$typst$pdf, file, overwrite = TRUE)
+    )
+    output$pdf_plan <- downloadHandler(
+      filename = "referanseokt.pdf",
+      content = function(file) file.copy(result()$plan$pdf, file, overwrite = TRUE)
     )
   })
 }
@@ -215,6 +220,14 @@ quarto_test_run <- function(dir) {
   res$render <- quarto_test_cmd(bin, c("render", q("test.qmd"), "--to", "typst"))
   res$render$pdf <- file.path(dir, "test.pdf")
   res$render$ok <- res$render$ok && file.exists(res$render$pdf)
+  # T2-2: the real template, fonts and drawings, with the reference session.
+  t0 <- proc.time()[["elapsed"]]
+  res$plan <- tryCatch({
+    ref <- jsonlite::fromJSON(app_sys("extdata", "referanse-okt.json"), simplifyVector = FALSE)
+    pdf <- file.path(dir, "opplegg.pdf")
+    plan_pdf(ref, pdf, footer = "G10 · Tema oktober: Samhandling – spille på lag", quarto = bin)
+    list(ok = file.exists(pdf), status = 0L, secs = round(proc.time()[["elapsed"]] - t0, 1), out = character(), pdf = pdf)
+  }, error = function(e) list(ok = FALSE, status = NA, secs = NA, out = conditionMessage(e)))
   res
 }
 
@@ -235,6 +248,7 @@ quarto_test_report <- function(res) {
     c("Typst-versjon", if (isTRUE(res$typst_version$ok)) first(res$typst_version) else status(res$typst_version)),
     c("quarto render \u2192 typst", status(res$render)),
     c("quarto typst compile", status(res$typst)),
+    c("Treningsopplegg (plan_pdf)", if (is.null(res$plan)) "ikke kjørt" else status(res$plan)),
     c("PNG-skisse", res$png),
     c("R", res$r),
     c("System", res$os),
@@ -247,6 +261,7 @@ quarto_test_report <- function(res) {
     ),
     if (!isTRUE(res$render$ok)) tagList(tags$strong("Utdata fra quarto render:"), tail_out(res$render)),
     if (!isTRUE(res$typst$ok)) tagList(tags$strong("Utdata fra typst compile:"), tail_out(res$typst)),
+    if (!is.null(res$plan) && !isTRUE(res$plan$ok)) tagList(tags$strong("Feil fra plan_pdf:"), tail_out(res$plan)),
     tags$details(tags$summary("PATH"), tags$pre(class = "small", style = "white-space: pre-wrap;", res$path))
   )
 }
