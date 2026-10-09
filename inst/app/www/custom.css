@@ -60,7 +60,6 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-topbar-inner { max-width: 720px; margin: 0 auto; display: flex; align-items: center; justify-content: flex-start;
   gap: 10px 14px; flex-wrap: wrap; min-height: 44px; }
 .sn-approve-slot { margin-left: auto; }
-.sn-approve-slot:empty { display: none; }
 /* "Godkjenning" in the top bar: yellow, with the number waiting */
 .sn-approve { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border: 0; border-radius: 999px;
   background: var(--sn-yellow); color: var(--sn-black); font-weight: 700; position: relative; }

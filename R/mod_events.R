@@ -235,6 +235,9 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
       if (is.null(groups) || is.null(context()) || editing()) return(NULL)
       approvals_button(ns, groups$n_pending(), active = identical(tab(), "approvals") && is.null(selected()))
     })
+    # The slot starts empty, and Shiny does not render outputs it thinks are
+    # hidden. Render it anyway, so the button can appear.
+    outputOptions(output, "bar", suspendWhenHidden = FALSE)
 
     # Members of the context, with tags. Rendered on its own so new tags do
     # not redraw the event list.
