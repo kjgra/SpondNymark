@@ -159,8 +159,27 @@ ai_plan_schema <- function() {
 #' @noRd
 ai_example_answer <- function() {
   p <- plan_validate(paste(readLines(app_sys("extdata", "referanse-okt.json"), encoding = "UTF-8"), collapse = "\n"))
+  a <- ai_answer_from_plan(p)
   cats <- c("pasning_mottak", "forsvar", "smaaspill")
+  for (i in seq_along(a$ovelser)) {
+    a$ovelser[[i]]$kilde <- "ny"
+    a$ovelser[[i]]$kategori <- cats[i]
+    a$ovelser[[i]]$hvorfor_ny <- "Banken hadde ingen øvelse for dette."
+  }
+  a
+}
+
+#' A saved plan written in the answer schema, so the model can adjust it
+#' («Juster med KI»). Bank exercises are sent in full, so the model can see
+#' what it would change.
+#' @noRd
+ai_answer_from_plan <- function(p) {
+  p <- plan_validate(p)
   tp <- p$tidsplan
+  cat_key <- function(label) {
+    k <- names(exercise_categories)[tolower(exercise_categories) == tolower(txt1(label))]
+    if (length(k)) k[1] else "annet"
+  }
   list(
     tittel = p$tittel, undertittel = p$undertittel, fokus_forsvar = p$fokus$forsvar, fokus_angrep = p$fokus$angrep,
     stikkord = p$stikkord, stikkord_merknad = p$stikkord_merknad,
@@ -169,15 +188,31 @@ ai_example_answer <- function() {
     rotasjon = tp$stasjoner$grupper > 1,
     avslutning_minutter = tp$avslutning$minutter, avslutning_tekst = tp$avslutning$tekst, merknad = tp$merknad,
     avslutning_sporsmal = p$avslutning_sporsmal, kilde = p$kilde,
-    ovelser = lapply(seq_along(p$ovelser), function(i) {
-      e <- p$ovelser[[i]]
-      list(kilde = "ny", kode = e$kode, basert_pa = "", naermeste_kode = "",
-           hvorfor_ny = "Banken hadde ingen øvelse for dette.", navn = e$navn, kategori = cats[i], fokus = e$fokus,
+    ovelser = lapply(p$ovelser, function(e) {
+      list(kilde = e$kilde, kode = e$kode, basert_pa = e$basert_pa, naermeste_kode = e$naermeste_kode,
+           hvorfor_ny = e$hvorfor_ny, navn = e$navn, kategori = cat_key(e$kategori), fokus = e$fokus,
            organisering = e$organisering, gjennomforing = e$gjennomforing, tilpasning = e$tilpasning,
            laeringsmomenter = e$laeringsmomenter, sporsmal = e$sporsmal, enklere = e$enklere,
            vanskeligere = e$vanskeligere, tegning_json = if (is.null(e$tegning)) "" else drawing_json(e$tegning))
     })
   )
+}
+
+#' The order for «Juster med KI»: the current plan, what to change, and the
+#' counts as they are now. No names.
+#' @param ctx As for `ai_order_text()`; `wish` is what to change (required).
+#' @noRd
+ai_revision_text <- function(base, ctx) {
+  wish <- txt1(ctx$wish)
+  if (!nzchar(wish)) stop("Skriv hva som skal endres.", call. = FALSE)
+  facts <- ai_order_text(modifyList(ctx, list(wish = "", theme = "", theme_description = "")))
+  facts <- sub("^# Bestilling", "# Fakta nå", sub("\n\nLag treningsøkta.", "", facts, fixed = TRUE))
+  if (nchar(wish) > ai_wish_max) stop("Ønskene kan ha maks ", ai_wish_max, " tegn.", call. = FALSE)
+  if (text_is_sensitive(wish)) {
+    stop("Ønskene skal ikke inneholde helseopplysninger eller andre sensitive opplysninger.", call. = FALSE)
+  }
+  paste0("# Gjeldende opplegg\n\n", jsonlite::toJSON(ai_answer_from_plan(base), auto_unbox = TRUE, null = "null"),
+         "\n\n", facts, "\n\n# Endringsønske\n\n", wish, "\n\nJuster opplegget.")
 }
 
 #' The fixed system prompt: instructions plus the worked example
@@ -455,7 +490,8 @@ ai_plan_from_answer <- function(answer, bank, ctx = list(), max_new = 2L) {
   }
   ex <- utils::head(ex, 6)
   if (!length(ex)) stop("Svaret hadde ingen øvelser som kunne brukes.", call. = FALSE)
-  n_new <- sum(vapply(ex, function(x) x$kilde == "ny", logical(1)))
+  # New exercises; when adjusting, the ones already in the plan do not count.
+  n_new <- sum(vapply(ex, function(x) x$kilde == "ny" && !x$kode %in% (ctx$base_codes %||% character()), logical(1)))
   if (n_new > max_new) warn <- c(warn, paste0("KI-en laget ", n_new, " nye øvelser (grensen er ", max_new, ")."))
   int <- function(x, default) {
     v <- suppressWarnings(as.integer(x %||% default))
@@ -495,10 +531,12 @@ ai_plan_from_answer <- function(answer, bank, ctx = list(), max_new = 2L) {
 #' Stops with a Norwegian message if the user may not use KI, the key is
 #' missing or the budget is used up.
 #' @param ctx The order, see `ai_order_text()`.
+#' @param base_plan NULL for a new plan, or the plan to adjust («Juster med KI»).
 #' @return A list used by `ai_estimate()`, `ai_send()` and `ai_finish()`.
 #' @noRd
-ai_prepare <- function(con, access, rights, group_id, ctx, kind = "draft", now = Sys.time(),
-                       key = Sys.getenv("ANTHROPIC_API_KEY"), model = NULL) {
+ai_prepare <- function(con, access, rights, group_id, ctx, kind = NULL, now = Sys.time(),
+                       key = Sys.getenv("ANTHROPIC_API_KEY"), model = NULL, base_plan = NULL) {
+  kind <- kind %||% if (is.null(base_plan)) "draft" else "revision"
   if (!isTRUE(rights$ai)) ai_stop("Du har ikke tilgang til KI. Spør en administrator.")
   if (!nzchar(key)) ai_stop("KI er ikke satt opp (ANTHROPIC_API_KEY mangler).")
   s <- ds_get_ai_settings(con)
@@ -508,7 +546,9 @@ ai_prepare <- function(con, access, rights, group_id, ctx, kind = "draft", now =
   if (!budget$ok) ai_stop(budget$message)
   bank <- ds_list_exercises(con, access, group_id)
   ctx$max_new <- s$max_new_exercises
-  order <- tryCatch(ai_order_text(ctx), error = function(e) ai_stop(conditionMessage(e)))
+  if (!is.null(base_plan)) ctx$base_codes <- vapply(base_plan$ovelser, function(e) txt1(e$kode), "")
+  order <- tryCatch(if (is.null(base_plan)) ai_order_text(ctx) else ai_revision_text(base_plan, ctx),
+                    error = function(e) ai_stop(conditionMessage(e)))
   body <- ai_request_body(model, ai_catalogue(bank, ctx$theme %||% ""), order)
   list(group_id = group_id, kind = kind, model = model, settings = s, budget = budget, bank = bank,
        ctx = ctx, body = body)

@@ -42,6 +42,17 @@ Regler:
 - Hold deg innenfor «maks nye øvelser» i bestillingen.
 - `kode` er små bokstaver, tall og bindestrek, maks 60 tegn, f.eks. `3-mot-1-to-ruter`. En ny eller justert øvelse får aldri en kode som finnes i katalogen.
 
+# Justering av et opplegg
+
+Noen ganger får du et gjeldende opplegg og et endringsønske i stedet for en ny bestilling. Da gjelder dette:
+
+- Endre bare det ønsket gjelder. Behold resten slik det er: tekster, koder, rekkefølge og tegninger.
+- Svar med hele opplegget i samme format som før.
+- En øvelse med `kilde` `bank` som ikke endres, kan sendes med bare `kode`, `kilde` og eventuelt `fokus` og `tilpasning`.
+- En bankøvelse du endrer, blir `justert`: sett `basert_pa` til bankkoden, gi en ny `kode`, og send hele øvelsen med tegning.
+- Øvelser med `kilde` `justert` eller `ny` må sendes komplett, med tegning, også når de ikke endres. Behold koden deres.
+- Gjelder ønsket tegningene og antall spillere, tegn like mange spillere som det faktisk er i hver gruppe eller rute (se «Fakta nå»).
+
 # Feltene i svaret
 
 - `tittel`: kort, gjerne temaet (maks 80 tegn). `undertittel`: alder, stasjoner og lengde, f.eks. «Treningsøkt for G10 · tre stasjoner · ca. 65 min».

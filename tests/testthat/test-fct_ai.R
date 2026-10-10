@@ -302,3 +302,34 @@ test_that("a KI plan is prepared, sent and saved with its cost", {
                        VALUES ('P1', 'G1', 'draft', 'claude-haiku-5-5', 3, 'ok')")
   expect_error(ai_prepare(con, acc, list(ai = TRUE), "G1", ctx, key = "k"), "av 30 kr")
 })
+
+# Juster med KI ---------------------------------------------------------------------------
+
+test_that("a saved plan goes back to the model in the answer format, and comes back the same", {
+  ref <- plan_validate(jsonlite::fromJSON(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"),
+                                          simplifyVector = FALSE))
+  a <- ai_answer_from_plan(ref)
+  expect_equal(a$ovelser[[1]]$kategori, "annet")              # "Spille med og mot" is no bank category
+  expect_true(nzchar(a$ovelser[[2]]$tegning_json))
+  back <- ai_plan_from_answer(jsonlite::toJSON(a, auto_unbox = TRUE, null = "null"), test_bank()[0, ],
+                              list(theme = ref$tema, base_codes = vapply(ref$ovelser, `[[`, "", "kode")))
+  expect_equal(vapply(back$plan$ovelser, `[[`, "", "kode"), vapply(ref$ovelser, `[[`, "", "kode"))
+  expect_equal(back$plan$ovelser[[3]]$gjennomforing, ref$ovelser[[3]]$gjennomforing)
+  expect_length(back$warnings, 0)                              # exercises already in the plan are not "new"
+})
+
+test_that("the adjustment order has the plan, the facts and the wish, and needs a wish", {
+  ref <- plan_validate(jsonlite::fromJSON(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"),
+                                          simplifyVector = FALSE))
+  ctx <- list(minutes = 65, n_players = 14, group_sizes = c(5L, 5L, 4L), wish = "Tilpass tegningene til 14 spillere.")
+  o <- ai_revision_text(ref, ctx)
+  expect_match(o, "^# Gjeldende opplegg")
+  expect_match(o, "hjem-bak-ballen", fixed = TRUE)
+  expect_match(o, "# Fakta nå", fixed = TRUE)
+  expect_match(o, "Påmeldte spillere: 14", fixed = TRUE)
+  expect_match(o, "# Endringsønske\n\nTilpass tegningene til 14 spillere.", fixed = TRUE)
+  expect_false(grepl("Lag treningsøkta", o))
+  expect_error(ai_revision_text(ref, modifyList(ctx, list(wish = ""))), "hva som skal endres")
+  expect_error(ai_revision_text(ref, modifyList(ctx, list(wish = "Per er skadet"))), "sensitive")
+  expect_match(ai_system_text(), "# Justering av et opplegg", fixed = TRUE)
+})

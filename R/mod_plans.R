@@ -54,25 +54,37 @@ plan_ai_note <- function(cur, rate = ai_settings_default()$usd_nok) {
 # The dialog before a KI call: theme, length, wishes and model with prices.
 # `o` is list(ctx, model, est, budget, facts) from the server.
 ki_modal <- function(ns, o) {
+  revise <- !is.null(o$base)
   choices <- stats::setNames(names(ai_models), vapply(names(ai_models), function(m) {
     price <- o$est$per_model[[m]]$text
     paste0(ai_models[[m]]$choice, " (", ai_models[[m]]$label, ")", if (!is.null(price)) paste0(" · ", price))
   }, ""))
   b <- o$budget
   m <- modalDialog(
-    title = "Lag opplegg med KI",
+    title = if (revise) paste0("Juster versjon ", o$base$version, " med KI") else "Lag opplegg med KI",
     size = "l", easyClose = FALSE,
     footer = tagList(uiOutput(ns("ki_msg")),
-                     actionButton(ns("ki_go"), "Lag opplegget", class = "btn-primary"),
+                     actionButton(ns("ki_go"), if (revise) "Juster opplegget" else "Lag opplegget", class = "btn-primary"),
                      modalButton("Avbryt")),
     div(class = "sn-admin-pane",
-        p(class = "sn-hint", "KI setter sammen en økt ut fra temaet, lagets standard, øvelsesbanken og ønskene dine.",
-          " Opplegget lagres som en ny versjon, og du kan endre det etterpå."),
+        if (revise) {
+          p(class = "sn-hint", "KI får opplegget slik det er nå, og endrer bare det du ber om. Resultatet lagres",
+            " som en ny versjon; den gamle ligger fortsatt i versjonslisten.")
+        } else {
+          p(class = "sn-hint", "KI setter sammen en økt ut fra temaet, lagets standard, øvelsesbanken og ønskene dine.",
+            " Opplegget lagres som en ny versjon, og du kan endre det etterpå.")
+        },
         div(class = "sn-admin-grid",
-            textInput(ns("ki_theme"), "Tema", value = o$ctx$theme %||% "", width = "100%"),
+            if (!revise) textInput(ns("ki_theme"), "Tema", value = o$ctx$theme %||% "", width = "100%"),
             numericInput(ns("ki_minutes"), "Øktlengde (min)", value = o$ctx$minutes, min = 20, max = 240, width = "100%")),
-        textAreaInput(ns("ki_wish"), "Ønsker og utfordringer (valgfritt)", rows = 4, width = "100%",
-                      placeholder = "F.eks.: Vi kommer ikke hjem bak ballen i forsvar. Mer avslutning på mål."),
+        if (revise) {
+          textAreaInput(ns("ki_wish"), "Hva skal endres?", rows = 4, width = "100%",
+                        placeholder = paste("F.eks.: Legg til en øvelse og bruk mindre grupper.",
+                                            "Eller: Tilpass tegningene til antall spillere som kommer."))
+        } else {
+          textAreaInput(ns("ki_wish"), "Ønsker og utfordringer (valgfritt)", rows = 4, width = "100%",
+                        placeholder = "F.eks.: Vi kommer ikke hjem bak ballen i forsvar. Mer avslutning på mål.")
+        },
         p(class = "sn-hint", "Ikke skriv navn eller helseopplysninger.",
           if (nzchar(o$facts)) paste0(" KI får bare antall: ", o$facts, ".")),
         radioButtons(ns("ki_model"), "Modell", choices = choices, selected = o$model),
@@ -267,6 +279,7 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
             div(class = "sn-plan-actions",
                 downloadButton(ns("pdf"), "Last ned PDF", class = "btn-sm btn-primary"),
                 if (upcoming() && !busy) actionButton(ns("edit"), "Endre", class = "btn-sm btn-outline-primary"),
+                if (can_ki) actionButton(ns("ki_revise"), "Juster med KI", class = "btn-sm btn-outline-primary"),
                 ki_button("Nytt med KI", "btn-sm btn-outline-primary"),
                 if (nrow(v) > 1) {
                   htmltools::tagAppendAttributes(
@@ -420,7 +433,7 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
             db$run(finish)
           },
           ai_error = function(e) list(error = conditionMessage(e)))
-        c(res, list(event_id = event_id))
+        c(res, list(event_id = event_id, kind = prep$kind))
       })
     })
     ki_busy <- reactive(identical(ki_task$status(), "running"))
@@ -440,7 +453,9 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
       "Noe gikk galt med KI. Prøv igjen om litt."
     }
 
-    observeEvent(input$ki, {
+    # Opens the KI dialog: a new plan, or (with `base`, the plan shown) an
+    # adjustment of it.
+    ki_start <- function(base = NULL) {
       if (!applies() || !upcoming() || !isTRUE(rights()$ai) || ki_busy()) return()
       ev <- event()
       u <- user()
@@ -452,13 +467,17 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
       minutes <- suppressWarnings(as.integer(info$team$session_minutes))
       if (is.na(minutes) && !is.na(ev$end)) minutes <- as.integer(round(as.numeric(difftime(ev$end, ev$start, units = "mins"))))
       if (is.na(minutes) || minutes < 20 || minutes > 240) minutes <- 60L
+      if (!is.null(base)) minutes <- plan_schedule(base$plan)$total
       counts <- ki_counts()
       ctx <- c(list(start = ev$start, minutes = minutes, theme = info$theme$theme %||% "",
                     theme_description = info$theme$description %||% "", team = info$team, wish = ""), counts)
-      # Check rights, key and budget now, and count the tokens for the price.
+      if (!is.null(base)) ctx$theme <- base$plan$tema
+      # Check rights, key and budget now, and count the tokens for the price
+      # (for an adjustment with a stand-in for the wish).
       pre <- tryCatch(db$run(function(con) {
-        prep <- ai_prepare(con, acc, rights(), gid, ctx, now = now(), key = ai_key())
-        list(prep = prep, typical = ds_ai_typical_output(con, "draft", prep$model))
+        c0 <- if (is.null(base)) ctx else modifyList(ctx, list(wish = "Endringsønske."))
+        prep <- ai_prepare(con, acc, rights(), gid, c0, now = now(), key = ai_key(), base_plan = base$plan)
+        list(prep = prep, typical = ds_ai_typical_output(con, prep$kind, prep$model))
       }), error = function(e) e)
       if (inherits(pre, "error")) {
         msg(list(type = "error", text = ki_error_text(pre, "Forberedelse av KI")))
@@ -468,11 +487,16 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
       facts <- paste(c(if (counts$n_players > 0) paste(counts$n_players, "påmeldte"),
                        if (length(counts$group_sizes)) paste(length(counts$group_sizes), "grupper i godkjent gruppeforslag")),
                      collapse = ", ")
-      o <- list(ctx = ctx, model = pre$prep$model, est = est, budget = pre$prep$budget, facts = facts)
+      o <- list(ctx = ctx, model = pre$prep$model, est = est, budget = pre$prep$budget, facts = facts, base = base)
       ki_open(o)
       ki_msg(NULL)
       msg(NULL)
       showModal(ki_modal(ns, o))
+    }
+    observeEvent(input$ki, ki_start())
+    observeEvent(input$ki_revise, {
+      cur <- current()
+      if (!is.null(cur)) ki_start(cur)
     })
 
     output$ki_msg <- renderUI({
@@ -489,14 +513,15 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
         return()
       }
       ctx <- o$ctx
-      ctx$theme <- txt1(input$ki_theme)
+      if (is.null(o$base)) ctx$theme <- txt1(input$ki_theme)
       ctx$minutes <- as.integer(minutes)
       ctx$wish <- input$ki_wish %||% ""
       ev <- event()
       u <- user()
       gid <- context()$group_id
       prep <- tryCatch(db$run(function(con) ai_prepare(con, u$access, rights(), gid, ctx, now = now(), key = ai_key(),
-                                                        model = input$ki_model %||% o$model)),
+                                                        model = input$ki_model %||% o$model,
+                                                        base_plan = o$base$plan)),
                        error = function(e) e)
       if (inherits(prep, "error")) {
         ki_msg(ki_error_text(prep, "Forberedelse av KI"))
@@ -517,7 +542,8 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
         }
         if (identical(isolate(event())$id, r$event_id)) chosen(r$id)
         msg(list(type = "ok", items = r$warnings,
-                 text = paste0("KI-opplegget er lagret som versjon ", r$version, " (",
+                 text = paste0(if (identical(r$kind, "revision")) "Det justerte opplegget" else "KI-opplegget",
+                               " er lagret som versjon ", r$version, " (",
                                ai_format_nok(r$cost_usd, ai_settings_default()$usd_nok), ").",
                                if (length(r$warnings)) " Merknader:")))
         refresh(refresh() + 1)
