@@ -330,6 +330,20 @@ test_that("trainers comment on a plan, and KI can take the comments into account
   expect_false(is.na(used$used_in_plan_id[2]))
 })
 
+test_that("database errors on comments are not shown to the user", {
+  con <- local_test_db()
+  ref <- jsonlite::fromJSON(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"), simplifyVector = FALSE)
+  ds_save_plan(con, plan_acc(), "G2016", "E-ulv", ref, "P-me")
+  testServer(mod_plans_server, args = ki_args(con), {
+    session$setInputs(c_delete = 999)                        # not one's own comment: explained
+    expect_match(c_msg(), "Kan bare slette egne")
+    DBI::dbExecute(con, "ALTER TABLE training_plan_comments RENAME TO tpc_borte")
+    expect_message(session$setInputs(c_where = "", c_text = "Kortere pauser.", c_add = 1), "Lagring av kommentar feilet")
+    expect_equal(c_msg(), "Fikk ikke lagret endringen. Prøv igjen om litt.")
+    expect_false(grepl("tpc|relation|ERROR", c_msg()))
+  })
+})
+
 test_that("approving a version puts the chosen exercises into the bank as candidates", {
   con <- local_test_db()
   ds_save_exercise(con, plan_acc(), "G2016", list(name = "Haien og fiskene", category = "oppvarming"), "P-x", rights = test_admin())

@@ -429,6 +429,13 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
     outputOptions(output, "comment_form", suspendWhenHidden = FALSE)
 
     c_msg <- reactiveVal(NULL)
+    # Messages written for the user are shown; other errors (database) go to
+    # the log, and the user gets a general message.
+    comment_error_text <- function(e, what) {
+      if (inherits(e, "sn_user_error")) return(conditionMessage(e))
+      message(what, " feilet: ", conditionMessage(e))
+      "Fikk ikke lagret endringen. Prøv igjen om litt."
+    }
     output$c_msg <- renderUI({
       m <- c_msg()
       if (is.null(m)) NULL else div(class = "alert alert-danger sn-alert", role = "alert", m)
@@ -448,7 +455,7 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
       res <- tryCatch(db$run(function(con) ds_add_plan_comment(con, u$access, cp$id, u$profile$id, input$c_text %||% "", no)),
                       error = function(e) e)
       if (inherits(res, "error")) {
-        c_msg(conditionMessage(res))
+        c_msg(comment_error_text(res, "Lagring av kommentar"))
         return()
       }
       c_msg(NULL)
@@ -462,7 +469,7 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
       if (is.na(id) || !applies()) return()
       res <- tryCatch(db$run(function(con) ds_delete_plan_comment(con, u$access, context()$group_id, id, u$profile$id)),
                       error = function(e) e)
-      if (inherits(res, "error")) c_msg(conditionMessage(res)) else refresh(refresh() + 1)
+      if (inherits(res, "error")) c_msg(comment_error_text(res, "Sletting av kommentar")) else refresh(refresh() + 1)
     })
 
     observeEvent(input$version, {

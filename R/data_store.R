@@ -84,6 +84,13 @@ ds_connect_args <- function(url, ca_file = app_sys("db", "supabase-ca.crt")) {
 
 # Helpers -----------------------------------------------------------------------
 
+# An error whose message is written for the user and may be shown as is.
+# Other errors (e.g. from the database) are logged, and the user gets a
+# general message.
+ds_user_stop <- function(...) {
+  stop(structure(class = c("sn_user_error", "error", "condition"), list(message = paste0(...), call = NULL)))
+}
+
 # "" for missing optional values (see driver note above).
 ds_opt <- function(x) {
   if (is.null(x) || length(x) == 0 || is.na(x[1])) "" else as.character(x[1])
@@ -1022,13 +1029,13 @@ ds_list_plan_comments <- function(con, access, group_id, event_id) {
 ds_add_plan_comment <- function(con, access, plan_id, actor, body, exercise_no = NA) {
   pl <- ds_get_plan(con, access, plan_id)
   problem <- comment_problem(body)
-  if (!is.null(problem)) stop(problem, call. = FALSE)
+  if (!is.null(problem)) ds_user_stop(problem)
   body <- trimws(body)
-  if (nchar(body) > 1000) stop("En kommentar kan ha maks 1000 tegn.", call. = FALSE)
+  if (nchar(body) > 1000) ds_user_stop("En kommentar kan ha maks 1000 tegn.")
   code <- ""
   no <- suppressWarnings(as.integer(exercise_no))
   if (length(no) == 1 && !is.na(no)) {
-    if (no < 1 || no > length(pl$plan$ovelser)) stop("Ukjent øvelse.", call. = FALSE)
+    if (no < 1 || no > length(pl$plan$ovelser)) ds_user_stop("Ukjent øvelse.")
     code <- pl$plan$ovelser[[no]]$kode
   }
   ds_query(con, "
@@ -1046,7 +1053,7 @@ ds_delete_plan_comment <- function(con, access, group_id, comment_id, actor) {
     DELETE FROM training_plan_comments
      WHERE id = $1 AND spond_group_id = $2 AND author = $3 AND used_in_plan_id IS NULL",
     list(as.integer(comment_id), group_id, actor))
-  if (n == 0) stop("Kan bare slette egne kommentarer som ikke er brukt av KI.", call. = FALSE)
+  if (n == 0) ds_user_stop("Kan bare slette egne kommentarer som ikke er brukt av KI.")
   invisible(TRUE)
 }
 
