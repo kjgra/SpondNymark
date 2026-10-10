@@ -142,3 +142,107 @@ test_that("groups for the PDF follow the proposal's order and skip unknown membe
   expect_equal(vapply(g, `[[`, "", "navn"), c("A", "B"))
   expect_equal(g[[1]]$spillere, "Emma H.")
 })
+
+# KI («Lag med KI», T3b) ---------------------------------------------------------------
+
+ki_args <- function(con, rights = list(superadmin = FALSE, admin = FALSE, ai = TRUE),
+                    answer = fake_answer(example_text()), seen = new.env()) {
+  c(plan_args(con), list(
+    rights = reactive(rights),
+    ai_http = function(path, body) {
+      seen$count_path <- path
+      list(status = 200L, body = list(input_tokens = 9000))
+    },
+    ai_async = function(path, body) {
+      seen$body <- body
+      promises::promise_resolve(answer)
+    },
+    ai_key = function() "sk-test"))
+}
+
+# Let the ExtendedTask finish.
+ki_wait <- function(session, task) {
+  for (i in 1:100) {
+    later::run_now(0.01)
+    session$flushReact()
+    if (!identical(isolate(task$status()), "running")) break
+  }
+}
+
+test_that("trainers without KI access see no KI button", {
+  con <- local_test_db()
+  testServer(mod_plans_server, args = ki_args(con, rights = no_rights()), {
+    expect_false(grepl("Lag med KI", as.character(output$section$html)))
+    session$setInputs(ki = 1)
+    expect_null(ki_open())
+  })
+})
+
+test_that("KI makes a plan in the background, with price before and cost after", {
+  con <- local_test_db()
+  add_bank(con)
+  themes <- rep("", 12); themes[10] <- "Samhandling"
+  ds_save_season(con, plan_acc(), "G2016", 2026, themes, actor = "P-x")
+  ds_save_team_settings(con, plan_acc(), "G2016", list(age_group = "G10", session_minutes = "65"), "P-x")
+  seen <- new.env()
+  testServer(mod_plans_server, args = ki_args(con, seen = seen), {
+    html <- as.character(output$section$html)
+    expect_match(html, "Lag med KI")
+    session$setInputs(ki = 1)
+    o <- ki_open()
+    expect_equal(o$ctx$theme, "Samhandling")
+    expect_equal(o$ctx$minutes, 65L)
+    expect_equal(seen$count_path, "/v1/messages/count_tokens")
+    expect_equal(o$est$per_model[["claude-haiku-5-5"]]$text, "ca. 4 øre")     # 9000 in, 6000 out
+    expect_match(o$facts, "påmeldte")
+
+    session$setInputs(ki_theme = "Samhandling", ki_minutes = 65, ki_wish = "Ola er skadet", ki_model = "claude-haiku-5-5",
+                      ki_go = 1)
+    expect_match(ki_msg(), "sensitive")
+    expect_identical(ki_task$status(), "initial")
+
+    session$setInputs(ki_wish = "Mer avslutning.", ki_go = 2)
+    expect_null(ki_open())
+    ki_wait(session, ki_task)
+    expect_identical(ki_task$status(), "success")
+    expect_match(seen$body$messages[[1]]$content, "Ønsker fra treneren: Mer avslutning.", fixed = TRUE)
+    expect_false(grepl("Kjetil|Emma|Haugen", seen$body$messages[[1]]$content))   # no names
+    expect_equal(msg()$type, "ok")
+    expect_match(msg()$text, "versjon 1")
+    html <- as.character(output$section$html)
+    expect_match(html, "Samhandling – spille på lag")
+    expect_match(html, "med KI \\(Haiku 5.5, ca\\. 3 øre\\)")
+    expect_match(html, "Nytt med KI")
+  })
+  plan <- DBI::dbGetQuery(con, "SELECT source, model FROM training_plans")
+  expect_equal(plan$source, "ai")
+  expect_equal(DBI::dbGetQuery(con, "SELECT status FROM ai_usage")$status, "ok")
+})
+
+test_that("a failed KI answer is logged and explained", {
+  con <- local_test_db()
+  testServer(mod_plans_server, args = ki_args(con, answer = fake_answer("{}", stop_reason = "max_tokens")), {
+    session$setInputs(ki = 1)
+    session$setInputs(ki_theme = "", ki_minutes = 60, ki_wish = "", ki_model = "claude-sonnet-5-5", ki_go = 1)
+    ki_wait(session, ki_task)
+    expect_identical(ki_task$status(), "success")          # handled: the result carries the message
+    expect_equal(msg()$type, "error")
+    expect_match(msg()$text, "for langt")
+  })
+  log <- DBI::dbGetQuery(con, "SELECT status, error_code, model FROM ai_usage")
+  expect_equal(log$status, "error")
+  expect_equal(log$error_code, "max_tokens")
+  expect_equal(log$model, "claude-sonnet-5-5")
+  expect_equal(nrow(DBI::dbGetQuery(con, "SELECT id FROM training_plans")), 0)
+})
+
+test_that("an empty budget stops KI before the dialog", {
+  con <- local_test_db()
+  DBI::dbExecute(con, "INSERT INTO ai_usage (spond_profile_id, spond_group_id, kind, model, cost_usd, status)
+                       VALUES ('P-x', 'G2016', 'draft', 'claude-haiku-5-5', 5, 'ok')")
+  testServer(mod_plans_server, args = ki_args(con), {
+    session$setInputs(ki = 1)
+    expect_null(ki_open())
+    expect_match(msg()$text, "av 30 kr")
+  })
+})

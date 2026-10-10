@@ -1,16 +1,5 @@
 # KI (T3a). No test calls the real API: the HTTP step is replaced by a fake.
 
-fake_answer <- function(text, status = 200L, stop_reason = "end_turn",
-                        usage = list(input_tokens = 1200, output_tokens = 5000,
-                                     cache_read_input_tokens = 0, cache_creation_input_tokens = 7000)) {
-  list(status = status, body = list(content = list(list(type = "text", text = text)),
-                                    stop_reason = stop_reason, usage = usage))
-}
-
-example_text <- function(modify = identity) {
-  jsonlite::toJSON(modify(ai_example_answer()), auto_unbox = TRUE, null = "null")
-}
-
 test_bank <- function() {
   data.frame(
     id = 1:3, code = c("rondo-3-mot-1", "kontring-3-mot-2", "gammel-ovelse"),

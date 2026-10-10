@@ -1989,7 +1989,7 @@
       "checksum": "83f7784fbb8bb2059f3b11bdd12dae4f"
     },
     "DESCRIPTION": {
-      "checksum": "1c2875808bc0756c8885ec3b4cfa56f0"
+      "checksum": "072b692702db0d58c2d0ac5af0aa563b"
     },
     "inst/ai/system.md": {
       "checksum": "269886d4087036da4ea4ae3f63d47380"
@@ -1998,7 +1998,7 @@
       "checksum": "f1e487de51821d7bbc18c371c3b7639e"
     },
     "inst/app/www/custom.css": {
-      "checksum": "af7e9b11e91a64a2a58534088b72141c"
+      "checksum": "f538f94f355f62fc3ad852eecd053547"
     },
     "inst/app/www/favicon.ico": {
       "checksum": "a5b73ffecee6a01c0a08ff0b176901cf"
@@ -2100,19 +2100,19 @@
       "checksum": "0f79d97837ff91c50f065824b39a6fbc"
     },
     "R/app_server.R": {
-      "checksum": "eb0edc37138056e35c5ca07b8d080939"
+      "checksum": "9405e2b33fd15c6e7856fe6defcafa22"
     },
     "R/app_ui.R": {
       "checksum": "814fd6514fa58956349a09ee570ed1c7"
     },
     "R/data_store.R": {
-      "checksum": "bcd13ccc55e3c35a74bc7cbb524f09a6"
+      "checksum": "3b27eea9ae1a36ee75860fcfcdca0094"
     },
     "R/fct_access.R": {
       "checksum": "18aa1da4027e2f0fdadde530d7675b43"
     },
     "R/fct_ai.R": {
-      "checksum": "ffff6b6b9240b1397dbabd2c5868bf9f"
+      "checksum": "88988fa2f80a5d06eded54ee031530ba"
     },
     "R/fct_allowlist.R": {
       "checksum": "d8b029289295a1e2ffc210327bb19bd4"
@@ -2154,7 +2154,7 @@
       "checksum": "ef90987b4b4b8b1257b89f7a20f92791"
     },
     "R/mod_events.R": {
-      "checksum": "61e208b7a75999dbd9cb543edbdfe078"
+      "checksum": "a1984fb7ab888ff42a686f4d52acbc2a"
     },
     "R/mod_groups.R": {
       "checksum": "d3a1060a4de7541b16d3b3fb8a642fa1"
@@ -2166,7 +2166,7 @@
       "checksum": "12abc7b138c9d91b16944f795618838b"
     },
     "R/mod_plans.R": {
-      "checksum": "86681ff1d216d5e088284d85bc587263"
+      "checksum": "4d8fd515664e36347b0f7128a7d160f5"
     },
     "R/mod_quarto_test.R": {
       "checksum": "ca5771a7ad99efa7e7684aa7c5388332"

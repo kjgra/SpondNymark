@@ -33,8 +33,9 @@ ai_api_version <- "2023-06-01"
 # 5-minute writes. Our prompts are far below 100k tokens, where Haiku's
 # long-context price would start.
 ai_models <- list(
-  `claude-haiku-5-5` = list(label = "Haiku 5.5", input = 0.10, output = 0.50, cache_write = 0.125, cache_read = 0.01),
-  `claude-sonnet-5-5` = list(label = "Sonnet 5.5 (bedre kvalitet)", input = 2, output = 10,
+  `claude-haiku-5-5` = list(label = "Haiku 5.5", choice = "Standard", input = 0.10, output = 0.50,
+                            cache_write = 0.125, cache_read = 0.01),
+  `claude-sonnet-5-5` = list(label = "Sonnet 5.5", choice = "Bedre kvalitet", input = 2, output = 10,
                              cache_write = 2.50, cache_read = 0.10)
 )
 
@@ -290,18 +291,40 @@ ai_request_body <- function(model, catalogue, order, system = ai_system_text(), 
 #' @return list(status, body) where body is the parsed JSON (or NULL).
 #' @noRd
 ai_http_post <- function(path, body, key = Sys.getenv("ANTHROPIC_API_KEY"), timeout = 180) {
+  req <- ai_http_request(path, body, key, timeout) |>
+    httr2::req_retry(max_tries = 2, is_transient = function(resp) httr2::resp_status(resp) %in% c(429, 500, 502, 503, 529))
+  ai_http_result(tryCatch(httr2::req_perform(req), error = function(e) NULL))
+}
+
+#' The same as `ai_http_post()`, but as a promise, so the call does not block
+#' other sessions while the model writes (20–60 s). No retry.
+#' @noRd
+ai_http_post_async <- function(path, body, key = Sys.getenv("ANTHROPIC_API_KEY"), timeout = 180) {
+  promises::then(httr2::req_perform_promise(ai_http_request(path, body, key, timeout)),
+                 onFulfilled = ai_http_result,
+                 onRejected = function(e) ai_http_result(NULL))
+}
+
+ai_http_request <- function(path, body, key, timeout) {
   json <- jsonlite::toJSON(body, auto_unbox = TRUE, null = "null")
-  req <- httr2::request(paste0(ai_api_base, path)) |>
+  httr2::request(paste0(ai_api_base, path)) |>
     httr2::req_headers(`x-api-key` = key, `anthropic-version` = ai_api_version, .redact = "x-api-key") |>
     httr2::req_user_agent("SpondNymark") |>
     httr2::req_body_raw(json, type = "application/json") |>
     httr2::req_timeout(timeout) |>
-    httr2::req_retry(max_tries = 2, is_transient = function(resp) httr2::resp_status(resp) %in% c(429, 500, 502, 503, 529)) |>
     httr2::req_error(is_error = function(resp) FALSE)
-  resp <- tryCatch(httr2::req_perform(req), error = function(e) NULL)
+}
+
+ai_http_result <- function(resp) {
   if (is.null(resp)) return(list(status = NA_integer_, body = NULL))
   list(status = httr2::resp_status(resp),
        body = tryCatch(httr2::resp_body_json(resp, simplifyVector = FALSE), error = function(e) NULL))
+}
+
+# Errors meant for the user (Norwegian, no technical details). Other errors
+# are logged and replaced by a general message.
+ai_stop <- function(...) {
+  stop(structure(class = c("ai_error", "error", "condition"), list(message = paste0(...), call = NULL)))
 }
 
 # Answer -----------------------------------------------------------------------------
@@ -475,31 +498,41 @@ ai_plan_from_answer <- function(answer, bank, ctx = list(), max_new = 2L) {
 #' @return A list used by `ai_estimate()`, `ai_send()` and `ai_finish()`.
 #' @noRd
 ai_prepare <- function(con, access, rights, group_id, ctx, kind = "draft", now = Sys.time(),
-                       key = Sys.getenv("ANTHROPIC_API_KEY")) {
-  if (!isTRUE(rights$ai)) stop("Du har ikke tilgang til KI. Spør en administrator.", call. = FALSE)
-  if (!nzchar(key)) stop("KI er ikke satt opp (ANTHROPIC_API_KEY mangler).", call. = FALSE)
+                       key = Sys.getenv("ANTHROPIC_API_KEY"), model = NULL) {
+  if (!isTRUE(rights$ai)) ai_stop("Du har ikke tilgang til KI. Spør en administrator.")
+  if (!nzchar(key)) ai_stop("KI er ikke satt opp (ANTHROPIC_API_KEY mangler).")
   s <- ds_get_ai_settings(con)
+  model <- model %||% s$model
+  if (!model %in% names(ai_models)) ai_stop("Ukjent modell.")
   budget <- ai_budget(ds_ai_spend(con, access, group_id, ai_month_start(now)), s)
-  if (!budget$ok) stop(budget$message, call. = FALSE)
+  if (!budget$ok) ai_stop(budget$message)
   bank <- ds_list_exercises(con, access, group_id)
   ctx$max_new <- s$max_new_exercises
-  body <- ai_request_body(s$model, ai_catalogue(bank, ctx$theme %||% ""), ai_order_text(ctx))
-  list(group_id = group_id, kind = kind, model = s$model, settings = s, budget = budget, bank = bank,
+  order <- tryCatch(ai_order_text(ctx), error = function(e) ai_stop(conditionMessage(e)))
+  body <- ai_request_body(model, ai_catalogue(bank, ctx$theme %||% ""), order)
+  list(group_id = group_id, kind = kind, model = model, settings = s, budget = budget, bank = bank,
        ctx = ctx, body = body)
 }
 
 #' Price estimate before the call: input tokens counted by the API (free),
 #' answer length from earlier calls (or 6 000 tokens). Assumes nothing is
 #' cached, so it errs on the high side.
-#' @return list(input_tokens, output_tokens, usd, text) or NULL if the count failed.
+#' The count is made once, for the chosen model; `per_model` uses the same
+#' token numbers for every model (close enough for a price hint).
+#' @return list(input_tokens, output_tokens, usd, text, per_model = named
+#'   list of list(usd, text)) or NULL if the count failed.
 #' @noRd
 ai_estimate <- function(prep, typical_output = NA, http = ai_http_post) {
   res <- http("/v1/messages/count_tokens", prep$body[c("model", "system", "messages", "output_config")])
   n_in <- res$body$input_tokens
   if (!isTRUE(res$status == 200) || !is.numeric(n_in)) return(NULL)
-  n_out <- if (is.na(typical_output)) 6000 else typical_output
-  usd <- ai_cost(list(input_tokens = n_in, output_tokens = n_out), prep$model)
-  list(input_tokens = n_in, output_tokens = n_out, usd = usd, text = ai_format_nok(usd, prep$settings$usd_nok))
+  n_out <- if (is.null(typical_output) || is.na(typical_output)) 6000 else typical_output
+  per_model <- lapply(names(ai_models), function(m) {
+    usd <- ai_cost(list(input_tokens = n_in, output_tokens = n_out), m)
+    list(usd = usd, text = ai_format_nok(usd, prep$settings$usd_nok))
+  })
+  names(per_model) <- names(ai_models)
+  c(list(input_tokens = n_in, output_tokens = n_out), per_model[[prep$model]], list(per_model = per_model))
 }
 
 #' Step 2: the call itself (slow)
@@ -509,6 +542,15 @@ ai_send <- function(prep, http = ai_http_post) {
   t0 <- Sys.time()
   res <- http("/v1/messages", prep$body)
   list(res = res, duration_ms = round(as.numeric(difftime(Sys.time(), t0, units = "secs")) * 1000))
+}
+
+#' Step 2 as a promise (used by the app, see `ai_send()`)
+#' @noRd
+ai_send_async <- function(prep, http_async = ai_http_post_async) {
+  t0 <- Sys.time()
+  promises::then(promises::as.promise(http_async("/v1/messages", prep$body)), function(res) {
+    list(res = res, duration_ms = round(as.numeric(difftime(Sys.time(), t0, units = "secs")) * 1000))
+  })
 }
 
 #' Step 3: log the call, turn the answer into a plan and save it as a new
@@ -536,7 +578,7 @@ ai_finish <- function(con, access, actor, prep, sent, event_id) {
   usage_id <- ds_log_ai_usage(con, access, prep$group_id, actor, event_id = event_id, u = c(r$usage, list(
     kind = prep$kind, model = prep$model, cost_usd = cost, duration_ms = sent$duration_ms,
     status = if (is.null(plan)) "error" else "ok", error_code = err)))
-  if (is.null(plan)) stop(msg, call. = FALSE)
+  if (is.null(plan)) ai_stop(msg)
   saved <- ds_save_plan(con, access, prep$group_id, event_id, plan$plan, actor, source = "ai",
                         model = prep$model, cost_usd = cost)
   ds_ai_usage_set_plan(con, access, prep$group_id, usage_id, saved$id)

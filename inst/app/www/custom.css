@@ -449,3 +449,8 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-allow-hint { font-weight: 600; }
 .sn-allow td { vertical-align: middle; }
 .sn-allow-c { text-align: right; width: 1%; white-space: nowrap; }
+
+/* Plans: KI */
+.sn-plan-busy { display: flex; gap: .5rem; align-items: center; margin: .5rem 0; color: var(--sn-grey); }
+.sn-plan-notes { margin: .4rem 0 0; padding-left: 1.2rem; }
+.sn-plan-empty .btn + .btn { margin-left: .4rem; }

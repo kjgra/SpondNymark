@@ -747,18 +747,19 @@ ds_plan_versions <- function(con, access, group_id, event_id) {
 }
 
 #' One version of a plan, with the plan parsed and checked
-#' @return list(id, group_id, event_id, version, status, source, created_by,
+#' @return list(id, group_id, event_id, version, status, source, model, cost_usd, created_by,
 #'   created_at, plan).
 #' @noRd
 ds_get_plan <- function(con, access, plan_id) {
   row <- ds_query(con, "
-    SELECT id, spond_group_id, spond_event_id, version, status, source, created_by, created_at, plan::text AS plan
+    SELECT id, spond_group_id, spond_event_id, version, status, source, coalesce(model, '') AS model,
+           cost_usd::float8 AS cost_usd, created_by, created_at, plan::text AS plan
       FROM training_plans WHERE id = $1 AND status <> 'deleted'", list(as.integer(plan_id)))
   if (nrow(row) == 0) stop("Fant ikke opplegget.", call. = FALSE)
   assert_group_access(access, row$spond_group_id)
   list(id = row$id, group_id = row$spond_group_id, event_id = row$spond_event_id, version = row$version,
-       status = row$status, source = row$source, created_by = row$created_by, created_at = row$created_at,
-       plan = plan_validate(row$plan))
+       status = row$status, source = row$source, model = row$model, cost_usd = row$cost_usd,
+       created_by = row$created_by, created_at = row$created_at, plan = plan_validate(row$plan))
 }
 
 #' Save a plan as a new version for an event

@@ -22,11 +22,12 @@ Imports:
     grDevices,
     grid,
     htmltools,
-    httr2 (>= 1.0.0),
+    httr2 (>= 1.0.7),
     jsonlite,
     openssl,
+    promises,
     RPostgres,
-    shiny,
+    shiny (>= 1.8.1),
     stats,
     utils
 Encoding: UTF-8

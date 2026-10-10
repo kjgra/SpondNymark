@@ -9,7 +9,11 @@
 #' group proposal, if there is one. The names are only put into the PDF and
 #' never stored in the plan.
 #'
-#' KI ("Lag med KI"), comments and approval come in T3
+#' "Lag med KI" (T3b) lets trainers with KI access have Claude write the plan
+#' (R/fct_ai.R). The call runs as an ExtendedTask, so the app keeps working
+#' for everybody while the model writes; the plan is saved and the cost
+#' logged even if the trainer closes the page. Only counts are sent (players
+#' signed up, group sizes), never names. Comments and approval come in T3c
 #' (claude/plan-treningsopplegg.md).
 #'
 #' @param context Reactive from `mod_teams_server()`.
@@ -18,6 +22,8 @@
 #' @param event Reactive with the open event (from `event_minimal()`), or NULL.
 #' @param now Function giving the current time (tests pass a fixed time).
 #' @param make_pdf Function making the PDF (tests pass a fake).
+#' @param rights Reactive with the user's rights (`rights_reactive()`).
+#' @param ai_http,ai_async,ai_key The Claude API (tests pass fakes).
 #' @noRd
 mod_plans_event_ui <- function(id) {
   ns <- NS(id)
@@ -32,8 +38,57 @@ plan_author_name <- function(profile_id, group) {
   short_name(m$first_name[hit[1]], m$last_name[hit[1]])
 }
 
-plan_version_line <- function(v, n, author, t) {
-  paste0("Versjon ", v, if (n > 1) paste0(" av ", n), " · laget av ", author, " · ", short_time(t))
+plan_version_line <- function(v, n, author, t, ai = "") {
+  paste0("Versjon ", v, if (n > 1) paste0(" av ", n), " · laget av ", author, if (nzchar(ai)) paste0(" ", ai),
+         " · ", short_time(t))
+}
+
+# "med KI (Haiku 5.5, ca. 4 øre)" for a plan made by KI, otherwise "".
+plan_ai_note <- function(cur, rate = ai_settings_default()$usd_nok) {
+  if (!identical(cur$source, "ai")) return("")
+  label <- ai_models[[txt1(cur$model)]]$label %||% txt1(cur$model)
+  cost <- cur$cost_usd %||% NA
+  paste0("med KI (", paste(c(label, if (!is.na(cost)) ai_format_nok(cost, rate)), collapse = ", "), ")")
+}
+
+# The dialog before a KI call: theme, length, wishes and model with prices.
+# `o` is list(ctx, model, est, budget, facts) from the server.
+ki_modal <- function(ns, o) {
+  choices <- stats::setNames(names(ai_models), vapply(names(ai_models), function(m) {
+    price <- o$est$per_model[[m]]$text
+    paste0(ai_models[[m]]$choice, " (", ai_models[[m]]$label, ")", if (!is.null(price)) paste0(" · ", price))
+  }, ""))
+  b <- o$budget
+  m <- modalDialog(
+    title = "Lag opplegg med KI",
+    size = "l", easyClose = FALSE,
+    footer = tagList(uiOutput(ns("ki_msg")),
+                     actionButton(ns("ki_go"), "Lag opplegget", class = "btn-primary"),
+                     modalButton("Avbryt")),
+    div(class = "sn-admin-pane",
+        p(class = "sn-hint", "KI setter sammen en økt ut fra temaet, lagets standard, øvelsesbanken og ønskene dine.",
+          " Opplegget lagres som en ny versjon, og du kan endre det etterpå."),
+        div(class = "sn-admin-grid",
+            textInput(ns("ki_theme"), "Tema", value = o$ctx$theme %||% "", width = "100%"),
+            numericInput(ns("ki_minutes"), "Øktlengde (min)", value = o$ctx$minutes, min = 20, max = 240, width = "100%")),
+        textAreaInput(ns("ki_wish"), "Ønsker og utfordringer (valgfritt)", rows = 4, width = "100%",
+                      placeholder = "F.eks.: Vi kommer ikke hjem bak ballen i forsvar. Mer avslutning på mål."),
+        p(class = "sn-hint", "Ikke skriv navn eller helseopplysninger.",
+          if (nzchar(o$facts)) paste0(" KI får bare antall: ", o$facts, ".")),
+        radioButtons(ns("ki_model"), "Modell", choices = choices, selected = o$model),
+        p(class = "sn-hint",
+          if (is.null(o$est)) "Fikk ikke regnet ut prisen på forhånd. " else "Prisen er et anslag. ",
+          if (!is.null(b)) paste0("Laget har brukt ", formatC(b$group_nok, format = "f", digits = 2, decimal.mark = ","),
+                                  " av ", b$group_limit_nok, " kr til KI denne måneden.")))
+  )
+  htmltools::tagQuery(m)$find(".modal-dialog")$addClass("modal-fullscreen-sm-down sn-admin-modal")$allTags()
+}
+
+# Busy message while KI writes the plan.
+ki_busy_ui <- function() {
+  div(class = "sn-plan-busy", role = "status",
+      span(class = "spinner-border spinner-border-sm", `aria-hidden` = "true"),
+      span("KI lager opplegget … Det tar 20–60 sekunder. Du kan bruke resten av appen så lenge."))
 }
 
 # The exercises of a plan as a short list, with the schedule's times.
@@ -118,7 +173,9 @@ plan_editor_modal <- function(ns, s, choices, selected, minutes_hint = NULL) {
 }
 
 #' @noRd
-mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_pdf = plan_pdf) {
+mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_pdf = plan_pdf,
+                             rights = reactive(no_rights()), ai_http = ai_http_post, ai_async = ai_http_post_async,
+                             ai_key = function() Sys.getenv("ANTHROPIC_API_KEY")) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     refresh <- reactiveVal(0)
@@ -126,6 +183,8 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
     ed_msg <- reactiveVal(NULL)    # message in the editor
     chosen <- reactiveVal(NULL)    # plan id picked in the version list, NULL = latest
     editor <- reactiveVal(NULL)    # list(bank, kept) while the editor is open
+    ki_open <- reactiveVal(NULL)   # list(ctx, model, est, budget, facts) while the KI dialog is open
+    ki_msg <- reactiveVal(NULL)    # message in the KI dialog
 
     applies <- reactive({
       ev <- event()
@@ -174,17 +233,23 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
       m <- msg()
       alert <- if (!is.null(m)) {
         div(class = paste("alert sn-alert", if (identical(m$type, "ok")) "alert-success" else "alert-danger"),
-            role = if (identical(m$type, "ok")) "status" else "alert", m$text)
+            role = if (identical(m$type, "ok")) "status" else "alert", m$text,
+            if (length(m$items)) tags$ul(class = "sn-plan-notes", lapply(m$items, tags$li)))
       }
       head <- h3(class = "sn-section-title", "Treningsopplegg")
       if (is.null(v)) return(tagList(head, alert))
+      busy <- ki_busy()
+      can_ki <- upcoming() && isTRUE(rights()$ai) && !busy
+      ki_button <- function(label, cls) if (can_ki) actionButton(ns("ki"), label, class = cls)
       if (nrow(v) == 0 || is.null(cur)) {
         return(tagList(
           head, alert,
           if (upcoming()) {
             div(class = "sn-plan-empty",
-                p(class = "sn-hint", "Ingen opplegg ennå. Sett sammen øvelser fra banken."),
-                actionButton(ns("new"), "Lag opplegg", class = "btn-primary btn-sm"))
+                if (busy) ki_busy_ui() else p(class = "sn-hint", "Ingen opplegg ennå. Sett sammen øvelser fra banken",
+                                              if (can_ki) " eller la KI lage et forslag", "."),
+                if (!busy) actionButton(ns("new"), "Lag opplegg", class = "btn-primary btn-sm"),
+                ki_button("Lag med KI", "btn-outline-primary btn-sm"))
           } else {
             p(class = "sn-hint", "Ingen opplegg for denne treningen.")
           }
@@ -196,11 +261,13 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
         div(class = "sn-plan-card",
             div(class = "sn-plan-title", cur$plan$tittel),
             div(class = "sn-hint", plan_version_line(cur$version, nrow(v), plan_author_name(cur$created_by, group),
-                                                     cur$created_at)),
+                                                     cur$created_at, plan_ai_note(cur))),
             plan_summary_ui(cur$plan),
+            if (busy) ki_busy_ui(),
             div(class = "sn-plan-actions",
                 downloadButton(ns("pdf"), "Last ned PDF", class = "btn-sm btn-primary"),
-                if (upcoming()) actionButton(ns("edit"), "Endre", class = "btn-sm btn-outline-primary"),
+                if (upcoming() && !busy) actionButton(ns("edit"), "Endre", class = "btn-sm btn-outline-primary"),
+                ki_button("Nytt med KI", "btn-sm btn-outline-primary"),
                 if (nrow(v) > 1) {
                   htmltools::tagAppendAttributes(
                     selectInput(ns("version"), NULL, selectize = FALSE, width = "auto", selected = cur$id,
@@ -333,6 +400,132 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
       chosen(res$id)
       msg(list(type = "ok", text = paste0("Opplegget er lagret som versjon ", res$version, ".")))
       refresh(refresh() + 1)
+    })
+
+    # KI («Lag med KI») ------------------------------------------------------------------
+    # The slow API call runs as an ExtendedTask. Logging and saving happen in
+    # the same promise chain, with a connection of its own if the session has
+    # been closed in the meantime, so a paid answer is never lost.
+    ki_task <- ExtendedTask$new(function(prep, access, actor, event_id) {
+      promises::then(ai_send_async(prep, ai_async), function(sent) {
+        finish <- function(con) ai_finish(con, access, actor, prep, sent, event_id)
+        # Expected failures (the answer could not be used, and so on) come
+        # back as a result with a message; only unexpected errors reject.
+        res <- tryCatch(
+          if (isTRUE(session$isClosed())) {
+            h <- db_handle()
+            on.exit(h$close(), add = TRUE)
+            h$run(finish)
+          } else {
+            db$run(finish)
+          },
+          ai_error = function(e) list(error = conditionMessage(e)))
+        c(res, list(event_id = event_id))
+      })
+    })
+    ki_busy <- reactive(identical(ki_task$status(), "running"))
+
+    # Only counts go to KI: players signed up, and the sizes of the groups in
+    # the approved group proposal.
+    ki_counts <- function() {
+      ev <- event()
+      r <- ev$responses$status %||% character()
+      list(n_players = sum(r == "accepted"),
+           group_sizes = vapply(print_groups(), function(g) length(g$spillere), integer(1)))
+    }
+
+    ki_error_text <- function(e, what) {
+      if (inherits(e, "ai_error")) return(conditionMessage(e))
+      message(what, " feilet: ", conditionMessage(e))
+      "Noe gikk galt med KI. Prøv igjen om litt."
+    }
+
+    observeEvent(input$ki, {
+      if (!applies() || !upcoming() || !isTRUE(rights()$ai) || ki_busy()) return()
+      ev <- event()
+      u <- user()
+      gid <- context()$group_id
+      acc <- u$access
+      info <- read(function(con) list(theme = ds_season_theme(con, acc, gid, as.Date(ev$start, tz = "Europe/Oslo")),
+                                      team = ds_get_team_settings(con, acc, gid)))
+      if (is.null(info)) return()
+      minutes <- suppressWarnings(as.integer(info$team$session_minutes))
+      if (is.na(minutes) && !is.na(ev$end)) minutes <- as.integer(round(as.numeric(difftime(ev$end, ev$start, units = "mins"))))
+      if (is.na(minutes) || minutes < 20 || minutes > 240) minutes <- 60L
+      counts <- ki_counts()
+      ctx <- c(list(start = ev$start, minutes = minutes, theme = info$theme$theme %||% "",
+                    theme_description = info$theme$description %||% "", team = info$team, wish = ""), counts)
+      # Check rights, key and budget now, and count the tokens for the price.
+      pre <- tryCatch(db$run(function(con) {
+        prep <- ai_prepare(con, acc, rights(), gid, ctx, now = now(), key = ai_key())
+        list(prep = prep, typical = ds_ai_typical_output(con, "draft", prep$model))
+      }), error = function(e) e)
+      if (inherits(pre, "error")) {
+        msg(list(type = "error", text = ki_error_text(pre, "Forberedelse av KI")))
+        return()
+      }
+      est <- tryCatch(ai_estimate(pre$prep, pre$typical, http = ai_http), error = function(e) NULL)
+      facts <- paste(c(if (counts$n_players > 0) paste(counts$n_players, "påmeldte"),
+                       if (length(counts$group_sizes)) paste(length(counts$group_sizes), "grupper i godkjent gruppeforslag")),
+                     collapse = ", ")
+      o <- list(ctx = ctx, model = pre$prep$model, est = est, budget = pre$prep$budget, facts = facts)
+      ki_open(o)
+      ki_msg(NULL)
+      msg(NULL)
+      showModal(ki_modal(ns, o))
+    })
+
+    output$ki_msg <- renderUI({
+      m <- ki_msg()
+      if (is.null(m)) NULL else div(class = "alert alert-danger sn-alert sn-plan-edmsg", role = "alert", m)
+    })
+
+    observeEvent(input$ki_go, {
+      o <- ki_open()
+      if (is.null(o) || !applies() || !upcoming() || ki_busy()) return()
+      minutes <- suppressWarnings(as.numeric(input$ki_minutes))
+      if (length(minutes) != 1 || is.na(minutes) || minutes < 20 || minutes > 240 || minutes != round(minutes)) {
+        ki_msg("Øktlengden må være et helt tall fra 20 til 240 minutter.")
+        return()
+      }
+      ctx <- o$ctx
+      ctx$theme <- txt1(input$ki_theme)
+      ctx$minutes <- as.integer(minutes)
+      ctx$wish <- input$ki_wish %||% ""
+      ev <- event()
+      u <- user()
+      gid <- context()$group_id
+      prep <- tryCatch(db$run(function(con) ai_prepare(con, u$access, rights(), gid, ctx, now = now(), key = ai_key(),
+                                                        model = input$ki_model %||% o$model)),
+                       error = function(e) e)
+      if (inherits(prep, "error")) {
+        ki_msg(ki_error_text(prep, "Forberedelse av KI"))
+        return()
+      }
+      ki_open(NULL)
+      removeModal()
+      ki_task$invoke(prep, u$access, u$profile$id, ev$id)
+    })
+
+    observeEvent(ki_task$status(), {
+      st <- ki_task$status()
+      if (identical(st, "success")) {
+        r <- ki_task$result()
+        if (!is.null(r$error)) {
+          msg(list(type = "error", text = r$error))
+          return()
+        }
+        if (identical(isolate(event())$id, r$event_id)) chosen(r$id)
+        msg(list(type = "ok", items = r$warnings,
+                 text = paste0("KI-opplegget er lagret som versjon ", r$version, " (",
+                               ai_format_nok(r$cost_usd, ai_settings_default()$usd_nok), ").",
+                               if (length(r$warnings)) " Merknader:")))
+        refresh(refresh() + 1)
+      } else if (identical(st, "error")) {
+        e <- tryCatch(ki_task$result(), error = function(e) e)
+        msg(list(type = "error", text = ki_error_text(e, "KI-opplegg")))
+        refresh(refresh() + 1)
+      }
     })
 
     # PDF -----------------------------------------------------------------------------
