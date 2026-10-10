@@ -57,7 +57,9 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     if (is.null(event_ids)) event_ids <- reactive(vapply(events(), function(e) e$id, ""))
-    session_key <- paste0("s-", session$token %||% "local", "-", id)
+    # A random key for this editor's locks. Not the Shiny session token: that
+    # token gives access to the session's downloads and must not be stored.
+    session_key <- paste0("s-", ds_random_password(24))
 
     proposals <- reactiveVal(list())
     locks <- reactiveVal(NULL)

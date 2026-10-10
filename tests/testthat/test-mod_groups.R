@@ -283,3 +283,11 @@ test_that("a name typed in an earlier editor is not reused", {
     expect_setequal(DBI::dbGetQuery(con, "SELECT name FROM group_proposals")$name, c("Første", "Forslag 1"))
   })
 })
+
+test_that("edit locks do not store the Shiny session token", {
+  con <- local_test_db()
+  testServer(mod_groups_server, args = groups_args(con), {
+    expect_match(session_key, "^s-[A-Za-z0-9]{24}$")
+    expect_false(grepl(session$token, session_key, fixed = TRUE))
+  })
+})
