@@ -50,3 +50,80 @@ login_check <- function(db, profile_id, superadmin = Sys.getenv("SPONDNYMARK_SUP
     "error"
   })
 }
+
+# Limits on failed logins ---------------------------------------------------------
+# Every login attempt is passed on to Spond. Without limits, the app could be
+# used to guess passwords, and Spond could block the server's address, so
+# nobody could log in. Failed attempts are counted in memory (never stored):
+# per browser session, per e-mail/mobile number (as a hash) and for the whole
+# R process.
+
+login_limits <- list(
+  session = list(max = 5, window = 60),        # 5 failures a minute in one browser
+  ident = list(max = 10, window = 15 * 60),    # 10 failures per account per 15 min
+  all = list(max = 60, window = 15 * 60)       # 60 failures in all per 15 min
+)
+
+#' A store of failed attempts: an environment of key -> times (seconds)
+#' @noRd
+login_throttle_new <- function() new.env(parent = emptyenv())
+
+# Shared by all sessions in this R process.
+login_throttle <- login_throttle_new()
+
+#' The key for an identifier: a hash, so no e-mail or number is kept
+#' @noRd
+login_key <- function(ident) {
+  paste0("id:", as.character(openssl::sha256(paste0(ident$kind, ":", ident$value))))
+}
+
+login_recent <- function(store, key, window, now) {
+  t <- store[[key]] %||% numeric()
+  t[t > now - window]
+}
+
+#' Seconds to wait before the next attempt (0 = go ahead)
+#' @param keys Named character vector: names are entries in `limits`
+#'   ("session", "ident", "all"), values are the keys; `stores` likewise.
+#' @noRd
+login_wait <- function(stores, keys, now = as.numeric(Sys.time()), limits = login_limits) {
+  wait <- 0
+  for (k in names(keys)) {
+    lim <- limits[[k]]
+    t <- login_recent(stores[[k]], keys[[k]], lim$window, now)
+    if (length(t) >= lim$max) wait <- max(wait, sort(t, decreasing = TRUE)[lim$max] + lim$window - now)
+  }
+  ceiling(wait)
+}
+
+#' Count a failed attempt
+#' @noRd
+login_failed <- function(stores, keys, now = as.numeric(Sys.time()), limits = login_limits) {
+  for (k in names(keys)) {
+    lim <- limits[[k]]
+    st <- stores[[k]]
+    assign(keys[[k]], c(login_recent(st, keys[[k]], lim$window, now), now), envir = st)
+    # Forget keys with no recent failures, so the store does not grow.
+    for (old in setdiff(ls(st, all.names = TRUE), keys[[k]])) {
+      if (!length(login_recent(st, old, lim$window, now))) rm(list = old, envir = st)
+    }
+  }
+  invisible(TRUE)
+}
+
+#' A successful login clears the failures for that browser and account
+#' @noRd
+login_succeeded <- function(stores, keys) {
+  for (k in intersect(names(keys), c("session", "ident"))) {
+    if (exists(keys[[k]], envir = stores[[k]], inherits = FALSE)) rm(list = keys[[k]], envir = stores[[k]])
+  }
+  invisible(TRUE)
+}
+
+#' "1 minutt", "3 minutter", "40 sekunder"
+#' @noRd
+login_wait_text <- function(sec) {
+  if (sec < 60) return(paste(sec, "sekunder"))
+  m <- ceiling(sec / 60)
+  paste(m, if (m == 1) "minutt" else "minutter")
+}

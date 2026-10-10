@@ -145,3 +145,55 @@ testthat::test_that("app access is not checked when Spond says no, and errors ar
     expect_false(is.null(session$returned()))
   })
 })
+
+testthat::test_that("failed logins are limited per browser, per account and in all", {
+  t <- 1000
+  stores <- list(session = login_throttle_new(), ident = login_throttle_new(), all = login_throttle_new())
+  calls <- 0
+  api <- fake_spond_api()
+  login <- api$login
+  api$login <- function(email, password) { calls <<- calls + 1; login(email, password) }
+  testServer(mod_login_server, args = list(spond = api, role_names = c("Teamleder"), throttle = stores,
+                                           now = function() t), {
+    for (i in 1:5) session$setInputs(email = "trener@klubb.no", password = "feil", login = i)
+    expect_equal(calls, 5)
+    session$setInputs(password = "riktig", login = 6)       # blocked before Spond, even with the right password
+    expect_equal(calls, 5)
+    expect_match(error_msg(), "Prøv igjen om 1 minutt")
+    t <<- t + 61
+    session$setInputs(password = "riktig", login = 7)
+    expect_equal(calls, 6)
+    expect_false(is.null(session$returned()))               # success clears the failures
+    expect_length(ls(stores$session), 0)
+  })
+  # The same account from new browser sessions: 10 failures per 15 min.
+  for (s in 1:2) {
+    testServer(mod_login_server, args = list(spond = api, role_names = c("Teamleder"),
+                                             throttle = list(session = login_throttle_new(), ident = stores$ident,
+                                                             all = stores$all), now = function() t), {
+      for (i in 1:5) session$setInputs(email = "Trener@klubb.no", password = "feil", login = i)
+    })
+  }
+  testServer(mod_login_server, args = list(spond = api, role_names = c("Teamleder"),
+                                           throttle = list(session = login_throttle_new(), ident = stores$ident,
+                                                           all = stores$all), now = function() t), {
+    n <- calls
+    session$setInputs(email = "trener@klubb.no", password = "riktig", login = 1)
+    expect_equal(calls, n)
+    expect_match(error_msg(), "minutter")
+    session$setInputs(email = "annen@klubb.no", password = "feil", login = 2)   # another account still works
+    expect_equal(calls, n + 1)
+  })
+  # Nothing but hashes is kept.
+  expect_false(any(grepl("@", ls(stores$ident))))
+})
+
+testthat::test_that("the wait is worked out from the oldest failure in the window", {
+  st <- list(all = login_throttle_new())
+  lim <- list(all = list(max = 3, window = 100))
+  for (x in c(10, 20, 30)) login_failed(st, c(all = "all"), now = x, limits = lim)
+  expect_equal(login_wait(st, c(all = "all"), now = 40, limits = lim), 70)
+  expect_equal(login_wait(st, c(all = "all"), now = 111, limits = lim), 0)
+  expect_equal(login_wait_text(70), "2 minutter")
+  expect_equal(login_wait_text(40), "40 sekunder")
+})

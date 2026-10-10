@@ -16,6 +16,8 @@
 #' @param role_names Role names that give access.
 #' @param allow NULL (everyone with a Spond login) or function(ident, profile_id)
 #'   returning "ok", "denied" or "error": app access (`login_check()`).
+#' @param throttle,now Stores for failed logins and the clock (tests pass
+#'   their own), see `login_limits`.
 #' @return A reactive: NULL while logged out, otherwise a list with `spond`
 #'   (session), `profile`, `groups` and `access`.
 #' @noRd
@@ -128,7 +130,11 @@ login_js <- function(ns) {
     })();", ns("email"), ns("password"), ns("login"))))
 }
 
-mod_login_server <- function(id, spond = spond_api(), role_names = access_role_names(), allow = NULL) {
+mod_login_server <- function(id, spond = spond_api(), role_names = access_role_names(), allow = NULL,
+                             throttle = NULL, now = function() as.numeric(Sys.time())) {
+  # Failed logins: per browser session (new store each session), per account
+  # and in all (shared in the R process). See login_limits.
+  if (is.null(throttle)) throttle <- list(session = login_throttle_new(), ident = login_throttle, all = login_throttle)
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     state <- reactiveVal(list(status = "logged_out"))
@@ -175,6 +181,12 @@ mod_login_server <- function(id, spond = spond_api(), role_names = access_role_n
         error_msg("Skriv e-postadressen eller mobilnummeret du bruker i Spond (mobilnummer med 8 siffer).")
         return()
       }
+      keys <- c(session = "session", ident = login_key(ident), all = "all")
+      wait <- login_wait(throttle, keys, now())
+      if (wait > 0) {
+        error_msg(paste0("For mange mislykkede innlogginger. Prøv igjen om ", login_wait_text(wait), "."))
+        return()
+      }
       error_msg(NULL)
 
       result <- tryCatch({
@@ -184,6 +196,7 @@ mod_login_server <- function(id, spond = spond_api(), role_names = access_role_n
       rm(password)
 
       if (inherits(result, "error")) {
+        login_failed(throttle, keys, now())
         if (inherits(result, "spond_error")) {
           error_msg(conditionMessage(result))
         } else {
@@ -194,6 +207,7 @@ mod_login_server <- function(id, spond = spond_api(), role_names = access_role_n
         return()
       }
 
+      login_succeeded(throttle, keys)
       d <- result$data
       # App access (R/fct_allowlist.R). Without it, the Spond session is
       # dropped right away.
