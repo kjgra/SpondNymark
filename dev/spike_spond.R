@@ -10,6 +10,9 @@
 #      til barna sine via foresatte (profil-ID). Bare antall, ingen navn.
 #   7. (runde 1, punkt C) hvordan arrangementer som ikke er sendt ut ennå
 #      (planlagt utsending) ser ut. Bare feltnavn, tidspunkter og antall.
+#   8. (11. okt. 2026) arrangører (`owners`) på arrangementene: feltene,
+#      svarverdiene, og hvordan de henger sammen med trenerrollene og
+#      mottakerne. Bare antall og rollenavn, ingen navn.
 #
 # Kjør fra prosjektmappen:  source("dev/spike_spond.R")
 # Krever pakkene pkgload, httr2 og askpass (askpass følger med httr2).
@@ -285,6 +288,64 @@ if (!is.null(target)) {
           " | ", show_flags(e), " | svar: ", resp_counts(e))
     }
   }
+}
+
+# Arrangører (owners) ---------------------------------------------------------------
+# Spond kaller trenerne på et arrangement «arrangører» (feltet owners). Her
+# sjekkes hva feltet inneholder, og hvordan det passer med trenerrollene og
+# mottakerne. Bare feltnavn, svarverdier, rollenavn og antall; ingen navn.
+section("8. Arrangører (owners)")
+if (!is.null(target)) {
+  members <- target$members %||% list()
+  m_id <- vapply(members, function(m) as.character(m$id %||% NA), character(1))
+  m_prof <- vapply(members, function(m) as.character(m$profile$id %||% NA), character(1))
+  m_roles <- lapply(members, function(m) spond_member_role_names(target, m))
+  m_coach <- vapply(m_roles, function(x) any(normalise_role_name(x) %in% normalise_role_name(coach_role_names())),
+                    logical(1))
+  evs <- c(if (exists("upcoming") && !is.null(upcoming)) head(upcoming, 6),
+           if (exists("past") && !is.null(past)) head(past, 6),
+           if (exists("only_sched")) head(only_sched, 3))
+  say("Arrangementer sett på: ", length(evs), " (inntil 6 kommende, 6 gjennomførte, 3 ikke sendt ut)")
+  owners_all <- unlist(lapply(evs, function(e) e$owners %||% list()), recursive = FALSE)
+  say("Felter på en arrangør: ", paste(field_names(owners_all), collapse = ", "))
+  resp_vals <- vapply(owners_all, function(o) as.character(o$response %||% "(mangler)"), character(1))
+  if (length(resp_vals)) say("Svarverdier (response) hos arrangører: ",
+                             paste0(names(table(resp_vals)), "=", as.integer(table(resp_vals)), collapse = ", "))
+  app_vals <- vapply(owners_all, function(o) as.character(o$appUser %||% "(mangler)"), character(1))
+  if (length(app_vals)) say("appUser: ", paste0(names(table(app_vals)), "=", as.integer(table(app_vals)), collapse = ", "))
+  say("Per arrangement: arrangører | id = profil-ID i gruppa | id = medlems-ID | med trenerrolle | ",
+      "også mottaker (svar) | creatorId er arrangør || mottakere med trenerrolle | av dem ikke arrangør (svar)")
+  status_of <- function(e, mid) {
+    r <- e$responses %||% list()
+    for (f in names(r)) if (mid %in% ids_of(r[[f]])) return(sub("Ids$", "", f))
+    NA_character_
+  }
+  other_roles <- character()
+  for (e in evs) {
+    own <- e$owners %||% list()
+    oid <- vapply(own, function(o) as.character(o$id %||% NA), character(1))
+    idx_prof <- match(oid, m_prof)
+    idx_mem <- match(oid, m_id)
+    idx <- ifelse(is.na(idx_prof), idx_mem, idx_prof)
+    coach <- !is.na(idx) & m_coach[ifelse(is.na(idx), 1, idx)]
+    other_roles <- c(other_roles, unlist(m_roles[idx[!is.na(idx) & !coach]]))
+    rec_status <- vapply(seq_along(idx), function(i) if (is.na(idx[i])) NA_character_ else status_of(e, m_id[idx[i]]), "")
+    resp <- e$responses %||% list()
+    rec_ids <- unique(unlist(lapply(resp, ids_of)))
+    rec_coach <- rec_ids[rec_ids %in% m_id[m_coach]]
+    rc_not_owner <- setdiff(rec_coach, m_id[idx[!is.na(idx)]])
+    rc_st <- vapply(rc_not_owner, function(mid) status_of(e, mid), "")
+    tab <- function(x) if (length(x)) paste0(names(table(x)), "=", as.integer(table(x)), collapse = " ") else "-"
+    say("- ", e$heading %||% "?", " | ", substr(e$startTimestamp %||% "?", 1, 10),
+        if (isTRUE(e$matchEvent)) " (kamp)" else "", ": ",
+        length(own), " | ", sum(!is.na(idx_prof)), " | ", sum(!is.na(idx_mem)), " | ", sum(coach), " | ",
+        sum(!is.na(rec_status)), " (", tab(rec_status[!is.na(rec_status)]), ")", " | ",
+        isTRUE(as.character(e$creatorId %||% "") %in% oid),
+        " || ", length(rec_coach), " | ", length(rc_not_owner), " (", tab(rc_st), ")",
+        " | arrangørsvar: ", tab(vapply(own, function(o) as.character(o$response %||% "?"), "")))
+  }
+  if (length(other_roles)) say("Roller hos arrangører uten trenerrolle: ", paste(sort(unique(other_roles)), collapse = ", "))
+  say("Trenerroller i appen (coach_role_names): ", paste(coach_role_names(), collapse = ", "))
 }
 
 writeLines(report, "dev/spike_report.txt")
