@@ -21,7 +21,6 @@ app_server <- function(input, output, session) {
   rights_watch(user, db, logout = function(m) session$userData$sn_logout(m))
   mod_events_server("events", context, user, tagger, db, rights = rights, rights_now = rights_now)
   mod_admin_server("admin", context, user, db, rights = rights, rights_now = rights_now)
-  mod_quarto_test_server("quarto_test")  # TEMPORARY (T0), does nothing in production
 
   # Registered last, so the modules can release their edit locks first.
   session$onSessionEnded(db$close)

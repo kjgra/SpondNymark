@@ -20,8 +20,7 @@ app_ui <- function(request) {
             tags$img(src = "www/favicon.svg", class = "sn-logo", alt = "", width = 32, height = 32),
             span(class = "sn-appname", span(class = "sn-appname-main", "Nymark"),
                  span(class = "sn-appname-sub", "Gruppeorganisering")),
-            app_env_badge(),
-            mod_quarto_test_ui("quarto_test")  # TEMPORARY (T0), NULL in production
+            app_env_badge()
           ),
           mod_teams_bar_ui("teams"),
           mod_events_bar_ui("events"),
