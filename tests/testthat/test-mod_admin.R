@@ -238,3 +238,46 @@ test_that("an admin gets the gear and can give KI, but not admin", {
     expect_false(ds_get_role(con, "P-t2")$is_admin)
   })
 })
+
+test_that("admins add and remove e-mail addresses and numbers on the allowlist", {
+  con <- local_test_db()
+  withr::local_envvar(SPONDNYMARK_LOGIN_KEY = "testnokkel")
+  suppressMessages(testServer(mod_admin_server, args = admin_args(con), {
+    session$setInputs(open = 1)
+    expect_match(as.character(output$allow_body$html), "Listen er tom")
+    session$setInputs(allow_new = "ola", allow_add = 1)
+    expect_equal(msg()$type, "error")
+    expect_match(msg()$text, "8 siffer")
+    session$setInputs(allow_new = " Ola@Klubb.no ", allow_add = 2)
+    expect_equal(msg()$type, "ok")
+    expect_match(msg()$text, "o•••@klubb.no er lagt til")
+    session$setInputs(allow_new = "ola@klubb.no", allow_add = 3)
+    expect_match(msg()$text, "stod allerede")
+    session$setInputs(allow_new = "99887766", allow_add = 4)
+    html <- as.character(output$allow_body$html)
+    expect_match(html, "+47 •••• ••66", fixed = TRUE)
+    expect_match(html, "Ikke logget inn ennå")
+    expect_match(html, "lagt til av Kjetil G.")
+    expect_false(grepl("ola@klubb|99887766", html))
+
+    # After the first login the name from Spond is shown.
+    ds_allowlist_login(con, login_hash(login_identifier("ola@klubb.no")), "P-me")
+    session$setInputs(allow_new = "", allow_add = 5)            # refresh happens after any save attempt
+    rows <- ds_list_allowlist(con, list(admin = TRUE))
+    session$setInputs(allow_remove = rows$id_hash[rows$kind == "phone"])
+    expect_match(msg()$text, "Fjernet")
+    expect_equal(nrow(ds_list_allowlist(con, list(admin = TRUE))), 1)
+    expect_match(as.character(output$allow_body$html), "Kjetil G., sist innlogget")
+    session$setInputs(allow_remove = "ikke-en-hash")            # ignored
+    expect_equal(nrow(ds_list_allowlist(con, list(admin = TRUE))), 1)
+  }))
+})
+
+test_that("the allowlist needs the key", {
+  con <- local_test_db()
+  withr::local_envvar(SPONDNYMARK_LOGIN_KEY = "")
+  suppressMessages(testServer(mod_admin_server, args = admin_args(con), {
+    session$setInputs(open = 1, allow_new = "ola@klubb.no", allow_add = 1)
+    expect_match(msg()$text, "SPONDNYMARK_LOGIN_KEY")
+  }))
+})

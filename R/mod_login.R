@@ -14,6 +14,8 @@
 #'
 #' @param spond Functions used to talk to Spond. Tests pass fakes.
 #' @param role_names Role names that give access.
+#' @param allow NULL (everyone with a Spond login) or function(ident, profile_id)
+#'   returning "ok", "denied" or "error": the allowlist (`login_check()`).
 #' @return A reactive: NULL while logged out, otherwise a list with `spond`
 #'   (session), `profile`, `groups` and `access`.
 #' @noRd
@@ -49,8 +51,8 @@ login_form <- function(ns) {
     bslib::card(
       bslib::card_body(
         htmltools::tagAppendAttributes(
-          textInput(ns("email"), "E-post i Spond", width = "100%"),
-          autocomplete = "username", inputmode = "email", .cssSelector = "input"
+          textInput(ns("email"), "E-post eller mobilnummer i Spond", width = "100%"),
+          autocomplete = "username", .cssSelector = "input"
         ),
         htmltools::tagAppendAttributes(
           passwordInput(ns("password"), "Passord i Spond", width = "100%"),
@@ -59,7 +61,7 @@ login_form <- function(ns) {
         actionButton(ns("login"), "Logg inn", class = "btn-primary w-100"),
         uiOutput(ns("message")),
         p(class = "sn-hint",
-          "Bruk samme e-post og passord som i Spond. Passordet sendes bare til Spond og lagres ikke.")
+          "Bruk samme e-post eller mobilnummer og passord som i Spond. Passordet sendes bare til Spond og lagres ikke.")
       )
     )
   )
@@ -77,6 +79,28 @@ no_access_ui <- function(ns, s) {
                  paste(s$role_names, collapse = ", "), ".")),
         p(class = "sn-hint", "Mener du at du burde hatt tilgang, be en administrator i klubben sjekke rollen din i Spond."),
         actionButton(ns("logout"), "Logg ut", class = "btn-outline-secondary")
+      )
+    )
+  )
+}
+
+# Logged in to Spond, but not on the app's allowlist (or the list could not
+# be checked).
+not_allowed_ui <- function(ns, s) {
+  div(
+    class = "sn-login",
+    bslib::card(
+      bslib::card_body(
+        h2("Ingen tilgang til appen"),
+        if (identical(s$reason, "error")) {
+          p("Fikk ikke sjekket om du har tilgang akkurat nå. Prøv igjen om litt.")
+        } else {
+          tagList(
+            p("Innloggingen i Spond var riktig, men ", strong(s$hint), " er ikke godkjent for denne appen."),
+            p("Appen er for trenere og lagledere i Nymark. Be en administrator i appen om å legge til ",
+              "e-postadressen eller mobilnummeret du logger inn med."))
+        },
+        actionButton(ns("logout"), "Tilbake", class = "btn-outline-secondary")
       )
     )
   )
@@ -104,8 +128,7 @@ login_js <- function(ns) {
     })();", ns("email"), ns("password"), ns("login"))))
 }
 
-#' @noRd
-mod_login_server <- function(id, spond = spond_api(), role_names = access_role_names()) {
+mod_login_server <- function(id, spond = spond_api(), role_names = access_role_names(), allow = NULL) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     state <- reactiveVal(list(status = "logged_out"))
@@ -116,6 +139,7 @@ mod_login_server <- function(id, spond = spond_api(), role_names = access_role_n
       switch(s$status,
         logged_out = login_form(ns),
         no_access = no_access_ui(ns, s),
+        not_allowed = not_allowed_ui(ns, s),
         ok = NULL
       )
     })
@@ -143,13 +167,18 @@ mod_login_server <- function(id, spond = spond_api(), role_names = access_role_n
       updateTextInput(session, "password", value = "")
 
       if (!nzchar(email) || !nzchar(password)) {
-        error_msg("Skriv inn både e-post og passord.")
+        error_msg("Skriv inn både e-post eller mobilnummer og passord.")
+        return()
+      }
+      ident <- login_identifier(email)
+      if (is.null(ident)) {
+        error_msg("Skriv e-postadressen eller mobilnummeret du bruker i Spond (mobilnummer med 8 siffer).")
         return()
       }
       error_msg(NULL)
 
       result <- tryCatch({
-        sess <- spond$login(email, password)
+        sess <- spond$login(ident$value, password)
         list(spond = sess, data = spond_session_data(spond$groups(sess), spond$profile(sess), role_names))
       }, error = function(e) e)
       rm(password)
@@ -166,6 +195,15 @@ mod_login_server <- function(id, spond = spond_api(), role_names = access_role_n
       }
 
       d <- result$data
+      # The allowlist (R/fct_allowlist.R). Not on it: the Spond session is
+      # dropped right away.
+      if (!is.null(allow)) {
+        verdict <- allow(ident, d$profile$id)
+        if (!identical(verdict, "ok")) {
+          state(list(status = "not_allowed", reason = verdict, hint = ident$value))
+          return()
+        }
+      }
       if (nrow(d$access) == 0) {
         state(list(status = "no_access", profile = d$profile, role_names = role_names))
       } else {

@@ -1998,7 +1998,7 @@
       "checksum": "f1e487de51821d7bbc18c371c3b7639e"
     },
     "inst/app/www/custom.css": {
-      "checksum": "7541ee8726c33dba9ff27c852862548d"
+      "checksum": "af7e9b11e91a64a2a58534088b72141c"
     },
     "inst/app/www/favicon.ico": {
       "checksum": "a5b73ffecee6a01c0a08ff0b176901cf"
@@ -2047,6 +2047,9 @@
     },
     "inst/db/migrations/005_ki_t3a.sql": {
       "checksum": "21ac1173b1947068d1b263d0b4e5b219"
+    },
+    "inst/db/migrations/006_innlogging.sql": {
+      "checksum": "938e082bbfe78dc10e168f811ebfbd9d"
     },
     "inst/db/migrations/README.md": {
       "checksum": "23f0960e67c885e20237e26a50df997a"
@@ -2097,19 +2100,22 @@
       "checksum": "0f79d97837ff91c50f065824b39a6fbc"
     },
     "R/app_server.R": {
-      "checksum": "09d06158d6f23043ea0891e7652a5292"
+      "checksum": "eb0edc37138056e35c5ca07b8d080939"
     },
     "R/app_ui.R": {
       "checksum": "814fd6514fa58956349a09ee570ed1c7"
     },
     "R/data_store.R": {
-      "checksum": "62f48f7c0f6193c55a182b1eef629110"
+      "checksum": "bcd13ccc55e3c35a74bc7cbb524f09a6"
     },
     "R/fct_access.R": {
       "checksum": "18aa1da4027e2f0fdadde530d7675b43"
     },
     "R/fct_ai.R": {
       "checksum": "ffff6b6b9240b1397dbabd2c5868bf9f"
+    },
+    "R/fct_allowlist.R": {
+      "checksum": "d8b029289295a1e2ffc210327bb19bd4"
     },
     "R/fct_db.R": {
       "checksum": "000e0b0ce7000a314bcf49536a785400"
@@ -2145,7 +2151,7 @@
       "checksum": "74f93f9656bdf8b8ac72e12cc21b4a82"
     },
     "R/mod_admin.R": {
-      "checksum": "68b6bb8f38e6ecca7025385f44c9204a"
+      "checksum": "ef90987b4b4b8b1257b89f7a20f92791"
     },
     "R/mod_events.R": {
       "checksum": "61e208b7a75999dbd9cb543edbdfe078"
@@ -2154,7 +2160,7 @@
       "checksum": "d3a1060a4de7541b16d3b3fb8a642fa1"
     },
     "R/mod_login.R": {
-      "checksum": "04367f7708bb40e677d1b21a0131d505"
+      "checksum": "399e4dab55793fc518c9fecee604a948"
     },
     "R/mod_participants.R": {
       "checksum": "12abc7b138c9d91b16944f795618838b"
@@ -2175,7 +2181,7 @@
       "checksum": "87b5e16fefaf5166b9375f7dfdc71e73"
     },
     "R/spond_client.R": {
-      "checksum": "f76b70e6eb323f296ac390ace2f0d985"
+      "checksum": "437a0cd46db9df685f004e3ccd673ced"
     }
   },
   "users": null

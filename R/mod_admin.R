@@ -78,6 +78,20 @@ admin_modal <- function(ns, group_name, years, year) {
             uiOutput(ns("roles_body")))
       ),
       bslib::nav_panel(
+        "Innlogging", value = "login",
+        div(class = "sn-admin-pane",
+            p(class = "sn-hint", "Bare de som står her, kan logge inn i appen. Superadmin og trenere med admin",
+              " slipper alltid inn. Listen gjelder hele appen. E-post og mobilnummer lagres ikke; listen viser",
+              " en maskert versjon, og navnet når personen har logget inn."),
+            div(class = "sn-allow-add",
+                htmltools::tagAppendAttributes(
+                  textInput(ns("allow_new"), "E-post eller mobilnummer i Spond", width = "100%"),
+                  autocomplete = "off", .cssSelector = "input"),
+                actionButton(ns("allow_add"), "Legg til", class = "btn-primary")),
+            uiOutput(ns("allow_msg")),
+            uiOutput(ns("allow_body")))
+      ),
+      bslib::nav_panel(
         "Årshjul", value = "season",
         div(class = "sn-admin-pane",
             p(class = "sn-hint", "Ett hovedtema per måned. Temaet foreslås når et treningsopplegg lages,",
@@ -280,6 +294,31 @@ role_rows <- function(ns, cand, roles, rights, me, superadmin, group) {
   )
 }
 
+# The allowlist: masked e-mail/number, who it is (after the first login),
+# who added it, and a remove button.
+allow_rows <- function(ns, rows, group) {
+  if (nrow(rows) == 0) return(p(class = "sn-hint", "Listen er tom. Bare superadmin og admins kan logge inn."))
+  tags$table(
+    class = "table table-sm sn-allow",
+    tags$tbody(lapply(seq_len(nrow(rows)), function(i) {
+      r <- rows[i, , drop = FALSE]
+      who <- if (!nzchar(r$spond_profile_id)) "Ikke logget inn ennå" else {
+        paste0(plan_author_name(r$spond_profile_id, group), ", sist innlogget ", short_time(r$last_login_at))
+      }
+      h <- gsub("[^0-9a-f]", "", r$id_hash)
+      tags$tr(
+        tags$td(div(class = "sn-allow-hint", r$hint, span(class = "sn-hint", if (r$kind == "phone") " mobil" else " e-post")),
+                div(class = "sn-hint", paste0(who, " \u00b7 lagt til av ", plan_author_name(r$added_by, group), " ",
+                                              short_time(r$added_at)))),
+        tags$td(class = "sn-allow-c",
+                tags$button(type = "button", class = "btn btn-sm btn-outline-danger", `aria-label` = paste("Fjern", r$hint),
+                            onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})", ns("allow_remove"), h),
+                            "Fjern"))
+      )
+    }))
+  )
+}
+
 #' @noRd
 mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = Sys.getenv("SPONDNYMARK_SUPERADMIN"),
                              today = Sys.Date) {
@@ -311,6 +350,7 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
       if (is.null(m) || !identical(m$tab, tab)) NULL else admin_alert(m)
     })
     output$roles_msg <- tab_msg("trainers")
+    output$allow_msg <- tab_msg("login")
     output$season_msg <- tab_msg("season")
     output$team_msg <- tab_msg("team")
     # Exercises: in the list the message is at the top; in the form it is
@@ -410,6 +450,40 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
         if (role == "admin" && !isTRUE(r$superadmin)) stop("Bare superadmin kan gi og ta admin.", call. = FALSE)
       }, function(con) ds_set_role(con, r, u$profile$id, pid, role, granted, cand$profile_id),
       paste0(name, if (granted) " har fått " else " har ikke lenger ", what, "."))
+    })
+
+    # Allowlist for login -----------------------------------------------------------
+    output$allow_body <- renderUI({
+      req(allowed(), group_id())
+      refresh()
+      r <- isolate(rights())
+      rows <- read(function(con) ds_list_allowlist(con, r), "login")
+      if (is.null(rows)) return(NULL)
+      allow_rows(ns, rows, context()$group)
+    })
+
+    observeEvent(input$allow_add, {
+      ident <- login_identifier(input$allow_new)
+      r <- rights()
+      me <- user()$profile$id
+      added <- NA
+      ok <- save("login", function() {
+        if (is.null(ident)) stop("Skriv en e-postadresse eller et mobilnummer (8 siffer).", call. = FALSE)
+        if (!nzchar(login_key())) stop("Innloggingslisten er ikke satt opp (SPONDNYMARK_LOGIN_KEY mangler).", call. = FALSE)
+      }, function(con) added <<- ds_add_allowlist(con, r, me, ident),
+      if (!is.null(ident)) paste0(login_hint(ident), " er lagt til.") else "")
+      if (ok) {
+        updateTextInput(session, "allow_new", value = "")
+        if (isFALSE(added)) say("login", "ok", paste0(login_hint(ident), " stod allerede på listen."))
+      }
+    })
+
+    observeEvent(input$allow_remove, {
+      h <- as.character(input$allow_remove)
+      if (!grepl("^[0-9a-f]{64}$", h)) return()
+      r <- rights()
+      me <- user()$profile$id
+      save("login", function() NULL, function(con) ds_remove_allowlist(con, r, me, h), "Fjernet fra listen.")
     })
 
     # Season plan -----------------------------------------------------------------

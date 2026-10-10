@@ -963,6 +963,70 @@ ds_set_role <- function(con, rights, actor, profile_id, role, granted, allowed_i
   invisible(TRUE)
 }
 
+# Allowlist for login (migration 006) ----------------------------------------------
+# The list is for the whole app. Only hashes and masked hints are stored; see
+# R/fct_allowlist.R.
+
+ds_assert_admin <- function(rights) {
+  if (!isTRUE(rights$admin)) stop("Du har ikke tilgang til å endre innloggingslisten.", call. = FALSE)
+}
+
+#' The allowlist, newest first (admins only)
+#' @noRd
+ds_list_allowlist <- function(con, rights) {
+  ds_assert_admin(rights)
+  ds_query(con, "
+    SELECT id_hash, kind, hint, coalesce(spond_profile_id, '') AS spond_profile_id, last_login_at,
+           added_by, added_at
+      FROM login_allowlist ORDER BY added_at DESC, hint")
+}
+
+#' Add an e-mail address or mobile number to the allowlist
+#' @param ident From `login_identifier()`.
+#' @return TRUE if added, FALSE if it was on the list already.
+#' @noRd
+ds_add_allowlist <- function(con, rights, actor, ident, key = login_key()) {
+  ds_assert_admin(rights)
+  if (is.null(ident)) stop("Skriv en e-postadresse eller et mobilnummer.", call. = FALSE)
+  h <- login_hash(ident, key)
+  hint <- login_hint(ident)
+  added <- FALSE
+  ds_transaction(con, {
+    res <- ds_query(con, "
+      INSERT INTO login_allowlist (id_hash, kind, hint, added_by) VALUES ($1, $2, $3, $4)
+      ON CONFLICT (id_hash) DO NOTHING RETURNING id_hash", list(h, ident$kind, hint, actor))
+    added <- nrow(res) == 1
+    if (added) {
+      ds_exec(con, "INSERT INTO login_allowlist_log (id_hash, hint, action, actor) VALUES ($1, $2, 'add', $3)",
+              list(h, hint, actor))
+    }
+  })
+  added
+}
+
+#' Remove a row from the allowlist
+#' @noRd
+ds_remove_allowlist <- function(con, rights, actor, id_hash) {
+  ds_assert_admin(rights)
+  ds_transaction(con, {
+    res <- ds_query(con, "DELETE FROM login_allowlist WHERE id_hash = $1 RETURNING hint", list(as.character(id_hash)))
+    if (nrow(res)) {
+      ds_exec(con, "INSERT INTO login_allowlist_log (id_hash, hint, action, actor) VALUES ($1, $2, 'remove', $3)",
+              list(as.character(id_hash), res$hint[1], actor))
+    }
+  })
+  invisible(TRUE)
+}
+
+#' At login: is this hash on the list? If so, note who logged in and when.
+#' @noRd
+ds_allowlist_login <- function(con, id_hash, profile_id) {
+  res <- ds_query(con, "
+    UPDATE login_allowlist SET spond_profile_id = $2, last_login_at = now()
+     WHERE id_hash = $1 RETURNING id_hash", list(id_hash, as.character(profile_id)))
+  nrow(res) == 1
+}
+
 # Database setup (admin only) -----------------------------------------------------
 # These functions are used by dev/setup_db.R with the admin connection. The
 # running app never calls them, and the app user is not allowed to.
@@ -972,7 +1036,8 @@ ds_set_role <- function(con, rights, actor, profile_id, role, granted, allowed_i
 ds_app_tables <- c("member_tags", "group_proposals", "group_proposal_labels", "group_proposal_members",
                    "proposal_history", "proposal_comments", "edit_locks",
                    "season_themes", "team_settings", "exercises", "training_plans",
-                   "app_roles", "app_role_log", "ai_usage", "ai_settings")
+                   "app_roles", "app_role_log", "ai_usage", "ai_settings",
+                   "login_allowlist", "login_allowlist_log")
 
 #' A random password of letters and digits (cryptographically secure)
 #'

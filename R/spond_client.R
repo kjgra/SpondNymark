@@ -30,27 +30,40 @@ spond_format_time <- function(x) {
   format(as.POSIXct(x, tz = "UTC"), "%Y-%m-%dT%H:%M:%S.000Z", tz = "UTC")
 }
 
+#' The body of the login request
+#'
+#' Spond takes an e-mail address or a mobile number (from
+#' `login_identifier()`) in the same field, `email`. A mobile number is sent
+#' as +4799999999, like spond.com does (checked in the browser 10 Oct 2026).
+#' @noRd
+spond_login_body <- function(ident, password) {
+  list(email = ident$value, password = password)
+}
+
 #' Log in to Spond
 #'
-#' @param email,password Spond credentials. The password is not stored.
+#' @param username E-mail address or mobile number in Spond.
+#' @param password The password in Spond. It is not stored.
 #' @param base_url API base URL (override in tests).
 #' @return A `spond_session`: a list with `token`, `expiration` and `base_url`.
 #' @noRd
-spond_login <- function(email, password, base_url = spond_base_url()) {
-  stopifnot(is.character(email), length(email) == 1, nzchar(email))
+spond_login <- function(username, password, base_url = spond_base_url()) {
+  stopifnot(is.character(username), length(username) == 1, nzchar(username))
   stopifnot(is.character(password), length(password) == 1, nzchar(password))
+  ident <- login_identifier(username)
+  if (is.null(ident)) spond_stop("Skriv e-postadressen eller mobilnummeret du bruker i Spond.")
 
   resp <- httr2::request(base_url) |>
     httr2::req_url_path_append("auth2", "login") |>
     httr2::req_user_agent("SpondNymark") |>
     httr2::req_timeout(30) |>
-    httr2::req_body_json(list(email = email, password = password)) |>
+    httr2::req_body_json(spond_login_body(ident, password)) |>
     httr2::req_error(is_error = function(resp) FALSE) |>
     httr2::req_perform()
 
   status <- httr2::resp_status(resp)
   if (status %in% c(400, 401, 403)) {
-    spond_stop("Innlogging mot Spond feilet: feil e-post eller passord.")
+    spond_stop("Innlogging mot Spond feilet: feil e-post, mobilnummer eller passord.")
   }
   if (status >= 400) {
     spond_stop(sprintf("Innlogging mot Spond feilet (HTTP %s). Prøv igjen om litt.", status))

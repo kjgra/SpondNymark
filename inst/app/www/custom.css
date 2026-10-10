@@ -442,3 +442,10 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-roles .form-check-input { width: 1.4em; height: 1.4em; margin: 0; float: none; }
 .sn-roles .form-check-input:checked { background-color: var(--sn-black); border-color: var(--sn-black); }
 .sn-roles-name { font-weight: 600; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+/* Admin: allowlist for login */
+.sn-allow-add { display: flex; gap: .5rem; align-items: flex-end; margin-bottom: .75rem; }
+.sn-allow-add .form-group { flex: 1; margin-bottom: 0; }
+.sn-allow-hint { font-weight: 600; }
+.sn-allow td { vertical-align: middle; }
+.sn-allow-c { text-align: right; width: 1%; white-space: nowrap; }

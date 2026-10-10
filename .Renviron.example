@@ -49,6 +49,14 @@ SPONDNYMARK_ENV=
 # hemmelig, men hører ikke hjemme i git.
 SPONDNYMARK_SUPERADMIN=
 
+# Nøkkel for hvitlisten for innlogging. Hemmelig. E-post og mobilnummer på
+# listen lagres bare som HMAC-hash med denne nøkkelen. Lag den én gang med
+#   paste(as.character(openssl::rand_bytes(32)), collapse = "")
+# og bruk ulik verdi i test og prod. Settes lokalt og i appene på Posit Connect.
+# Byttes den, må listen fylles inn på nytt. Står den tom, slipper bare
+# superadmin og trenere med admin inn.
+SPONDNYMARK_LOGIN_KEY=
+
 # API-nøkkel til Claude (Anthropic) for KI-opplegg. Hemmelig. Lages i
 # platform.claude.com under en egen workspace med forbruksgrense (test-appen
 # bruker workspacen for test). Settes lokalt og i appene på Posit Connect.
