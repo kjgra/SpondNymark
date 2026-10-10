@@ -122,11 +122,14 @@ plan_validate <- function(p) {
 #' With several groups, group j does exercise ((j + k - 2) mod n) + 1 in
 #' round k, so every group does every exercise once. With one group the
 #' exercises come one after the other.
+#' @param groups Optional groups from the group proposal (list of
+#'   list(navn, spillere)); their names head the columns when there are as
+#'   many groups as stations.
 #' @return list(columns, rows, total): `rows` is a list of
 #'   list(tid = "8–23", felles = FALSE, celler = c("Øvelse 1", ...)) or
 #'   list(tid = "0–8", felles = TRUE, tekst = "...").
 #' @noRd
-plan_schedule <- function(p) {
+plan_schedule <- function(p, groups = list()) {
   tp <- p$tidsplan
   n <- length(p$ovelser)
   g <- tp$stasjoner$grupper
@@ -153,7 +156,11 @@ plan_schedule <- function(p) {
                                      tekst = if (nzchar(tp$avslutning$tekst)) tp$avslutning$tekst else "Felles avslutning")
     t <- t + tp$avslutning$minutter
   }
-  list(columns = c("Tid", if (g > 1) paste("Gruppe", seq_len(g)) else "Alle"), rows = rows, total = t)
+  # With names from the group proposal, the rotation uses its group names
+  # when the numbers match.
+  cols <- if (g > 1 && length(groups) == g) vapply(groups, function(x) txt1(x$navn), "")
+          else if (g > 1) paste("Gruppe", seq_len(g)) else "Alle"
+  list(columns = c("Tid", cols), rows = rows, total = t)
 }
 
 #' Find Quarto (which brings Typst): QUARTO_PATH, PATH, then the usual places
@@ -258,11 +265,7 @@ plan_pdf <- function(p, path, footer = NULL, info = character(), groups = list()
   }
   plan_legend_png(file.path(dir, "tegnforklaring.png"))
 
-  sched <- plan_schedule(p)
-  # With names from the group proposal, the rotation uses its group names
-  # when the numbers match.
-  g <- p$tidsplan$stasjoner$grupper
-  if (g > 1 && length(groups) == g) sched$columns[-1] <- vapply(groups, function(x) txt1(x$navn), "")
+  sched <- plan_schedule(p, groups)
   data <- c(p, list(
     tidsplan_tabell = sched,
     varighet = sched$total,

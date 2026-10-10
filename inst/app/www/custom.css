@@ -433,3 +433,12 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-plan-more { border-top: 1px solid var(--sn-line); padding-top: 8px; }
 .sn-plan-more > summary { font-weight: 600; cursor: pointer; margin-bottom: 8px; }
 .sn-plan-edmsg { margin: 0 auto 0 0; padding: 6px 10px; }
+
+/* Trainers and rights in the admin panel (T2b) */
+.sn-roles { margin: 0; }
+.sn-roles th { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--sn-grey); font-weight: 700; }
+.sn-roles td { vertical-align: middle; }
+.sn-roles-c { width: 64px; text-align: center; }
+.sn-roles .form-check-input { width: 1.4em; height: 1.4em; margin: 0; float: none; }
+.sn-roles .form-check-input:checked { background-color: var(--sn-black); border-color: var(--sn-black); }
+.sn-roles-name { font-weight: 600; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }

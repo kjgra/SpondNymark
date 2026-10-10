@@ -15,12 +15,13 @@ test_that("only the superadmin from the environment is superadmin", {
 })
 
 test_that("the gear is shown only to the superadmin, and only when a team is chosen", {
-  testServer(mod_admin_server, args = admin_args(superadmin = "P-other"), {
+  # No database here: reading the rights fails (logged), so no gear.
+  suppressMessages(testServer(mod_admin_server, args = admin_args(superadmin = "P-other"), {
     expect_null(output$bar$html)
-  })
-  testServer(mod_admin_server, args = admin_args(superadmin = ""), {
+  }))
+  suppressMessages(testServer(mod_admin_server, args = admin_args(superadmin = ""), {
     expect_null(output$bar$html)
-  })
+  }))
   ctx <- reactiveVal(NULL)
   # No database here: the panel's outputs log a read error, which is expected.
   suppressMessages(testServer(mod_admin_server, args = admin_args(ctx = ctx), {
@@ -184,5 +185,56 @@ test_that("the drawing of an exercise can be previewed and is saved with it", {
     form <- as.character(output$ex_body$html)
     expect_match(form, '"skisser"')
     expect_match(form, '\\{"type":"kjegle","x":0,"y":0\\}')   # readable key order after jsonb
+  })
+})
+
+test_that("trainers' rights are shown and changed in the panel", {
+  con <- local_test_db()
+  user <- fake_user(fake_spond_groups_two())
+  args <- admin_args(con)
+  # A second trainer with a profile in G2016, so there is someone to give rights to
+  g <- fake_group()
+  g$members <- rbind(g$members, transform(g$members[g$members$id == "M-me", ], id = "M-t2", first_name = "Trine",
+                                          last_name = "Trener", profile_id = "P-t2"))
+  args$context <- reactiveVal(teams_context(g))
+  testServer(mod_admin_server, args = args, {
+    session$setInputs(open = 1)
+    html <- as.character(output$roles_body$html)
+    expect_match(html, "Superadmin")
+    expect_match(html, "Trine T.")
+    session$setInputs(role = list(p = "P-t2", f = "ai", v = TRUE))
+    expect_equal(msg()$type, "ok")
+    expect_match(msg()$text, "Trine T. har fått KI-tilgang")
+    session$setInputs(role = list(p = "P-t2", f = "admin", v = TRUE))
+    r <- ds_get_role(con, "P-t2")
+    expect_true(r$can_use_ai)
+    expect_true(r$is_admin)
+    expect_match(as.character(output$roles_body$html), "Endret av Kjetil G.")
+    # Unknown trainers and the superadmin's own row are ignored
+    session$setInputs(role = list(p = "P-other", f = "ai", v = TRUE))
+    session$setInputs(role = list(p = "P-me", f = "ai", v = FALSE))
+    expect_equal(nrow(ds_get_role(con, "P-other")), 0)
+    expect_equal(nrow(ds_get_role(con, "P-me")), 0)
+  })
+})
+
+test_that("an admin gets the gear and can give KI, but not admin", {
+  con <- local_test_db()
+  ds_set_role(con, list(superadmin = TRUE, admin = TRUE), "P-boss", "P-me", "admin", TRUE, "P-me")
+  g <- fake_group()
+  g$members <- rbind(g$members, transform(g$members[g$members$id == "M-me", ], id = "M-t2", first_name = "Trine",
+                                          last_name = "Trener", profile_id = "P-t2"))
+  args <- admin_args(con, superadmin = "P-boss")      # Kjetil is admin here, not superadmin
+  args$context <- reactiveVal(teams_context(g))
+  testServer(mod_admin_server, args = args, {
+    expect_match(as.character(output$bar$html), "Innstillinger")
+    session$setInputs(open = 1)
+    html <- as.character(output$roles_body$html)
+    expect_match(html, "aria-label=\"Admin for Trine T.\" disabled")
+    session$setInputs(role = list(p = "P-t2", f = "ai", v = TRUE))
+    expect_true(ds_get_role(con, "P-t2")$can_use_ai)
+    session$setInputs(role = list(p = "P-t2", f = "admin", v = TRUE))
+    expect_match(msg()$text, "Bare superadmin")
+    expect_false(ds_get_role(con, "P-t2")$is_admin)
   })
 })

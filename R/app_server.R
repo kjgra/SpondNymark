@@ -12,7 +12,9 @@ app_server <- function(input, output, session) {
   context <- mod_teams_server("teams", user)
   tagger <- mod_tags_server("tags", context, user, db)
   mod_events_server("events", context, user, tagger, db)
-  mod_admin_server("admin", context, user, db)
+  # Extra rights (KI, admin) for the logged-in trainer; see R/fct_roles.R.
+  rights <- rights_reactive(user, db)
+  mod_admin_server("admin", context, user, db, rights = rights)
   mod_quarto_test_server("quarto_test")  # TEMPORARY (T0), does nothing in production
 
   # Registered last, so the modules can release their edit locks first.

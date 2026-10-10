@@ -805,6 +805,50 @@ ds_save_plan_exercise <- function(con, access, group_id, exercise, actor, themes
   list(id = as.integer(res$id), created = TRUE)
 }
 
+# Rights (app_roles, migration 004) ------------------------------------------------
+
+#' The extra rights of one profile (0 or 1 row)
+#' @noRd
+ds_get_role <- function(con, profile_id) {
+  ds_query(con, "SELECT spond_profile_id, can_use_ai, is_admin FROM app_roles WHERE spond_profile_id = $1",
+           list(as.character(profile_id)))
+}
+
+#' The extra rights of several profiles, with who changed them last
+#' @noRd
+ds_list_roles <- function(con, profile_ids) {
+  ds_query(con, "SELECT spond_profile_id, can_use_ai, is_admin, updated_by, updated_at
+                   FROM app_roles WHERE spond_profile_id = ANY($1::text[])",
+           list(ds_text_array(profile_ids)))
+}
+
+#' Give or take one right ("ai" or "admin") and log it
+#'
+#' @param rights The acting user's rights (`user_rights()`): admins may
+#'   change KI, only the superadmin may change admin.
+#' @param allowed_ids Profiles the actor may change (the trainers in the
+#'   chosen main group).
+#' @noRd
+ds_set_role <- function(con, rights, actor, profile_id, role, granted, allowed_ids) {
+  profile_id <- as.character(profile_id)
+  if (!role %in% c("ai", "admin")) stop("Ukjent rettighet.", call. = FALSE)
+  if (!isTRUE(rights$admin)) stop("Du har ikke tilgang til \u00e5 endre rettigheter.", call. = FALSE)
+  if (role == "admin" && !isTRUE(rights$superadmin)) stop("Bare superadmin kan gi og ta admin.", call. = FALSE)
+  if (!profile_id %in% allowed_ids) stop("Treneren er ikke med i dette laget.", call. = FALSE)
+  if (!is.logical(granted) || length(granted) != 1 || is.na(granted)) stop("Ugyldig verdi.", call. = FALSE)
+  col <- if (role == "ai") "can_use_ai" else "is_admin"
+  ds_transaction(con, {
+    ds_exec(con, paste0("
+      INSERT INTO app_roles (spond_profile_id, ", col, ", updated_by) VALUES ($1, $2, $3)
+      ON CONFLICT (spond_profile_id) DO UPDATE SET ", col, " = EXCLUDED.", col, ",
+             updated_by = EXCLUDED.updated_by, updated_at = now()"),
+      list(profile_id, granted, actor))
+    ds_exec(con, "INSERT INTO app_role_log (spond_profile_id, role, granted, actor) VALUES ($1, $2, $3, $4)",
+            list(profile_id, role, granted, actor))
+  })
+  invisible(TRUE)
+}
+
 # Database setup (admin only) -----------------------------------------------------
 # These functions are used by dev/setup_db.R with the admin connection. The
 # running app never calls them, and the app user is not allowed to.
@@ -813,7 +857,8 @@ ds_save_plan_exercise <- function(con, access, group_id, exercise, actor, themes
 # included: only the admin runs migrations.
 ds_app_tables <- c("member_tags", "group_proposals", "group_proposal_labels", "group_proposal_members",
                    "proposal_history", "proposal_comments", "edit_locks",
-                   "season_themes", "team_settings", "exercises", "training_plans")
+                   "season_themes", "team_settings", "exercises", "training_plans",
+                   "app_roles", "app_role_log")
 
 #' A random password of letters and digits (cryptographically secure)
 #'

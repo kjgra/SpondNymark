@@ -43,6 +43,10 @@ test_that("the schedule rotates the groups like the reference session", {
   expect_equal(unlist(s$rows[[4]]$celler), c("Øvelse 3", "Øvelse 1", "Øvelse 2"))
   expect_true(s$rows[[1]]$felles)
   expect_equal(s$total, 65L)
+  # Names from the group proposal head the columns, but only when the numbers match
+  g3 <- list(list(navn = "Ulv"), list(navn = "Gaupe"), list(navn = "Bjørn"))
+  expect_equal(plan_schedule(plan_validate(ref_plan()), g3)$columns, c("Tid", "Ulv", "Gaupe", "Bjørn"))
+  expect_equal(plan_schedule(plan_validate(ref_plan()), g3[1:2])$columns[2], "Gruppe 1")
 
   one <- plan_validate(list(tittel = "X", tidsplan = list(stasjoner = list(minutter = 20)),
                             ovelser = list(list(navn = "A"), list(navn = "B"))))
@@ -68,12 +72,6 @@ test_that("the PDF is made with the template, fonts and drawings", {
   expect_gt(file.size(path), 50000)
   expect_equal(nrow(attr(res, "problems")), 0)
   expect_error(plan_pdf(ref_plan(), path, quarto = ""), "Fant ikke Quarto")
-  # Three named groups: the rotation table uses the names (checked in the PDF text)
-  skip_if(!nzchar(Sys.which("pdftotext")), "pdftotext mangler.")
-  plan_pdf(ref_plan(), path, groups = list(list(navn = "Ulv", spillere = "A"), list(navn = "Gaupe", spillere = "B"),
-                                           list(navn = "Bjørn", spillere = "C")))
-  txt <- paste(system2("pdftotext", c("-l", "1", shQuote(path), "-"), stdout = TRUE), collapse = " ")
-  expect_match(txt, "Tid\\s+Ulv\\s+Gaupe\\s+Bjørn")
 })
 
 bank_rows <- function() {

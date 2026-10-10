@@ -3,7 +3,8 @@ test_that("migrations create the tables and are only applied once", {
   tables <- DBI::dbGetQuery(con, "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()")$table_name
   expect_setequal(tables, c("schema_migrations", "member_tags", "group_proposals", "group_proposal_labels",
                             "group_proposal_members", "proposal_history", "proposal_comments", "edit_locks",
-                            "season_themes", "team_settings", "exercises", "training_plans"))
+                            "season_themes", "team_settings", "exercises", "training_plans",
+                            "app_roles", "app_role_log"))
   expect_length(ds_migrate(con, dir = test_migrations_dir()), 0)
 })
 
@@ -509,4 +510,32 @@ test_that("an exercise from a plan is put into the bank once, with its code", {
   expect_equal(ex$themes[[1]], "Samhandling")
   expect_match(ex$learning_points, "Mistet ball")
   expect_false(is.na(ex$drawing))
+})
+
+# Rights (migration 004) -----------------------------------------------------------
+
+test_that("rights are given and taken, logged, and checked", {
+  con <- local_test_db()
+  sa <- list(superadmin = TRUE, admin = TRUE)
+  adm <- list(superadmin = FALSE, admin = TRUE)
+  trainer <- list(superadmin = FALSE, admin = FALSE)
+  ids <- c("P-a", "P-b")
+  ds_set_role(con, sa, "P-me", "P-a", "admin", TRUE, ids)
+  ds_set_role(con, adm, "P-a", "P-b", "ai", TRUE, ids)
+  ds_set_role(con, adm, "P-a", "P-b", "ai", FALSE, ids)
+  roles <- ds_list_roles(con, ids)
+  expect_equal(roles$is_admin[roles$spond_profile_id == "P-a"], TRUE)
+  expect_equal(roles$can_use_ai[roles$spond_profile_id == "P-b"], FALSE)
+  expect_equal(roles$updated_by[roles$spond_profile_id == "P-b"], "P-a")
+  expect_equal(nrow(ds_get_role(con, "P-a")), 1)
+  expect_equal(nrow(ds_get_role(con, "P-zz")), 0)
+  log <- DBI::dbGetQuery(con, "SELECT spond_profile_id, role, granted, actor FROM app_role_log ORDER BY id")
+  expect_equal(log$granted, c(TRUE, TRUE, FALSE))
+  expect_equal(log$actor, c("P-me", "P-a", "P-a"))
+
+  expect_error(ds_set_role(con, adm, "P-a", "P-b", "admin", TRUE, ids), "Bare superadmin")
+  expect_error(ds_set_role(con, trainer, "P-b", "P-a", "ai", TRUE, ids), "ikke tilgang")
+  expect_error(ds_set_role(con, sa, "P-me", "P-c", "ai", TRUE, ids), "ikke med i dette laget")
+  expect_error(ds_set_role(con, sa, "P-me", "P-a", "kaffe", TRUE, ids), "Ukjent")
+  expect_equal(DBI::dbGetQuery(con, "SELECT count(*)::integer AS n FROM app_role_log")$n, 3L)
 })

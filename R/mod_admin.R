@@ -1,20 +1,24 @@
 #' Admin panel (the gear in the top bar)
 #'
-#' Phase T1 of the training plans (claude/plan-treningsopplegg.md, kap. 12):
-#' only the superadmin sees the gear. The superadmin is the Spond profile in
-#' the environment variable SPONDNYMARK_SUPERADMIN (not in git or the
-#' database, so nobody can be locked out). Roles for other trainers
-#' (`app_roles`) come in T2b.
+#' Phases T1 and T2b of the training plans (claude/plan-treningsopplegg.md,
+#' kap. 12): the superadmin and admins see the gear. The superadmin is the
+#' Spond profile in SPONDNYMARK_SUPERADMIN (not in git or the database, so
+#' nobody can be locked out); admins are set in the panel (`app_roles`, see
+#' R/fct_roles.R).
 #'
-#' The panel is a dialog for the chosen main group with three tabs: the season
-#' plan (årshjul) per year, the team settings and the exercises.
+#' The panel is a dialog for the chosen main group with four tabs: the
+#' trainers (KI and admin rights), the season plan (årshjul) per year, the
+#' team settings and the exercises.
 #'
-#' Every save checks again on the server that the user is the superadmin, and
-#' the data layer checks access to the group.
+#' Every save checks again on the server that the user is an admin (and the
+#' superadmin for admin rights), and the data layer checks access to the
+#' group.
 #'
 #' @param context Reactive from `mod_teams_server()`.
 #' @param user Reactive from `mod_login_server()`.
 #' @param db Database handle from `db_handle()`.
+#' @param rights Reactive with the user's rights (`rights_reactive()`); made
+#'   here from `superadmin` if NULL.
 #' @param superadmin Spond profile id of the superadmin.
 #' @param today Function giving today's date (tests pass a fixed date).
 #' @noRd
@@ -65,6 +69,14 @@ admin_modal <- function(ns, group_name, years, year) {
     size = "xl", easyClose = TRUE, footer = modalButton("Lukk"),
     bslib::navset_underline(
       id = ns("tab"),
+      bslib::nav_panel(
+        "Trenere", value = "trainers",
+        div(class = "sn-admin-pane",
+            p(class = "sn-hint", "Trenere med profil i Spond. KI gir tilgang til å lage opplegg med KI (kommer).",
+              " Admin gir tannhjulet: årshjul, lagets standard, øvelser og KI-tilgang. Bare superadmin kan gi admin."),
+            uiOutput(ns("roles_msg")),
+            uiOutput(ns("roles_body")))
+      ),
       bslib::nav_panel(
         "Årshjul", value = "season",
         div(class = "sn-admin-pane",
@@ -232,9 +244,46 @@ exercise_form <- function(ns, e, theme_choices) {
   )
 }
 
+# A checkbox that sends list(p = profile id, f = "ai"/"admin", v = checked).
+role_checkbox <- function(ns, pid, field, checked, enabled, label) {
+  pid <- gsub("[^A-Za-z0-9_-]", "", pid)
+  tags$input(type = "checkbox", class = "form-check-input", `aria-label` = label,
+             checked = if (isTRUE(checked)) NA, disabled = if (!enabled) NA,
+             onchange = sprintf("Shiny.setInputValue('%s', {p: '%s', f: '%s', v: this.checked}, {priority: 'event'})",
+                                ns("role"), pid, field))
+}
+
+# The trainers with their rights. The superadmin's row cannot be changed;
+# only the superadmin can tick "Admin".
+role_rows <- function(ns, cand, roles, rights, me, superadmin, group) {
+  tags$table(
+    class = "table table-sm sn-roles",
+    tags$thead(tags$tr(tags$th("Trener"), tags$th(class = "sn-roles-c", "KI"), tags$th(class = "sn-roles-c", "Admin"))),
+    tags$tbody(lapply(seq_len(nrow(cand)), function(i) {
+      pid <- cand$profile_id[i]
+      r <- roles[roles$spond_profile_id == pid, , drop = FALSE]
+      sa <- is_superadmin(pid, superadmin)
+      ai <- sa || isTRUE(r$can_use_ai[1])
+      adm <- sa || isTRUE(r$is_admin[1])
+      changed <- if (nrow(r) && !sa) {
+        paste0("Endret av ", plan_author_name(r$updated_by[1], group), " ", short_time(r$updated_at[1]))
+      }
+      tags$tr(
+        tags$td(div(class = "sn-roles-name", cand$name[i], if (sa) span(class = "sn-tag sn-tag-match", "Superadmin"),
+                    if (identical(pid, me)) span(class = "sn-hint", " (deg)")),
+                div(class = "sn-hint", paste(Filter(nzchar, c(cand$roles[i], changed)), collapse = " \u00b7 "))),
+        tags$td(class = "sn-roles-c", role_checkbox(ns, pid, "ai", ai, !sa && isTRUE(rights$admin), paste("KI for", cand$name[i]))),
+        tags$td(class = "sn-roles-c", role_checkbox(ns, pid, "admin", adm, !sa && isTRUE(rights$superadmin),
+                                                    paste("Admin for", cand$name[i])))
+      )
+    }))
+  )
+}
+
 #' @noRd
-mod_admin_server <- function(id, context, user, db, superadmin = Sys.getenv("SPONDNYMARK_SUPERADMIN"),
+mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = Sys.getenv("SPONDNYMARK_SUPERADMIN"),
                              today = Sys.Date) {
+  if (is.null(rights)) rights <- rights_reactive(user, db, superadmin)
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     refresh <- reactiveVal(0)
@@ -242,10 +291,7 @@ mod_admin_server <- function(id, context, user, db, superadmin = Sys.getenv("SPO
     editing <- reactiveVal(NULL)        # NULL = list, "new", or an exercise id
     confirm_delete <- reactiveVal(NULL) # exercise id waiting for confirmation
 
-    allowed <- reactive({
-      u <- user()
-      !is.null(u) && is_superadmin(u$profile$id, superadmin)
-    })
+    allowed <- reactive(!is.null(user()) && isTRUE(rights()$admin))
     group_id <- reactive({
       ctx <- context()
       if (is.null(ctx)) NULL else ctx$group_id
@@ -264,6 +310,7 @@ mod_admin_server <- function(id, context, user, db, superadmin = Sys.getenv("SPO
       m <- msg()
       if (is.null(m) || !identical(m$tab, tab)) NULL else admin_alert(m)
     })
+    output$roles_msg <- tab_msg("trainers")
     output$season_msg <- tab_msg("season")
     output$team_msg <- tab_msg("team")
     # Exercises: in the list the message is at the top; in the form it is
@@ -327,6 +374,43 @@ mod_admin_server <- function(id, context, user, db, superadmin = Sys.getenv("SPO
       showModal(admin_modal(ns, context()$group_name, years = (y - 1):(y + 1), year = y))
     })
     observeEvent(input$tab, msg(NULL), ignoreInit = TRUE)
+
+    # Trainers and their rights ---------------------------------------------------
+    candidates <- reactive({
+      ctx <- context()
+      if (is.null(ctx)) role_candidates(list()) else role_candidates(ctx$group)
+    })
+
+    output$roles_body <- renderUI({
+      req(allowed(), group_id())
+      refresh()
+      cand <- candidates()
+      if (nrow(cand) == 0) return(p(class = "sn-hint", "Ingen trenere med profil i Spond i dette laget."))
+      roles <- read(function(con) ds_list_roles(con, cand$profile_id), "trainers")
+      if (is.null(roles)) return(NULL)
+      r <- isolate(rights())
+      me <- isolate(user())$profile$id
+      role_rows(ns, cand, roles, r, me, superadmin, context()$group)
+    })
+
+    observeEvent(input$role, {
+      x <- input$role
+      cand <- candidates()
+      pid <- as.character(x$p %||% "")
+      role <- as.character(x$f %||% "")
+      granted <- isTRUE(x$v)
+      if (!pid %in% cand$profile_id || !role %in% c("ai", "admin")) return()
+      if (is_superadmin(pid, superadmin)) return()
+      u <- user()
+      r <- rights()
+      name <- cand$name[cand$profile_id == pid][1]
+      what <- if (role == "ai") "KI-tilgang" else "admin"
+      save("trainers", function() {
+        if (!isTRUE(r$admin)) stop("Du har ikke tilgang til å endre rettigheter.", call. = FALSE)
+        if (role == "admin" && !isTRUE(r$superadmin)) stop("Bare superadmin kan gi og ta admin.", call. = FALSE)
+      }, function(con) ds_set_role(con, r, u$profile$id, pid, role, granted, cand$profile_id),
+      paste0(name, if (granted) " har fått " else " har ikke lenger ", what, "."))
+    })
 
     # Season plan -----------------------------------------------------------------
     year <- reactive({
@@ -503,6 +587,6 @@ mod_admin_server <- function(id, context, user, db, superadmin = Sys.getenv("SPO
            paste0("«", name, "» er slettet."))
     })
 
-    invisible(list(allowed = allowed))
+    invisible(list(allowed = allowed, rights = rights))
   })
 }
