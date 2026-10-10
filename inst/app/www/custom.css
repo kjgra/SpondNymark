@@ -458,3 +458,18 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-approve-ex .shiny-input-container { margin-bottom: 0; }
 .sn-admin-group-pick { margin-top: .25rem; }
 .sn-admin-group-pick .form-group, .sn-admin-group-pick .shiny-input-container { margin-bottom: 0; }
+
+/* Admin: KI overview */
+.sn-ai-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .5rem; margin-bottom: .75rem; }
+.sn-ai-tile { border: 1px solid var(--bs-border-color); border-radius: 10px; padding: .5rem .75rem; }
+.sn-ai-tile-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--sn-grey); font-weight: 700; }
+.sn-ai-tile-value { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sn-ai-days { display: flex; align-items: flex-end; gap: 2px; height: 90px; padding-bottom: 16px; position: relative;
+  border-bottom: 1px solid var(--bs-border-color); margin-bottom: 1rem; }
+.sn-ai-day { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; position: relative; }
+.sn-ai-bar { background: var(--sn-black); border-radius: 4px 4px 0 0; min-height: 0; }
+.sn-ai-day:hover .sn-ai-bar { background: var(--sn-grey); }
+.sn-ai-daynum { position: absolute; bottom: -17px; left: 0; font-size: .7rem; color: var(--sn-grey); }
+.sn-ai-tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .75rem; }
+.sn-ai-table td, .sn-ai-table th { font-variant-numeric: tabular-nums; }
+.sn-ai-head { margin-top: 1rem; }

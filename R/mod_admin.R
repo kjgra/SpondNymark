@@ -64,7 +64,7 @@ admin_saved_line <- function(t) {
 
 # The dialog. On phones it fills the screen.
 # `groups`: named vector of main group ids (names are the group names).
-admin_modal <- function(ns, groups, selected, years, year) {
+admin_modal <- function(ns, groups, selected, years, year, months = ai_month_choices()) {
   m <- modalDialog(
     title = tagList("Innstillinger",
                     if (length(groups) > 1) {
@@ -87,6 +87,18 @@ admin_modal <- function(ns, groups, selected, years, year) {
               " Bare superadmin kan gi admin."),
             uiOutput(ns("roles_msg")),
             uiOutput(ns("roles_body")))
+      ),
+      bslib::nav_panel(
+        "KI", value = "ai",
+        div(class = "sn-admin-pane",
+            div(class = "sn-admin-year",
+                selectInput(ns("ai_month"), "Måned", choices = months, selected = months[1], selectize = FALSE,
+                            width = "200px")),
+            uiOutput(ns("ai_overview")),
+            h4(class = "sn-plan-subtitle sn-ai-head", "Grenser og modell"),
+            uiOutput(ns("ai_settings_form")),
+            uiOutput(ns("ai_msg")),
+            uiOutput(ns("ai_save_button")))
       ),
       bslib::nav_panel(
         "Årshjul", value = "season",
@@ -295,6 +307,89 @@ role_rows <- function(ns, cand, roles, rights, me, superadmin, group) {
   )
 }
 
+# KI overview -------------------------------------------------------------------------
+
+ai_tile <- function(label, value, sub = NULL) {
+  div(class = "sn-ai-tile", div(class = "sn-ai-tile-label", label), div(class = "sn-ai-tile-value", value),
+      if (!is.null(sub)) div(class = "sn-hint", sub))
+}
+
+# Spend per day as thin columns (one series, one colour), with the amount on
+# hover.
+ai_day_bars <- function(by_day, rate) {
+  top <- max(by_day$usd, 0)
+  div(class = "sn-ai-days", role = "img",
+      `aria-label` = paste("Forbruk per dag, høyest", ai_kr(top, rate)),
+      lapply(seq_len(nrow(by_day)), function(i) {
+        d <- by_day[i, ]
+        h <- if (top > 0) max(2, round(100 * d$usd / top)) else 0
+        div(class = "sn-ai-day", title = paste0(d$day, ".: ", ai_kr(d$usd, rate), ", ", d$n, if (d$n == 1) " kall" else " kall"),
+            div(class = "sn-ai-bar", style = paste0("height:", if (d$usd > 0) h else 0, "%")),
+            div(class = "sn-ai-daynum", if (d$day %in% c(1, 10, 20) || i == nrow(by_day)) d$day))
+      }))
+}
+
+ai_table <- function(title, rows, label_of, rate) {
+  if (nrow(rows) == 0) return(NULL)
+  div(class = "sn-ai-table",
+      tags$table(class = "table table-sm",
+                 tags$thead(tags$tr(tags$th(title), tags$th(class = "text-end", "Kall"), tags$th(class = "text-end", "Kostnad"))),
+                 tags$tbody(lapply(seq_len(nrow(rows)), function(i) {
+                   tags$tr(tags$td(label_of(rows$key[i])), tags$td(class = "text-end", rows$n[i]),
+                           tags$td(class = "text-end", ai_kr(rows$usd[i], rate)))
+                 }))))
+}
+
+ai_overview_ui <- function(sm, total_usd, s, group, month_label) {
+  rate <- s$usd_nok
+  if (sm$n == 0) {
+    return(tagList(
+      div(class = "sn-ai-tiles",
+          ai_tile("Laget", "0,00 kr", paste("av", s$group_limit_nok, "kr")),
+          ai_tile("Hele appen", paste0("$", formatC(total_usd, format = "f", digits = 2, decimal.mark = ",")), paste0("av $", s$total_limit_usd))),
+      p(class = "sn-hint", paste0("Laget har ikke brukt KI i ", tolower(month_label), "."))))
+  }
+  k <- function(x) if (x >= 1000) paste0(formatC(x / 1000, format = "f", digits = 1, decimal.mark = ","), "k") else as.character(x)
+  tagList(
+    div(class = "sn-ai-tiles",
+        ai_tile("Laget", ai_kr(sm$usd, rate), paste("av", s$group_limit_nok, "kr")),
+        ai_tile("Hele appen", paste0("$", formatC(total_usd, format = "f", digits = 2, decimal.mark = ",")), paste0("av $", s$total_limit_usd)),
+        ai_tile("Forespørsler", sm$n, if (sm$n_error) paste(sm$n_error, "feilet")),
+        ai_tile("Tokens", paste(k(sm$input), "inn ·", k(sm$output), "ut"),
+                paste(k(sm$cache_read), "lest og", k(sm$cache_write), "skrevet til hurtigbuffer"))),
+    ai_day_bars(sm$by_day, rate),
+    div(class = "sn-ai-tables",
+        ai_table("Trener", sm$by_person, function(x) plan_author_name(x, group), rate),
+        ai_table("Modell", sm$by_model, function(x) ai_models[[x]]$label %||% x, rate),
+        ai_table("Type", sm$by_kind, function(x) ai_kind_labels[[x]] %||% x, rate)),
+    p(class = "sn-hint", paste0("Kroner er regnet med ", formatC(rate, format = "f", digits = 2, decimal.mark = ","),
+                                " kr per dollar. Tallene kommer fra svarene fra Anthropic.")))
+}
+
+ai_settings_ui <- function(ns, s, editable, group) {
+  lock <- function(tag) {
+    if (editable) return(tag)
+    htmltools::tagQuery(tag)$find("input")$addAttrs(disabled = NA)$reset()$find("select")$addAttrs(disabled = NA)$allTags()
+  }
+  num <- function(id, label, value, step) lock(numericInput(ns(id), label, value = value, step = step, width = "100%"))
+  tagList(
+    div(class = "sn-admin-grid",
+        lock(selectInput(ns("ai_model"), "Standardmodell", selectize = FALSE, width = "100%", selected = s$model,
+                         choices = stats::setNames(names(ai_models), vapply(ai_models, function(m)
+                           paste0(m$choice, " (", m$label, ")"), "")))),
+        num("ai_max_new", "Maks nye øvelser per opplegg", s$max_new_exercises, 1)),
+    div(class = "sn-admin-grid",
+        num("ai_group_limit", "Grense per lag per måned (kr)", s$group_limit_nok, 5),
+        num("ai_total_limit", "Grense for hele appen per måned ($)", s$total_limit_usd, 1)),
+    div(class = "sn-admin-grid",
+        num("ai_usd_nok", "Kroner per dollar", s$usd_nok, 0.1)),
+    p(class = "sn-hint",
+      if (!editable) "Bare superadmin kan endre grensene og modellen. ",
+      "Grensen hos Anthropic settes i tillegg i konsollen der; hold appens grense under den.",
+      if (nzchar(txt1(s$updated_by))) paste0(" Sist endret av ", plan_author_name(s$updated_by, group), " ",
+                                             short_time(s$updated_at), ".")))
+}
+
 #' @noRd
 mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = Sys.getenv("SPONDNYMARK_SUPERADMIN"),
                              today = Sys.Date) {
@@ -337,6 +432,7 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
       if (is.null(m) || !identical(m$tab, tab)) NULL else admin_alert(m)
     })
     output$roles_msg <- tab_msg("trainers")
+    output$ai_msg <- tab_msg("ai")
     output$season_msg <- tab_msg("season")
     output$team_msg <- tab_msg("team")
     # Exercises: in the list the message is at the top; in the form it is
@@ -401,7 +497,8 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
       editing(NULL)
       confirm_delete(NULL)
       y <- this_year()
-      showModal(admin_modal(ns, stats::setNames(acc$id, acc$name), admin_gid(), years = (y - 1):(y + 1), year = y))
+      showModal(admin_modal(ns, stats::setNames(acc$id, acc$name), admin_gid(), years = (y - 1):(y + 1), year = y,
+                            months = ai_month_choices(today())))
     })
     observeEvent(input$admin_group, {
       acc <- user()$access
@@ -448,6 +545,44 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
         if (role == "admin" && !isTRUE(r$superadmin)) stop("Bare superadmin kan gi og ta admin.", call. = FALSE)
       }, function(con) ds_set_role(con, r, u$profile$id, pid, role, granted, cand$profile_id),
       paste0(name, if (granted) " har fått " else " har ikke lenger ", what, "."))
+    })
+
+    # KI: overview, limits and model (T3d) ------------------------------------------
+    output$ai_overview <- renderUI({
+      req(allowed(), group_id())
+      refresh()
+      months <- ai_month_choices(today())
+      ym <- input$ai_month %||% months[[1]]
+      if (!ym %in% months) ym <- months[[1]]
+      rng <- ai_month_range(ym)
+      gid <- group_id()
+      acc <- isolate(user())$access
+      d <- read(function(con) list(u = ds_ai_usage_period(con, acc, gid, rng$from, rng$to), s = ds_get_ai_settings(con)),
+                "ai")
+      if (is.null(d)) return(NULL)
+      ai_overview_ui(ai_usage_summary(d$u$rows, rng$days), d$u$total_usd, d$s, the_group(), names(months)[months == ym])
+    })
+
+    output$ai_settings_form <- renderUI({
+      req(allowed(), group_id())
+      refresh()
+      s <- read(function(con) ds_get_ai_settings(con), "ai")
+      if (is.null(s)) return(NULL)
+      ai_settings_ui(ns, s, isTRUE(isolate(rights())$superadmin), the_group())
+    })
+    output$ai_save_button <- renderUI({
+      if (isTRUE(rights()$superadmin)) actionButton(ns("ai_save"), "Lagre grenser og modell", class = "btn-primary")
+    })
+
+    observeEvent(input$ai_save, {
+      r <- rights()
+      me <- user()$profile$id
+      s <- list(model = input$ai_model, group_limit_nok = input$ai_group_limit, total_limit_usd = input$ai_total_limit,
+                max_new_exercises = input$ai_max_new, usd_nok = input$ai_usd_nok)
+      save("ai", function() {
+        if (!isTRUE(r$superadmin)) stop("Bare superadmin kan endre grensene og modellen.", call. = FALSE)
+        ai_settings_validate(s)
+      }, function(con) ds_save_ai_settings(con, r, me, s), "KI-innstillingene er lagret.")
     })
 
     # Season plan -----------------------------------------------------------------

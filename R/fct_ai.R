@@ -631,3 +631,54 @@ ai_finish <- function(con, access, actor, prep, sent, event_id) {
   ds_ai_usage_set_plan(con, access, prep$group_id, usage_id, saved$id)
   list(id = saved$id, version = saved$version, warnings = plan$warnings, cost_usd = cost, usage_id = usage_id)
 }
+
+# Overview for the admin panel (T3d) ------------------------------------------------
+
+ai_kind_labels <- c(draft = "Nytt opplegg", revision = "Justering", visual = "Visuell sjekk", learning = "Lærdom")
+
+#' The months to choose between in the overview: this month and the 11
+#' before, as "2026-10" = "Oktober 2026"
+#' @noRd
+ai_month_choices <- function(today = Sys.Date()) {
+  first <- as.Date(format(today, "%Y-%m-01"))
+  months <- seq(first, by = "-1 month", length.out = 12)
+  stats::setNames(format(months, "%Y-%m"),
+                  paste(month_names_nb[as.integer(format(months, "%m"))], format(months, "%Y")))
+}
+
+#' Start and end (exclusive) of a month in Oslo time, from "2026-10"
+#' @noRd
+ai_month_range <- function(ym) {
+  from <- as.POSIXct(paste0(ym, "-01 00:00:00"), tz = "Europe/Oslo")
+  d <- as.Date(paste0(ym, "-01"))
+  next_month <- seq(d, by = "1 month", length.out = 2)[2]
+  list(from = from, to = as.POSIXct(paste(next_month, "00:00:00"), tz = "Europe/Oslo"), days = as.integer(next_month - d))
+}
+
+#' Sums for the overview: totals, per day, per trainer, per model and per kind
+#' @param rows From `ds_ai_usage_period()`.
+#' @noRd
+ai_usage_summary <- function(rows, days) {
+  n <- nrow(rows)
+  sum_by <- function(key) {
+    if (n == 0) return(data.frame(key = character(), n = integer(), usd = numeric()))
+    k <- as.character(key)
+    out <- data.frame(key = sort(unique(k)), stringsAsFactors = FALSE)
+    out$n <- vapply(out$key, function(x) sum(k == x), integer(1))
+    out$usd <- vapply(out$key, function(x) sum(rows$cost_usd[k == x]), numeric(1))
+    out[order(-out$usd, out$key), , drop = FALSE]
+  }
+  day <- if (n) as.integer(format(rows$created_at, "%d", tz = "Europe/Oslo")) else integer()
+  by_day <- data.frame(day = seq_len(days))
+  by_day$usd <- vapply(by_day$day, function(d) sum(rows$cost_usd[day == d]), numeric(1))
+  by_day$n <- vapply(by_day$day, function(d) sum(day == d), integer(1))
+  list(n = n, n_error = sum(rows$status == "error"), usd = sum(rows$cost_usd),
+       input = sum(rows$input_tokens), output = sum(rows$output_tokens),
+       cache_read = sum(rows$cache_read_tokens), cache_write = sum(rows$cache_write_tokens),
+       by_day = by_day, by_person = sum_by(rows$spond_profile_id), by_model = sum_by(rows$model),
+       by_kind = sum_by(rows$kind))
+}
+
+#' Kroner with two decimals and a comma: "1,25 kr"
+#' @noRd
+ai_kr <- function(usd, rate) paste(formatC(usd * rate, format = "f", digits = 2, decimal.mark = ","), "kr")

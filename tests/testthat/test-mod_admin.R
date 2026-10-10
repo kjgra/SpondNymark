@@ -273,3 +273,42 @@ test_that("admins give app access; admins always have it", {
   expect_equal(login_check(list(run = function(f) f(con)), "P-x", superadmin = "P-boss"), "denied")
   expect_equal(DBI::dbGetQuery(con, "SELECT role FROM app_role_log WHERE spond_profile_id = 'P-t2'")$role, "app")
 })
+
+test_that("the KI tab shows this month's use, and only the superadmin changes the limits", {
+  con <- local_test_db()
+  u <- list(kind = "draft", model = "claude-haiku-5-5", input_tokens = 1000, output_tokens = 6000,
+            cache_read_tokens = 0, cache_write_tokens = 7000, cost_usd = 0.012, duration_ms = 30000,
+            status = "ok", error_code = "")
+  ds_log_ai_usage(con, fake_user(fake_spond_groups_two())$access, "G2016", "P-me", u)
+  args <- admin_args(con)
+  args$today <- function() Sys.Date()
+  suppressMessages(testServer(mod_admin_server, args = args, {
+    session$setInputs(open = 1)
+    html <- as.character(output$ai_overview$html)
+    expect_match(html, "0,12 kr")
+    expect_match(html, "Kjetil G.")
+    expect_match(html, "Haiku 5.5")
+    expect_match(as.character(output$ai_save_button$html), "Lagre grenser og modell")
+    session$setInputs(ai_model = "claude-sonnet-5-5", ai_group_limit = 50, ai_total_limit = 9, ai_max_new = 1,
+                      ai_usd_nok = 9.6, ai_save = 1)
+    expect_equal(msg()$type, "ok")
+    session$setInputs(ai_group_limit = -5, ai_save = 2)
+    expect_match(msg()$text, "Grensen per lag")
+  }))
+  s <- ds_get_ai_settings(con)
+  expect_equal(s$model, "claude-sonnet-5-5")
+  expect_equal(s$group_limit_nok, 50)
+
+  # An admin (not superadmin) sees the numbers but cannot change the limits.
+  ds_set_role(con, list(superadmin = TRUE, admin = TRUE), "P-boss", "P-me", "admin", TRUE, "P-me")
+  args <- admin_args(con, superadmin = "P-boss")
+  suppressMessages(testServer(mod_admin_server, args = args, {
+    session$setInputs(open = 1)
+    expect_match(as.character(output$ai_settings_form$html), "Bare superadmin kan endre")
+    expect_null(output$ai_save_button$html)
+    session$setInputs(ai_model = "claude-haiku-5-5", ai_group_limit = 10, ai_total_limit = 9, ai_max_new = 1,
+                      ai_usd_nok = 9.6, ai_save = 1)
+    expect_match(msg()$text, "Bare superadmin")
+  }))
+  expect_equal(ds_get_ai_settings(con)$group_limit_nok, 50)
+})

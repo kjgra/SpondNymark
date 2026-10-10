@@ -333,3 +333,36 @@ test_that("the adjustment order has the plan, the facts and the wish, and needs 
   expect_error(ai_revision_text(ref, modifyList(ctx, list(wish = "Per er skadet"))), "sensitive")
   expect_match(ai_system_text(), "# Justering av et opplegg", fixed = TRUE)
 })
+
+# Overview (T3d) ---------------------------------------------------------------------------
+
+test_that("months and their ranges are in Oslo time", {
+  m <- ai_month_choices(as.Date("2026-10-10"))
+  expect_equal(unname(m[1:3]), c("2026-10", "2026-09", "2026-08"))
+  expect_equal(names(m)[1], "Oktober 2026")
+  expect_length(m, 12)
+  r <- ai_month_range("2026-02")
+  expect_equal(r$days, 28L)
+  expect_equal(format(r$from, "%Y-%m-%d %H:%M %Z"), "2026-02-01 00:00 CET")
+  expect_equal(format(r$to, "%Y-%m-%d"), "2026-03-01")
+})
+
+test_that("usage is summed per day, trainer, model and kind", {
+  rows <- data.frame(
+    created_at = as.POSIXct(c("2026-10-01 23:30", "2026-10-02 10:00", "2026-10-02 11:00"), tz = "Europe/Oslo"),
+    spond_profile_id = c("P1", "P1", "P2"), kind = c("draft", "revision", "draft"),
+    model = c("claude-haiku-5-5", "claude-haiku-5-5", "claude-sonnet-5-5"),
+    input_tokens = c(1000L, 2000L, 3000L), output_tokens = c(5000L, 6000L, 7000L),
+    cache_read_tokens = 0L, cache_write_tokens = 7000L, cost_usd = c(0.003, 0.004, 0.08),
+    status = c("ok", "error", "ok"))
+  sm <- ai_usage_summary(rows, 31)
+  expect_equal(sm$n, 3)
+  expect_equal(sm$n_error, 1)
+  expect_equal(sm$by_day$usd[1:3], c(0.003, 0.084, 0))
+  expect_equal(sm$by_person$key, c("P2", "P1"))                  # most expensive first
+  expect_equal(sm$by_kind$n[sm$by_kind$key == "draft"], 2L)
+  expect_equal(ai_kr(0.084, 10), "0,84 kr")
+  empty <- ai_usage_summary(rows[0, ], 30)
+  expect_equal(empty$n, 0)
+  expect_equal(nrow(empty$by_day), 30)
+})

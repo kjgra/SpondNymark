@@ -939,6 +939,28 @@ ds_ai_spend <- function(con, access, group_id, since) {
   list(group_usd = row$group_usd[1], total_usd = row$total_usd[1])
 }
 
+#' The KI calls of one group in a period (for the overview in the admin
+#' panel), and the sum for the whole app in the same period
+#' @return list(rows = data.frame(created_at, spond_profile_id, kind, model,
+#'   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+#'   cost_usd, status), total_usd).
+#' @noRd
+ds_ai_usage_period <- function(con, access, group_id, from, to) {
+  assert_group_access(access, group_id)
+  f <- format(from, "%Y-%m-%d %H:%M:%S%z")
+  t <- format(to, "%Y-%m-%d %H:%M:%S%z")
+  rows <- ds_query(con, "
+    SELECT created_at, spond_profile_id, kind, model, input_tokens, output_tokens, cache_read_tokens,
+           cache_write_tokens, cost_usd::float8 AS cost_usd, status
+      FROM ai_usage
+     WHERE spond_group_id = $1 AND created_at >= $2::timestamptz AND created_at < $3::timestamptz
+     ORDER BY created_at", list(group_id, f, t))
+  total <- ds_query(con, "
+    SELECT coalesce(sum(cost_usd), 0)::float8 AS usd FROM ai_usage
+     WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz", list(f, t))$usd[1]
+  list(rows = rows, total_usd = total)
+}
+
 #' Typical answer length for a kind of call and model: the median of the last
 #' 20 successful calls, or NA if there are none yet (for the price estimate)
 #' @noRd
