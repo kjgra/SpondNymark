@@ -416,3 +416,20 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
   .sn-season-row { grid-template-columns: 1fr; gap: 4px; padding: 8px 0; border-bottom: 1px solid var(--sn-line); }
   .sn-ex-row { flex-direction: column; }
 }
+
+/* Treningsopplegg on an event (T2-3) */
+.sn-plan { margin: 4px 0 14px; }
+.sn-plan-card { background: var(--sn-ground-2); border-radius: .75rem; padding: 12px 14px; border-top: 4px solid var(--sn-yellow); }
+.sn-plan-title { font-family: var(--sn-font-display); font-weight: 800; font-size: 1.25rem; line-height: 1.1; }
+.sn-plan-list { margin: 6px 0 10px; padding-left: 1.3rem; }
+.sn-plan-list li { margin: 2px 0; }
+.sn-plan-ex { font-weight: 600; }
+.sn-plan-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sn-plan-actions .shiny-input-container { margin: 0; }
+.sn-plan-empty { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.sn-plan-empty .sn-hint { margin: 0; }
+.sn-plan-sched { font-size: .85rem; background: var(--sn-yellow-soft); color: var(--sn-black); border-radius: .5rem; padding: 6px 10px; }
+.sn-plan-warn { color: var(--sn-yellow-ink); background: var(--sn-yellow-soft); border-left: 4px solid var(--sn-yellow); padding: 6px 10px; border-radius: .25rem; }
+.sn-plan-more { border-top: 1px solid var(--sn-line); padding-top: 8px; }
+.sn-plan-more > summary { font-weight: 600; cursor: pointer; margin-bottom: 8px; }
+.sn-plan-edmsg { margin: 0 auto 0 0; padding: 6px 10px; }

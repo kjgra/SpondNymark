@@ -1995,7 +1995,7 @@
       "checksum": "f1e487de51821d7bbc18c371c3b7639e"
     },
     "inst/app/www/custom.css": {
-      "checksum": "7adc7d14e13b7dcf61a5920a627335a6"
+      "checksum": "6d1ce7af938c674a1f284e7dc7b64ee7"
     },
     "inst/app/www/favicon.ico": {
       "checksum": "a5b73ffecee6a01c0a08ff0b176901cf"
@@ -2035,6 +2035,9 @@
     },
     "inst/db/migrations/002_treningsopplegg_t1.sql": {
       "checksum": "71e0ca7e60ac114766c695825f9aee02"
+    },
+    "inst/db/migrations/003_treningsopplegg_t2.sql": {
+      "checksum": "e9fd23f3d3cd4e7e85f96f5186955b7b"
     },
     "inst/db/migrations/README.md": {
       "checksum": "23f0960e67c885e20237e26a50df997a"
@@ -2091,7 +2094,7 @@
       "checksum": "814fd6514fa58956349a09ee570ed1c7"
     },
     "R/data_store.R": {
-      "checksum": "360f3d88cb0cd3173a9caf05803a07a7"
+      "checksum": "5825cd2115cb585037bbe70c2810df97"
     },
     "R/fct_access.R": {
       "checksum": "18aa1da4027e2f0fdadde530d7675b43"
@@ -2115,7 +2118,7 @@
       "checksum": "0a394e241b6b33a57234f336253f17b3"
     },
     "R/fct_plan.R": {
-      "checksum": "cb48e2068468f3859149087c16a3da77"
+      "checksum": "b697264efc4efc27b7c173d193ce935c"
     },
     "R/fct_spond_data.R": {
       "checksum": "c1439f8552b7e90ecb42e10706eeac0d"
@@ -2130,7 +2133,7 @@
       "checksum": "eec13838d0b7140e34679d0ce0a762b6"
     },
     "R/mod_events.R": {
-      "checksum": "85b97028d47958516f3a6364634f79c6"
+      "checksum": "61e208b7a75999dbd9cb543edbdfe078"
     },
     "R/mod_groups.R": {
       "checksum": "d3a1060a4de7541b16d3b3fb8a642fa1"
@@ -2140,6 +2143,9 @@
     },
     "R/mod_participants.R": {
       "checksum": "12abc7b138c9d91b16944f795618838b"
+    },
+    "R/mod_plans.R": {
+      "checksum": "86681ff1d216d5e088284d85bc587263"
     },
     "R/mod_quarto_test.R": {
       "checksum": "ca5771a7ad99efa7e7684aa7c5388332"

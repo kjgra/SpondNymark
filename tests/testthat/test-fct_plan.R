@@ -68,4 +68,70 @@ test_that("the PDF is made with the template, fonts and drawings", {
   expect_gt(file.size(path), 50000)
   expect_equal(nrow(attr(res, "problems")), 0)
   expect_error(plan_pdf(ref_plan(), path, quarto = ""), "Fant ikke Quarto")
+  # Three named groups: the rotation table uses the names (checked in the PDF text)
+  skip_if(!nzchar(Sys.which("pdftotext")), "pdftotext mangler.")
+  plan_pdf(ref_plan(), path, groups = list(list(navn = "Ulv", spillere = "A"), list(navn = "Gaupe", spillere = "B"),
+                                           list(navn = "Bjørn", spillere = "C")))
+  txt <- paste(system2("pdftotext", c("-l", "1", shQuote(path), "-"), stdout = TRUE), collapse = " ")
+  expect_match(txt, "Tid\\s+Ulv\\s+Gaupe\\s+Bjørn")
+})
+
+bank_rows <- function() {
+  data.frame(id = 1:2, code = c("rondo", "smaaspill-4-4"), name = c("Rondo", "4 mot 4"),
+             category = c("pasning_mottak", "smaaspill"),
+             organisation = c("- 10 × 10 m\n- 4 mot 1", ""), execution = c("Hold ballen.", ""),
+             learning_points = c("• Se opp\n• Åpne kroppen\n\n", ""), questions = c("", ""),
+             easier = c("Større rute", ""), harder = c("", ""), nff_url = c("", ""),
+             drawing = c(drawing_json(drawing_validate(drawing_example_json())), NA))
+}
+
+test_that("text fields become list items without bullets", {
+  expect_equal(text_lines("- a\n• b\n\n 3) c \n*d"), list("a", "b", "c", "*d"))
+  expect_equal(text_lines(""), list())
+  expect_equal(text_lines(NA), list())
+})
+
+test_that("a manual plan is made from bank exercises, as a snapshot", {
+  s <- plan_settings_default("Samhandling")
+  p <- plan_from_exercises(bank_rows(), s)
+  expect_equal(p$tittel, "Samhandling")
+  expect_equal(p$tidsplan$stasjoner$grupper, 2L)       # rotation: one station per exercise
+  expect_equal(p$undertittel, "2 stasjoner, 2 grupper · ca. 50 min")
+  e <- p$ovelser[[1]]
+  expect_equal(c(e$kode, e$kilde, e$kategori), c("rondo", "bank", "Pasning og mottak"))
+  expect_equal(e$organisering, list("10 × 10 m", "4 mot 1"))
+  expect_equal(e$laeringsmomenter, list("Se opp", "Åpne kroppen"))
+  expect_length(e$tegning$skisser, 1)
+  expect_null(p$ovelser[[2]]$tegning)
+
+  s$rotasjon <- FALSE
+  s$stikkord <- list(list(tittel = "Se opp", tekst = ""), list(tittel = "", tekst = "ignoreres"))
+  s$sporsmal <- "«Hvem er ledig?»\n\n«Hvor er rommet?»"
+  p1 <- plan_from_exercises(bank_rows(), s)
+  expect_equal(p1$tidsplan$stasjoner$grupper, 1L)
+  expect_length(p1$stikkord, 1)
+  expect_length(p1$avslutning_sporsmal, 2)
+  expect_match(p1$undertittel, "^2 øvelser")
+  expect_error(plan_from_exercises(bank_rows()[0, ], s), "minst én")
+})
+
+test_that("a plan survives a round trip through JSON", {
+  p <- plan_validate(jsonlite::fromJSON(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"),
+                                        simplifyVector = FALSE))
+  js <- plan_json(p)
+  expect_false(grepl('"marg"|"oransje"', js))      # drawings are stored compact
+  expect_equal(plan_validate(js), p)
+  q <- p; q$ovelser[[1]]$kilde <- "tull"
+  expect_error(plan_validate(q), "bank, justert eller ny")
+})
+
+test_that("a plan exercise is turned back into bank fields", {
+  e <- plan_from_exercises(bank_rows(), plan_settings_default())$ovelser[[1]]
+  b <- bank_exercise_from_plan(e, themes = "Samhandling")
+  expect_equal(b$category, "pasning_mottak")
+  expect_equal(b$organisation, "10 × 10 m\n4 mot 1")
+  expect_match(b$drawing, '"skisser"')
+  v <- exercise_validate(b)
+  expect_equal(v$themes, "Samhandling")
+  expect_equal(bank_exercise_from_plan(list(navn = "X", kategori = "Spille med og mot"))$category, "annet")
 })

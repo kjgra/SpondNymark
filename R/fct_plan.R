@@ -17,6 +17,7 @@
 NULL
 
 plan_text_lists <- c("organisering", "gjennomforing", "tilpasning", "laeringsmomenter", "sporsmal")
+plan_exercise_sources <- c("bank", "justert", "ny")
 
 plan_str <- function(x, what, max, required = FALSE) {
   x <- txt1(x)
@@ -101,6 +102,13 @@ plan_validate <- function(p) {
       stop(w, "NFF-lenken m\u00e5 starte med https://.", call. = FALSE)
     }
     if (!nzchar(r$kode)) r$kode <- exercise_code(r$navn)
+    # Where the exercise comes from (kap. 15): unchanged from the bank, a
+    # variant of a bank exercise (basert_pa = the original's code), or new.
+    r$kilde <- txt1(e$kilde %||% "ny")
+    if (!r$kilde %in% plan_exercise_sources) {
+      stop(w, "Kilden må være bank, justert eller ny.", call. = FALSE)
+    }
+    r$basert_pa <- plan_str(e$basert_pa, paste0(w, "basert_pa"), 60)
     r$tegning <- if (is.null(e$tegning)) NULL else {
       tryCatch(drawing_validate(e$tegning), error = function(err) stop(w, conditionMessage(err), call. = FALSE))
     }
@@ -251,6 +259,10 @@ plan_pdf <- function(p, path, footer = NULL, info = character(), groups = list()
   plan_legend_png(file.path(dir, "tegnforklaring.png"))
 
   sched <- plan_schedule(p)
+  # With names from the group proposal, the rotation uses its group names
+  # when the numbers match.
+  g <- p$tidsplan$stasjoner$grupper
+  if (g > 1 && length(groups) == g) sched$columns[-1] <- vapply(groups, function(x) txt1(x$navn), "")
   data <- c(p, list(
     tidsplan_tabell = sched,
     varighet = sched$total,
@@ -274,4 +286,142 @@ plan_pdf <- function(p, path, footer = NULL, info = character(), groups = list()
   problems <- if (length(problems)) do.call(rbind, problems) else
     data.frame(ovelse = integer(), skisse = integer(), type = character(), melding = character())
   invisible(structure(path, problems = problems))
+}
+
+
+# Plans and the exercise bank ------------------------------------------------------
+
+#' A plan as compact JSON for the database (drawings without defaults)
+#' @noRd
+plan_json <- function(p) {
+  p <- plan_validate(p)
+  p$ovelser <- lapply(p$ovelser, function(e) {
+    if (!is.null(e$tegning)) e$tegning <- drawing_compact(e$tegning)
+    e
+  })
+  as.character(jsonlite::toJSON(p, auto_unbox = TRUE, digits = NA, null = "null"))
+}
+
+# Lines of a text field as list items: one per line, without "- " or "• ".
+text_lines <- function(x) {
+  x <- txt1(x)
+  if (!nzchar(x)) return(list())
+  l <- trimws(sub("^\\s*([-•*]|[0-9]+[.)])\\s+", "", strsplit(x, "\n", fixed = TRUE)[[1]]))
+  as.list(l[nzchar(l)])
+}
+
+#' A bank exercise (one row of `ds_list_exercises()`) as a plan exercise
+#'
+#' The plan gets a full copy (a snapshot), so later changes in the bank do
+#' not change plans already made. Multi-line text fields become lists.
+#' @noRd
+plan_exercise_from_bank <- function(row) {
+  cat <- row$category[1]
+  drawing <- row$drawing[1]
+  list(
+    kode = row$code[1], navn = row$name[1],
+    kategori = if (cat %in% names(exercise_categories)) exercise_categories[[cat]] else cat,
+    fokus = "",
+    organisering = text_lines(row$organisation[1]), gjennomforing = text_lines(row$execution[1]),
+    tilpasning = list(), laeringsmomenter = text_lines(row$learning_points[1]),
+    sporsmal = text_lines(row$questions[1]),
+    enklere = txt1(row$easier[1]), vanskeligere = txt1(row$harder[1]), nff_url = txt1(row$nff_url[1]),
+    kilde = "bank", basert_pa = "",
+    tegning = if (is.na(drawing) || !nzchar(drawing)) NULL else drawing_validate(drawing)
+  )
+}
+
+#' A plan exercise as fields for the bank (`exercise_validate()`)
+#'
+#' The category label is turned back into its key ("annet" if unknown).
+#' @noRd
+bank_exercise_from_plan <- function(e, themes = character()) {
+  key <- names(exercise_categories)[tolower(exercise_categories) == tolower(txt1(e$kategori))]
+  lines <- function(x) paste(unlist(x), collapse = "\n")
+  list(name = e$navn, category = if (length(key)) key[1] else "annet", themes = themes,
+       organisation = lines(e$organisering), execution = lines(e$gjennomforing),
+       learning_points = lines(e$laeringsmomenter), questions = lines(e$sporsmal),
+       easier = e$enklere %||% "", harder = e$vanskeligere %||% "", nff_url = e$nff_url %||% "",
+       drawing = if (is.null(e$tegning)) "" else drawing_json(drawing_validate(e$tegning)))
+}
+
+#' Settings for a manual plan, with defaults
+#' @noRd
+plan_settings_default <- function(theme = "", minutes = NA) {
+  list(tittel = if (nzchar(theme)) theme else "Treningsøkt", tema = theme, undertittel = "",
+       forsvar = "", angrep = "", stikkord = list(),
+       oppvarming = 10L, oppvarming_tekst = "Felles oppvarming",
+       stasjon = 15L, bytte = 2L, rotasjon = TRUE,
+       avslutning = 8L, avslutning_tekst = "Felles avslutning", sporsmal = "", merknad = "")
+}
+
+#' A manual plan from bank exercises and the settings from the editor
+#'
+#' @param rows Bank exercises in the chosen order (rows of
+#'   `ds_list_exercises()`).
+#' @param s Settings, see `plan_settings_default()`. With `rotasjon` the
+#'   group count equals the number of exercises (one station each);
+#'   otherwise everyone does the exercises one after the other.
+#' @return A validated plan.
+#' @noRd
+plan_from_exercises <- function(rows, s) {
+  plan_build(lapply(seq_len(nrow(rows)), function(i) plan_exercise_from_bank(rows[i, , drop = FALSE])), s)
+}
+
+#' A plan from plan exercises (from the bank, or kept from an earlier
+#' version) and the settings from the editor
+#' @noRd
+plan_build <- function(ex, s) {
+  if (length(ex) == 0) stop("Velg minst én øvelse.", call. = FALSE)
+  n <- length(ex)
+  rot <- isTRUE(s$rotasjon) && n > 1
+  stikkord <- Filter(function(k) nzchar(txt1(k$tittel)), s$stikkord %||% list())
+  p <- list(
+    tittel = s$tittel, undertittel = s$undertittel, tema = s$tema,
+    fokus = list(forsvar = s$forsvar, angrep = s$angrep),
+    stikkord = lapply(stikkord, function(k) list(tittel = txt1(k$tittel), tekst = txt1(k$tekst))),
+    tidsplan = list(
+      oppvarming = list(minutter = s$oppvarming, tekst = s$oppvarming_tekst),
+      stasjoner = list(minutter = s$stasjon, bytte = if (n > 1) s$bytte else 0L, grupper = if (rot) n else 1L),
+      avslutning = list(minutter = s$avslutning, tekst = s$avslutning_tekst),
+      merknad = s$merknad),
+    avslutning_sporsmal = text_lines(s$sporsmal),
+    ovelser = ex
+  )
+  p <- plan_validate(p)
+  if (!nzchar(p$undertittel)) {
+    total <- plan_schedule(p)$total
+    p$undertittel <- paste0(if (rot) paste(n, "stasjoner,", n, "grupper") else paste(n, if (n == 1) "øvelse" else "øvelser"),
+                            " · ca. ", total, " min")
+  }
+  p
+}
+
+#' The editor's settings, read back from a saved plan
+#' @noRd
+plan_settings_from_plan <- function(p) {
+  tp <- p$tidsplan
+  list(tittel = p$tittel, tema = p$tema, undertittel = p$undertittel,
+       forsvar = p$fokus$forsvar, angrep = p$fokus$angrep, stikkord = p$stikkord,
+       oppvarming = tp$oppvarming$minutter, oppvarming_tekst = tp$oppvarming$tekst,
+       stasjon = tp$stasjoner$minutter, bytte = tp$stasjoner$bytte, rotasjon = tp$stasjoner$grupper > 1,
+       avslutning = tp$avslutning$minutter, avslutning_tekst = tp$avslutning$tekst,
+       sporsmal = paste(unlist(p$avslutning_sporsmal), collapse = "\n"), merknad = tp$merknad)
+}
+
+#' Groups with player names for the PDF, from an approved group proposal
+#'
+#' @param labels data.frame(label, sort_order) of the proposal.
+#' @param members data.frame(spond_member_id, label) of the proposal.
+#' @param people data.frame(id, display_name): the members of the main group.
+#' @return list of list(navn, spillere), in the proposal's order. Names are
+#'   only used for the PDF and never stored.
+#' @noRd
+plan_print_groups <- function(labels, members, people) {
+  labels <- labels[order(labels$sort_order), , drop = FALSE]
+  lapply(labels$label, function(l) {
+    ids <- members$spond_member_id[members$label == l]
+    names <- people$display_name[match(ids, people$id)]
+    list(navn = l, spillere = sort(names[!is.na(names)]))
+  })
 }

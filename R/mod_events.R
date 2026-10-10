@@ -332,6 +332,7 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
                         events = known_events, open_event_input = ns("open"))
     }
     editing <- if (is.null(groups)) function() FALSE else groups$editing
+    if (!is.null(db)) mod_plans_server("plans", context, user, db, event = selected, now = now)
 
     # "Godkjenning" in the top bar: only with the database, once a team is
     # chosen, and not while the group editor is open.
@@ -425,6 +426,7 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
             ),
             bslib::card_body(
               if (!is.null(groups)) div(class = "sn-event-groups", mod_groups_event_ui(ns("groups"))),
+              if (!is.null(db) && !isTRUE(ev$match)) mod_plans_event_ui(ns("plans")),
               mod_participants_ui(ns("participants"))
             )
           )

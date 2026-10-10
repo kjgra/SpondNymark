@@ -708,6 +708,103 @@ ds_delete_exercise <- function(con, access, exercise_id) {
   invisible(TRUE)
 }
 
+# Training plans (opplegg) -------------------------------------------------------
+# One row per version of the plan for an event (migration 003). A new version
+# is a new row; old versions are kept (cleaning comes in T4).
+
+#' The latest version of the plan for each of these events
+#' @return data.frame(spond_event_id, id, version, n_versions, title,
+#'   created_by, created_at).
+#' @noRd
+ds_list_plans <- function(con, access, group_id, event_ids) {
+  assert_group_access(access, group_id)
+  ds_query(con, "
+    SELECT DISTINCT ON (spond_event_id) spond_event_id, id, version,
+           count(*) OVER (PARTITION BY spond_event_id)::integer AS n_versions,
+           plan->>'tittel' AS title, created_by, created_at
+      FROM training_plans
+     WHERE spond_group_id = $1 AND spond_event_id = ANY($2::text[]) AND status <> 'deleted'
+     ORDER BY spond_event_id, version DESC",
+    list(group_id, ds_text_array(event_ids)))
+}
+
+#' All versions of the plan for one event, newest first
+#' @noRd
+ds_plan_versions <- function(con, access, group_id, event_id) {
+  assert_group_access(access, group_id)
+  ds_query(con, "
+    SELECT id, version, status, source, plan->>'tittel' AS title, created_by, created_at
+      FROM training_plans
+     WHERE spond_group_id = $1 AND spond_event_id = $2 AND status <> 'deleted'
+     ORDER BY version DESC",
+    list(group_id, event_id))
+}
+
+#' One version of a plan, with the plan parsed and checked
+#' @return list(id, group_id, event_id, version, status, source, created_by,
+#'   created_at, plan).
+#' @noRd
+ds_get_plan <- function(con, access, plan_id) {
+  row <- ds_query(con, "
+    SELECT id, spond_group_id, spond_event_id, version, status, source, created_by, created_at, plan::text AS plan
+      FROM training_plans WHERE id = $1 AND status <> 'deleted'", list(as.integer(plan_id)))
+  if (nrow(row) == 0) stop("Fant ikke opplegget.", call. = FALSE)
+  assert_group_access(access, row$spond_group_id)
+  list(id = row$id, group_id = row$spond_group_id, event_id = row$spond_event_id, version = row$version,
+       status = row$status, source = row$source, created_by = row$created_by, created_at = row$created_at,
+       plan = plan_validate(row$plan))
+}
+
+#' Save a plan as a new version for an event
+#'
+#' The version number is the next free one, chosen in the same statement.
+#' If two trainers save at the same moment, the unique key stops one of
+#' them; that save is tried once more.
+#' @return list(id, version).
+#' @noRd
+ds_save_plan <- function(con, access, group_id, event_id, plan, actor, source = "manual") {
+  assert_group_access(access, group_id)
+  if (!nzchar(txt1(event_id))) stop("Mangler arrangement.", call. = FALSE)
+  js <- plan_json(plan)
+  insert <- function() {
+    ds_query(con, "
+      INSERT INTO training_plans (spond_group_id, spond_event_id, version, plan, source, created_by)
+      SELECT $1, $2, coalesce(max(version), 0) + 1, $3::jsonb, $4, $5
+        FROM training_plans WHERE spond_group_id = $1 AND spond_event_id = $2
+      RETURNING id, version",
+      list(group_id, event_id, js, source, actor))
+  }
+  res <- tryCatch(insert(), error = function(e) {
+    if (!grepl("training_plans_spond_group_id_spond_event_id_version_key|duplicate key", conditionMessage(e))) stop(e)
+    insert()
+  })
+  list(id = as.integer(res$id), version = as.integer(res$version))
+}
+
+#' Put one exercise from a plan into the bank («Lagre i banken»)
+#'
+#' A new exercise gets the plan's code, so evaluations are collected on the
+#' same exercise. If the bank already has that code, nothing is changed.
+#' @return list(id, created) where created is FALSE when it was there already.
+#' @noRd
+ds_save_plan_exercise <- function(con, access, group_id, exercise, actor, themes = character(), source = "manual") {
+  assert_group_access(access, group_id)
+  code <- txt1(exercise$kode)
+  old <- ds_query(con, "SELECT id FROM exercises WHERE spond_group_id = $1 AND code = $2", list(group_id, code))
+  if (nrow(old)) return(list(id = as.integer(old$id[1]), created = FALSE))
+  v <- exercise_validate(bank_exercise_from_plan(exercise, themes))
+  if (!grepl("^[a-z0-9]+(-[a-z0-9]+)*$", code) || nchar(code) > 60) code <- exercise_code(v$name)
+  res <- ds_query(con, "
+    INSERT INTO exercises (spond_group_id, code, name, category, themes, organisation, execution, learning_points,
+                           questions, easier, harder, nff_url, drawing, source, created_by, updated_by)
+    VALUES ($1, $2, $3, $4, $5::text[], NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''),
+            NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''), NULLIF($13, '')::jsonb, $15, $14, $14)
+    RETURNING id",
+    list(group_id, code, v$name, v$category, ds_text_array(v$themes), v$organisation, v$execution,
+         v$learning_points, v$questions, v$easier, v$harder, v$nff_url, v$drawing, actor, source))
+  list(id = as.integer(res$id), created = TRUE)
+}
+
 # Database setup (admin only) -----------------------------------------------------
 # These functions are used by dev/setup_db.R with the admin connection. The
 # running app never calls them, and the app user is not allowed to.
@@ -716,7 +813,7 @@ ds_delete_exercise <- function(con, access, exercise_id) {
 # included: only the admin runs migrations.
 ds_app_tables <- c("member_tags", "group_proposals", "group_proposal_labels", "group_proposal_members",
                    "proposal_history", "proposal_comments", "edit_locks",
-                   "season_themes", "team_settings", "exercises")
+                   "season_themes", "team_settings", "exercises", "training_plans")
 
 #' A random password of letters and digits (cryptographically secure)
 #'

@@ -3,7 +3,7 @@ test_that("migrations create the tables and are only applied once", {
   tables <- DBI::dbGetQuery(con, "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()")$table_name
   expect_setequal(tables, c("schema_migrations", "member_tags", "group_proposals", "group_proposal_labels",
                             "group_proposal_members", "proposal_history", "proposal_comments", "edit_locks",
-                            "season_themes", "team_settings", "exercises"))
+                            "season_themes", "team_settings", "exercises", "training_plans"))
   expect_length(ds_migrate(con, dir = test_migrations_dir()), 0)
 })
 
@@ -454,4 +454,59 @@ test_that("an exercise keeps its drawing as JSON, and can drop it again", {
   ds_save_exercise(con, acc, "G1", list(name = "Rondo", category = "annet", drawing = ""), "P1", id = id)
   expect_true(is.na(ds_get_exercise(con, acc, id)$drawing))
   expect_error(ds_save_exercise(con, acc, "G1", list(name = "Y", category = "annet", drawing = "{x"), "P1"), "Tegning")
+})
+
+# Training plans (migration 003) ---------------------------------------------------
+
+test_that("plans are saved as versions per event and read back", {
+  con <- local_test_db(); acc <- test_access()
+  ref <- jsonlite::fromJSON(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"), simplifyVector = FALSE)
+  v1 <- ds_save_plan(con, acc, "G1", "E1", ref, "P1")
+  ref$tittel <- "Ny tittel"
+  v2 <- ds_save_plan(con, acc, "G1", "E1", ref, "P2")
+  v3 <- ds_save_plan(con, acc, "G1", "E2", ref, "P1")
+  expect_equal(c(v1$version, v2$version, v3$version), c(1L, 2L, 1L))
+
+  latest <- ds_list_plans(con, acc, "G1", c("E1", "E2", "E9"))
+  expect_equal(latest$spond_event_id, c("E1", "E2"))
+  expect_equal(latest$version, c(2L, 1L))
+  expect_equal(latest$n_versions, c(2L, 1L))
+  expect_equal(latest$title[1], "Ny tittel")
+
+  vers <- ds_plan_versions(con, acc, "G1", "E1")
+  expect_equal(vers$version, c(2L, 1L))
+  expect_equal(vers$created_by, c("P2", "P1"))
+
+  p <- ds_get_plan(con, acc, v1$id)
+  expect_equal(p$plan$tittel, "Samhandling – spille på lag")
+  expect_equal(p$event_id, "E1")
+  expect_length(p$plan$ovelser[[1]]$tegning$skisser, 2)
+  expect_error(ds_save_plan(con, acc, "G1", "E1", list(tittel = "X", ovelser = list()), "P1"), "1 til 6")
+})
+
+test_that("plans in other groups cannot be read or saved", {
+  con <- local_test_db(); acc <- test_access()
+  expect_error(ds_list_plans(con, acc, "G2", "E1"), "ikke tilgang")
+  expect_error(ds_save_plan(con, acc, "G2", "E1", list(tittel = "X", ovelser = list(list(navn = "A"))), "P1"), "ikke tilgang")
+  DBI::dbExecute(con, "INSERT INTO training_plans (spond_group_id, spond_event_id, version, plan, created_by)
+                       VALUES ('G2', 'E1', 1, '{\"tittel\": \"X\", \"ovelser\": [{\"navn\": \"A\"}]}', 'P9')")
+  other <- DBI::dbGetQuery(con, "SELECT id FROM training_plans WHERE spond_group_id = 'G2'")$id
+  expect_error(ds_get_plan(con, acc, other), "ikke tilgang")
+})
+
+test_that("an exercise from a plan is put into the bank once, with its code", {
+  con <- local_test_db(); acc <- test_access()
+  ref <- jsonlite::fromJSON(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"), simplifyVector = FALSE)
+  e <- plan_validate(ref)$ovelser[[2]]
+  r1 <- ds_save_plan_exercise(con, acc, "G1", e, "P1", themes = "Samhandling")
+  r2 <- ds_save_plan_exercise(con, acc, "G1", e, "P1")
+  expect_true(r1$created)
+  expect_false(r2$created)
+  expect_equal(r2$id, r1$id)
+  ex <- ds_get_exercise(con, acc, r1$id)
+  expect_equal(ex$code, "hjem-bak-ballen")
+  expect_equal(ex$category, "annet")                  # "Overgang – angrep og forsvar" is not a bank category
+  expect_equal(ex$themes[[1]], "Samhandling")
+  expect_match(ex$learning_points, "Mistet ball")
+  expect_false(is.na(ex$drawing))
 })
