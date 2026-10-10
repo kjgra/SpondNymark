@@ -200,19 +200,26 @@ ai_answer_from_plan <- function(p) {
 
 #' The order for «Juster med KI»: the current plan, what to change, and the
 #' counts as they are now. No names.
-#' @param ctx As for `ai_order_text()`; `wish` is what to change (required).
+#' @param ctx As for `ai_order_text()`; `wish` is what to change, and
+#'   `comments` (optional) the trainers' comments as lines such as
+#'   "Øvelse 2: For mye kø." (without authors). A wish or a comment is needed.
 #' @noRd
 ai_revision_text <- function(base, ctx) {
   wish <- txt1(ctx$wish)
-  if (!nzchar(wish)) stop("Skriv hva som skal endres.", call. = FALSE)
-  facts <- ai_order_text(modifyList(ctx, list(wish = "", theme = "", theme_description = "")))
+  comments <- vapply(ctx$comments %||% character(), txt1, "")
+  comments <- comments[nzchar(comments)]
+  if (!nzchar(wish) && !length(comments)) stop("Skriv hva som skal endres, eller velg en kommentar.", call. = FALSE)
+  facts <- ai_order_text(modifyList(ctx, list(wish = "", theme = "", theme_description = "", comments = NULL)))
   facts <- sub("^# Bestilling", "# Fakta nå", sub("\n\nLag treningsøkta.", "", facts, fixed = TRUE))
   if (nchar(wish) > ai_wish_max) stop("Ønskene kan ha maks ", ai_wish_max, " tegn.", call. = FALSE)
-  if (text_is_sensitive(wish)) {
+  if (text_is_sensitive(c(wish, comments))) {
     stop("Ønskene skal ikke inneholde helseopplysninger eller andre sensitive opplysninger.", call. = FALSE)
   }
   paste0("# Gjeldende opplegg\n\n", jsonlite::toJSON(ai_answer_from_plan(base), auto_unbox = TRUE, null = "null"),
-         "\n\n", facts, "\n\n# Endringsønske\n\n", wish, "\n\nJuster opplegget.")
+         "\n\n", facts,
+         if (length(comments)) paste0("\n\n# Kommentarer fra trenerne\n\n", paste0("- ", comments, collapse = "\n")),
+         if (nzchar(wish)) paste0("\n\n# Endringsønske\n\n", wish),
+         "\n\nJuster opplegget.")
 }
 
 #' The fixed system prompt: instructions plus the worked example

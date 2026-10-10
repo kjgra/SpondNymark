@@ -270,3 +270,38 @@ test_that("Juster med KI sends the plan shown and saves a new version", {
   })
   expect_equal(DBI::dbGetQuery(con, "SELECT kind FROM ai_usage")$kind, "revision")
 })
+
+test_that("trainers comment on a plan, and KI can take the comments into account", {
+  con <- local_test_db()
+  ref <- jsonlite::fromJSON(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"), simplifyVector = FALSE)
+  ds_save_plan(con, plan_acc(), "G2016", "E-ulv", ref, "P-me")
+  seen <- new.env()
+  testServer(mod_plans_server, args = ki_args(con, seen = seen), {
+    expect_match(as.character(output$comment_form$html), "Øvelse 2: Hjem bak ballen")
+    session$setInputs(c_where = "", c_text = "Ola er skadet", c_add = 1)
+    expect_match(c_msg(), "sensitive")
+    session$setInputs(c_where = "2", c_text = "For mye kø.", c_add = 2)
+    session$setInputs(c_where = "", c_text = "Kortere oppvarming.", c_add = 3)
+    expect_null(c_msg())
+    html <- as.character(output$comments$html)
+    expect_match(html, "Øvelse 2 \\(Hjem bak ballen\\)")
+    expect_match(html, "Kortere oppvarming.")
+    expect_match(html, "Kjetil G.")
+
+    session$setInputs(ki_revise = 1)
+    o <- ki_open()
+    expect_equal(nrow(o$comments), 2)
+    # Only the second comment is ticked; no other wish.
+    session$setInputs(ki_minutes = 65, ki_wish = "", ki_model = "claude-haiku-5-5",
+                      ki_comments = as.character(o$comments$id[2]), ki_go = 1)
+    ki_wait(session, ki_task)
+    sent <- seen$body$messages[[1]]$content
+    expect_match(sent, "# Kommentarer fra trenerne\n\n- Hele økta: Kortere oppvarming.", fixed = TRUE)
+    expect_false(grepl("For mye kø|Kjetil", sent))
+    expect_false(grepl("# Endringsønske", sent, fixed = TRUE))
+    expect_match(as.character(output$comments$html), "tatt med i versjon 2")
+  })
+  used <- DBI::dbGetQuery(con, "SELECT body, used_in_plan_id FROM training_plan_comments ORDER BY id")
+  expect_true(is.na(used$used_in_plan_id[1]))
+  expect_false(is.na(used$used_in_plan_id[2]))
+})

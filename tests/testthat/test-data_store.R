@@ -4,7 +4,7 @@ test_that("migrations create the tables and are only applied once", {
   expect_setequal(tables, c("schema_migrations", "member_tags", "group_proposals", "group_proposal_labels",
                             "group_proposal_members", "proposal_history", "proposal_comments", "edit_locks",
                             "season_themes", "team_settings", "exercises", "training_plans",
-                            "app_roles", "app_role_log", "ai_usage", "ai_settings", "login_allowlist", "login_allowlist_log"))
+                            "app_roles", "app_role_log", "ai_usage", "ai_settings", "login_allowlist", "login_allowlist_log", "training_plan_comments"))
   expect_length(ds_migrate(con, dir = test_migrations_dir()), 0)
 })
 
@@ -538,4 +538,32 @@ test_that("rights are given and taken, logged, and checked", {
   expect_error(ds_set_role(con, sa, "P-me", "P-c", "ai", TRUE, ids), "ikke med i dette laget")
   expect_error(ds_set_role(con, sa, "P-me", "P-a", "kaffe", TRUE, ids), "Ukjent")
   expect_equal(DBI::dbGetQuery(con, "SELECT count(*)::integer AS n FROM app_role_log")$n, 3L)
+})
+
+# Comments on plans (migration 007) ------------------------------------------------
+
+test_that("plan comments are added, listed, marked as used and only deleted by the author", {
+  con <- local_test_db(); acc <- test_access()
+  ref <- jsonlite::fromJSON(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"), simplifyVector = FALSE)
+  v1 <- ds_save_plan(con, acc, "G1", "E1", ref, "P1")
+  c1 <- ds_add_plan_comment(con, acc, v1$id, "P1", " For mye kø. ", exercise_no = 2)
+  c2 <- ds_add_plan_comment(con, acc, v1$id, "P2", "Bra økt!")
+  expect_error(ds_add_plan_comment(con, acc, v1$id, "P1", "", NA), "Skriv en kommentar")
+  expect_error(ds_add_plan_comment(con, acc, v1$id, "P1", "Ola er skadet", NA), "sensitive")
+  expect_error(ds_add_plan_comment(con, acc, v1$id, "P1", strrep("a", 1001), NA), "maks 1000")
+  expect_error(ds_add_plan_comment(con, acc, v1$id, "P1", "Hei", 7), "Ukjent øvelse")
+  com <- ds_list_plan_comments(con, acc, "G1", "E1")
+  expect_equal(com$body, c("For mye kø.", "Bra økt!"))
+  expect_equal(com$exercise_code[1], "hjem-bak-ballen")
+  expect_true(is.na(com$exercise_no[2]))
+
+  v2 <- ds_save_plan(con, acc, "G1", "E1", ref, "P1")
+  expect_equal(ds_mark_comments_used(con, acc, "G1", c1, v2$id), 1)
+  com <- ds_list_plan_comments(con, acc, "G1", "E1")
+  expect_equal(com$used_in_version[1], 2L)
+  expect_error(ds_delete_plan_comment(con, acc, "G1", c1, "P1"), "ikke er brukt")   # used by KI
+  expect_error(ds_delete_plan_comment(con, acc, "G1", c2, "P1"), "egne")           # not the author
+  ds_delete_plan_comment(con, acc, "G1", c2, "P2")
+  expect_equal(nrow(ds_list_plan_comments(con, acc, "G1", "E1")), 1)
+  expect_error(ds_list_plan_comments(con, acc, "G2", "E1"), "ikke tilgang")
 })

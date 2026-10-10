@@ -454,3 +454,8 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-plan-busy { display: flex; gap: .5rem; align-items: center; margin: .5rem 0; color: var(--sn-grey); }
 .sn-plan-notes { margin: .4rem 0 0; padding-left: 1.2rem; }
 .sn-plan-empty .btn + .btn { margin-left: .4rem; }
+.sn-plan-comments { margin-top: .75rem; }
+.sn-plan-subtitle { font-size: .95rem; font-weight: 700; margin: 0 0 .25rem; }
+.sn-plan-comment-add { margin-top: .5rem; }
+.sn-comment-del { margin-left: .5rem; font-size: .78rem; }
+.sn-comment-meta .sn-tag { margin-left: .4rem; }

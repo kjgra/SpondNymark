@@ -51,6 +51,7 @@ Noen ganger får du et gjeldende opplegg og et endringsønske i stedet for en ny
 - En øvelse med `kilde` `bank` som ikke endres, kan sendes med bare `kode`, `kilde` og eventuelt `fokus` og `tilpasning`.
 - En bankøvelse du endrer, blir `justert`: sett `basert_pa` til bankkoden, gi en ny `kode`, og send hele øvelsen med tegning.
 - Øvelser med `kilde` `justert` eller `ny` må sendes komplett, med tegning, også når de ikke endres. Behold koden deres.
+- «Kommentarer fra trenerne» er også endringsønsker. En kommentar som starter med «Øvelse n» gjelder den øvelsen i det gjeldende opplegget.
 - Gjelder ønsket tegningene og antall spillere, tegn like mange spillere som det faktisk er i hver gruppe eller rute (se «Fakta nå»).
 
 # Feltene i svaret

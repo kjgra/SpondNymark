@@ -27,7 +27,7 @@
 #' @noRd
 mod_plans_event_ui <- function(id) {
   ns <- NS(id)
-  div(class = "sn-plan", uiOutput(ns("section")))
+  div(class = "sn-plan", uiOutput(ns("section")), uiOutput(ns("comments")), uiOutput(ns("comment_form")))
 }
 
 # "Kjetil G." for a profile id, or "en trener" if it is not in the group.
@@ -77,8 +77,14 @@ ki_modal <- function(ns, o) {
         div(class = "sn-admin-grid",
             if (!revise) textInput(ns("ki_theme"), "Tema", value = o$ctx$theme %||% "", width = "100%"),
             numericInput(ns("ki_minutes"), "Øktlengde (min)", value = o$ctx$minutes, min = 20, max = 240, width = "100%")),
+        if (revise && !is.null(o$comments)) {
+          checkboxGroupInput(ns("ki_comments"), "Ta med kommentarer fra trenerne (sendes uten navn)",
+                             choices = stats::setNames(as.character(o$comments$id), o$comments$label),
+                             selected = as.character(o$comments$id), width = "100%")
+        },
         if (revise) {
-          textAreaInput(ns("ki_wish"), "Hva skal endres?", rows = 4, width = "100%",
+          textAreaInput(ns("ki_wish"), if (is.null(o$comments)) "Hva skal endres?" else "Annet som skal endres (valgfritt)",
+                        rows = 4, width = "100%",
                         placeholder = paste("F.eks.: Legg til en øvelse og bruk mindre grupper.",
                                             "Eller: Tilpass tegningene til antall spillere som kommer."))
         } else {
@@ -94,6 +100,38 @@ ki_modal <- function(ns, o) {
                                   " av ", b$group_limit_nok, " kr til KI denne måneden.")))
   )
   htmltools::tagQuery(m)$find(".modal-dialog")$addClass("modal-fullscreen-sm-down sn-admin-modal")$allTags()
+}
+
+# Where a comment points: "Hele økta", or the exercise in the plan shown
+# (found by its code, so it follows the exercise between versions).
+plan_comment_where <- function(row, p) {
+  if (is.na(row$exercise_no)) return("Hele økta")
+  codes <- vapply(p$ovelser, `[[`, "", "kode")
+  k <- match(row$exercise_code, codes)
+  if (!is.na(k)) return(paste0("Øvelse ", k, " (", p$ovelser[[k]]$navn, ")"))
+  paste0("Øvelse ", row$exercise_no, " i versjon ", row$version)
+}
+
+# The comments on an event's plans, oldest first.
+plan_comments_ui <- function(ns, com, p, group, me) {
+  if (is.null(com) || nrow(com) == 0) return(NULL)
+  div(class = "sn-plan-comments",
+      h4(class = "sn-plan-subtitle", "Kommentarer"),
+      lapply(seq_len(nrow(com)), function(i) {
+        r <- com[i, , drop = FALSE]
+        used <- !is.na(r$used_in_plan_id)
+        div(class = "sn-comment",
+            div(class = "sn-comment-meta",
+                strong(plan_author_name(r$author, group)), " · ", short_time(r$created_at), " · ",
+                plan_comment_where(r, p),
+                if (used) span(class = "sn-tag sn-tag-match", paste("tatt med i versjon", r$used_in_version)),
+                if (!used && identical(r$author, me)) {
+                  tags$a(href = "#", class = "sn-comment-del", `aria-label` = "Slett kommentaren",
+                         onclick = sprintf("Shiny.setInputValue('%s', %d, {priority: 'event'}); return false;",
+                                           ns("c_delete"), as.integer(r$id)), "Slett")
+                }),
+            div(class = "sn-comment-text", r$body))
+      }))
 }
 
 # Busy message while KI writes the plan.
@@ -293,6 +331,82 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
     # hidden at first; draw it anyway.
     outputOptions(output, "section", suspendWhenHidden = FALSE)
 
+    # Comments (kap. 13) --------------------------------------------------------------
+    # Every trainer in the group may comment on a plan, on the whole session
+    # or one exercise. KI can use the comments in «Juster med KI».
+    comments <- reactive({
+      req(applies())
+      refresh()
+      ev <- event()
+      gid <- context()$group_id
+      acc <- isolate(user())$access
+      read(function(con) ds_list_plan_comments(con, acc, gid, ev$id))
+    })
+
+    output$comments <- renderUI({
+      if (!applies()) return(NULL)
+      cur <- current()
+      if (is.null(cur)) return(NULL)
+      plan_comments_ui(ns, comments(), cur$plan, context()$group, isolate(user())$profile$id)
+    })
+    outputOptions(output, "comments", suspendWhenHidden = FALSE)
+
+    # The form is drawn again only when another version is shown, so text
+    # being typed is not lost when the rest of the section changes.
+    comment_plan <- reactive({
+      cur <- current()
+      if (is.null(cur)) NULL else list(id = cur$id, version = cur$version,
+                                        names = vapply(cur$plan$ovelser, `[[`, "", "navn"))
+    })
+    output$comment_form <- renderUI({
+      if (!applies()) return(NULL)
+      cp <- comment_plan()
+      if (is.null(cp)) return(NULL)
+      where <- c(stats::setNames("", "Hele økta"),
+                 stats::setNames(as.character(seq_along(cp$names)), paste0("Øvelse ", seq_along(cp$names), ": ", cp$names)))
+      div(class = "sn-plan-comment-add",
+          div(class = "sn-admin-grid",
+              selectInput(ns("c_where"), paste("Kommentar til versjon", cp$version), choices = where, selectize = FALSE,
+                          width = "100%"),
+              textAreaInput(ns("c_text"), "Kommentar", rows = 2, width = "100%",
+                            placeholder = "F.eks.: For mye kø i øvelse 2. Bruk to ruter.")),
+          uiOutput(ns("c_msg")),
+          actionButton(ns("c_add"), "Legg til kommentar", class = "btn-sm btn-outline-primary"),
+          p(class = "sn-hint", "Ikke skriv navn eller helseopplysninger. Kommentarene kan sendes til KI uten navnet ditt."))
+    })
+    outputOptions(output, "comment_form", suspendWhenHidden = FALSE)
+
+    c_msg <- reactiveVal(NULL)
+    output$c_msg <- renderUI({
+      m <- c_msg()
+      if (is.null(m)) NULL else div(class = "alert alert-danger sn-alert", role = "alert", m)
+    })
+
+    observeEvent(input$c_add, {
+      cp <- comment_plan()
+      if (is.null(cp) || !applies()) return()
+      u <- user()
+      no <- if (nzchar(input$c_where %||% "")) input$c_where else NA
+      res <- tryCatch(db$run(function(con) ds_add_plan_comment(con, u$access, cp$id, u$profile$id, input$c_text %||% "", no)),
+                      error = function(e) e)
+      if (inherits(res, "error")) {
+        c_msg(conditionMessage(res))
+        return()
+      }
+      c_msg(NULL)
+      updateTextAreaInput(session, "c_text", value = "")
+      refresh(refresh() + 1)
+    })
+
+    observeEvent(input$c_delete, {
+      u <- user()
+      id <- suppressWarnings(as.integer(input$c_delete))
+      if (is.na(id) || !applies()) return()
+      res <- tryCatch(db$run(function(con) ds_delete_plan_comment(con, u$access, context()$group_id, id, u$profile$id)),
+                      error = function(e) e)
+      if (inherits(res, "error")) c_msg(conditionMessage(res)) else refresh(refresh() + 1)
+    })
+
     observeEvent(input$version, {
       v <- versions()
       id <- suppressWarnings(as.integer(input$version))
@@ -421,7 +535,12 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
     # been closed in the meantime, so a paid answer is never lost.
     ki_task <- ExtendedTask$new(function(prep, access, actor, event_id) {
       promises::then(ai_send_async(prep, ai_async), function(sent) {
-        finish <- function(con) ai_finish(con, access, actor, prep, sent, event_id)
+        finish <- function(con) {
+          r <- ai_finish(con, access, actor, prep, sent, event_id)
+          # The comments KI got are marked «tatt med i versjon n».
+          if (length(prep$comment_ids)) ds_mark_comments_used(con, access, prep$group_id, prep$comment_ids, r$id)
+          r
+        }
         # Expected failures (the answer could not be used, and so on) come
         # back as a result with a message; only unexpected errors reject.
         res <- tryCatch(
@@ -487,7 +606,16 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
       facts <- paste(c(if (counts$n_players > 0) paste(counts$n_players, "påmeldte"),
                        if (length(counts$group_sizes)) paste(length(counts$group_sizes), "grupper i godkjent gruppeforslag")),
                      collapse = ", ")
-      o <- list(ctx = ctx, model = pre$prep$model, est = est, budget = pre$prep$budget, facts = facts, base = base)
+      # For an adjustment: the comments KI has not used yet, all ticked.
+      com <- if (is.null(base)) NULL else comments()
+      if (!is.null(com)) com <- com[is.na(com$used_in_plan_id), , drop = FALSE]
+      ki_com <- if (!is.null(com) && nrow(com)) {
+        where <- vapply(seq_len(nrow(com)), function(i) plan_comment_where(com[i, , drop = FALSE], base$plan), "")
+        data.frame(id = com$id, text = paste0(where, ": ", com$body),
+                   label = paste0(where, ": ", com$body, " (", vapply(com$author, plan_author_name, "", group = context()$group), ")"))
+      }
+      o <- list(ctx = ctx, model = pre$prep$model, est = est, budget = pre$prep$budget, facts = facts, base = base,
+                comments = ki_com)
       ki_open(o)
       ki_msg(NULL)
       msg(NULL)
@@ -516,6 +644,11 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
       if (is.null(o$base)) ctx$theme <- txt1(input$ki_theme)
       ctx$minutes <- as.integer(minutes)
       ctx$wish <- input$ki_wish %||% ""
+      ids <- integer()
+      if (!is.null(o$comments)) {
+        ids <- intersect(o$comments$id, suppressWarnings(as.integer(input$ki_comments %||% character())))
+        ctx$comments <- o$comments$text[match(ids, o$comments$id)]
+      }
       ev <- event()
       u <- user()
       gid <- context()$group_id
@@ -527,6 +660,7 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
         ki_msg(ki_error_text(prep, "Forberedelse av KI"))
         return()
       }
+      prep$comment_ids <- ids
       ki_open(NULL)
       removeModal()
       ki_task$invoke(prep, u$access, u$profile$id, ev$id)

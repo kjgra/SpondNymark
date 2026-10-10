@@ -920,6 +920,70 @@ ds_ai_typical_output <- function(con, kind, model) {
   row$n[1]
 }
 
+# Comments on plans (migration 007) -----------------------------------------------
+
+#' All comments on the plans for one event, oldest first
+#' @return data.frame(id, plan_id, version, exercise_no, exercise_code, author,
+#'   body, created_at, used_in_plan_id, used_in_version).
+#' @noRd
+ds_list_plan_comments <- function(con, access, group_id, event_id) {
+  assert_group_access(access, group_id)
+  ds_query(con, "
+    SELECT c.id, c.plan_id, p.version, c.exercise_no, coalesce(c.exercise_code, '') AS exercise_code, c.author,
+           c.body, c.created_at, c.used_in_plan_id, u.version AS used_in_version
+      FROM training_plan_comments c
+      JOIN training_plans p ON p.id = c.plan_id
+      LEFT JOIN training_plans u ON u.id = c.used_in_plan_id
+     WHERE c.spond_group_id = $1 AND c.spond_event_id = $2 AND p.status <> 'deleted'
+     ORDER BY c.created_at, c.id",
+    list(group_id, event_id))
+}
+
+#' Comment on a plan version: the whole session (exercise_no NA) or one exercise
+#' @return The id of the comment.
+#' @noRd
+ds_add_plan_comment <- function(con, access, plan_id, actor, body, exercise_no = NA) {
+  pl <- ds_get_plan(con, access, plan_id)
+  problem <- comment_problem(body)
+  if (!is.null(problem)) stop(problem, call. = FALSE)
+  body <- trimws(body)
+  if (nchar(body) > 1000) stop("En kommentar kan ha maks 1000 tegn.", call. = FALSE)
+  code <- ""
+  no <- suppressWarnings(as.integer(exercise_no))
+  if (length(no) == 1 && !is.na(no)) {
+    if (no < 1 || no > length(pl$plan$ovelser)) stop("Ukjent øvelse.", call. = FALSE)
+    code <- pl$plan$ovelser[[no]]$kode
+  }
+  ds_query(con, "
+    INSERT INTO training_plan_comments (spond_group_id, spond_event_id, plan_id, exercise_no, exercise_code, author, body)
+    VALUES ($1, $2, $3, NULLIF($4, '')::integer, NULLIF($5, ''), $6, $7) RETURNING id",
+    list(pl$group_id, pl$event_id, as.integer(plan_id), if (length(no) == 1 && !is.na(no)) as.character(no) else "",
+         code, actor, body))$id
+}
+
+#' Delete one's own comment, as long as KI has not used it
+#' @noRd
+ds_delete_plan_comment <- function(con, access, group_id, comment_id, actor) {
+  assert_group_access(access, group_id)
+  n <- ds_exec(con, "
+    DELETE FROM training_plan_comments
+     WHERE id = $1 AND spond_group_id = $2 AND author = $3 AND used_in_plan_id IS NULL",
+    list(as.integer(comment_id), group_id, actor))
+  if (n == 0) stop("Kan bare slette egne kommentarer som ikke er brukt av KI.", call. = FALSE)
+  invisible(TRUE)
+}
+
+#' Note which version KI made with these comments
+#' @noRd
+ds_mark_comments_used <- function(con, access, group_id, comment_ids, plan_id) {
+  assert_group_access(access, group_id)
+  if (!length(comment_ids)) return(invisible(0))
+  ds_exec(con, "
+    UPDATE training_plan_comments SET used_in_plan_id = $3
+     WHERE spond_group_id = $1 AND id = ANY($2::integer[]) AND used_in_plan_id IS NULL",
+    list(group_id, paste0("{", paste(as.integer(comment_ids), collapse = ","), "}"), as.integer(plan_id)))
+}
+
 # Rights (app_roles, migration 004) ------------------------------------------------
 
 #' The extra rights of one profile (0 or 1 row)
@@ -1038,7 +1102,8 @@ ds_app_tables <- c("member_tags", "group_proposals", "group_proposal_labels", "g
                    "proposal_history", "proposal_comments", "edit_locks",
                    "season_themes", "team_settings", "exercises", "training_plans",
                    "app_roles", "app_role_log", "ai_usage", "ai_settings",
-                   "login_allowlist", "login_allowlist_log")
+                   "login_allowlist", "login_allowlist_log",
+                   "training_plan_comments")
 
 #' A random password of letters and digits (cryptographically secure)
 #'
