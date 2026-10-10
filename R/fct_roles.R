@@ -34,25 +34,72 @@ user_rights <- function(profile_id, role = NULL, superadmin = Sys.getenv("SPONDN
 
 no_rights <- function() list(superadmin = FALSE, admin = FALSE, ai = FALSE, app = FALSE)
 
+#' Read a user's rights from the database now (never cached)
+#'
+#' Used before every action that needs a right (KI, admin panel), so a right
+#' that has been taken away stops working at once, also in a session that
+#' was opened before.
+#' @return The rights (`user_rights()`), or NULL if the database could not be
+#'   read (the superadmin is decided without the database).
+#' @noRd
+rights_read <- function(profile_id, db, superadmin = Sys.getenv("SPONDNYMARK_SUPERADMIN")) {
+  if (is.null(profile_id) || length(profile_id) != 1 || is.na(profile_id)) return(no_rights())
+  if (is_superadmin(profile_id, superadmin)) return(user_rights(profile_id, NULL, superadmin))
+  role <- tryCatch(db$run(function(con) ds_get_role(con, profile_id)), error = function(e) {
+    message("Lesing av rettigheter feilet: ", conditionMessage(e))
+    NULL
+  })
+  if (is.null(role)) return(NULL)
+  user_rights(profile_id, role, superadmin)
+}
+
+#' The logged-in user's rights, read now; no rights if the database fails
+#' @noRd
+rights_now_fn <- function(user, db, superadmin = Sys.getenv("SPONDNYMARK_SUPERADMIN")) {
+  function() {
+    u <- isolate(user())
+    if (is.null(u)) return(no_rights())
+    rights_read(u$profile$id, db, superadmin) %||% user_rights(u$profile$id, NULL, superadmin)
+  }
+}
+
+# How often an open session reads its rights again (ms).
+rights_refresh_ms <- 5 * 60 * 1000
+
 #' A reactive with the logged-in user's rights
 #'
-#' Read from the database when the user logs in, and again when `refresh`
-#' changes (after the rights have been changed in the admin panel). If the
-#' database cannot be read, the user gets only what SPONDNYMARK_SUPERADMIN
-#' gives.
+#' Read from the database when the user logs in, again when `refresh`
+#' changes, and every `every_ms` (so buttons follow changes made by an
+#' admin). If the database cannot be read, the user gets only what
+#' SPONDNYMARK_SUPERADMIN gives.
 #' @noRd
-rights_reactive <- function(user, db, superadmin = Sys.getenv("SPONDNYMARK_SUPERADMIN"), refresh = reactive(0)) {
+rights_reactive <- function(user, db, superadmin = Sys.getenv("SPONDNYMARK_SUPERADMIN"), refresh = reactive(0),
+                            every_ms = rights_refresh_ms) {
   reactive({
     refresh()
+    if (!is.null(every_ms)) invalidateLater(every_ms)
     u <- user()
     if (is.null(u)) return(no_rights())
     pid <- u$profile$id
-    if (is_superadmin(pid, superadmin)) return(user_rights(pid, NULL, superadmin))
-    role <- tryCatch(db$run(function(con) ds_get_role(con, pid)), error = function(e) {
-      message("Lesing av rettigheter feilet: ", conditionMessage(e))
-      NULL
-    })
-    user_rights(pid, role, superadmin)
+    rights_read(pid, db, superadmin) %||% user_rights(pid, NULL, superadmin)
+  })
+}
+
+#' Log the user out when app access has been taken away
+#'
+#' Checks every `every_ms` while someone is logged in. Only a successful read
+#' of the database counts: if it fails, the user stays logged in (the next
+#' check decides).
+#' @param logout function(message) from mod_login (`session$userData$sn_logout`).
+#' @noRd
+rights_watch <- function(user, db, logout, superadmin = Sys.getenv("SPONDNYMARK_SUPERADMIN"),
+                         every_ms = rights_refresh_ms) {
+  observe({
+    invalidateLater(every_ms)
+    u <- user()
+    if (is.null(u)) return()
+    r <- rights_read(u$profile$id, db, superadmin)
+    if (!is.null(r) && !isTRUE(r$app)) logout("Du har ikke lenger tilgang til appen. Spør en administrator.")
   })
 }
 

@@ -219,11 +219,15 @@ mod_login_server <- function(id, spond = spond_api(), role_names = access_role_n
 
     # Other modules call this when Spond says the session has expired: back
     # to the login page, with an explanation.
-    session$userData$sn_session_expired <- function() {
+    # The same with another explanation, e.g. when app access has been
+    # taken away (rights_watch()).
+    logout_with <- function(message) {
       if (!identical(isolate(state())$status, "ok")) return(invisible())
       state(list(status = "logged_out"))
-      error_msg("Økten i Spond er utløpt. Logg inn på nytt.")
+      error_msg(message)
     }
+    session$userData$sn_logout <- logout_with
+    session$userData$sn_session_expired <- function() logout_with("Økten i Spond er utløpt. Logg inn på nytt.")
 
     reactive({
       s <- state()

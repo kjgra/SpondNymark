@@ -22,6 +22,8 @@
 #' @param past_days Size of the window for past events, and how much "Vis
 #'   eldre" adds.
 #' @param rights Reactive with the user's rights (for «Lag med KI»).
+#' @param rights_now NULL, or a function reading the rights again before an
+#'   action (`rights_now_fn()`); passed on to the plans.
 #' @noRd
 #' @importFrom shiny NS tagList
 mod_events_ui <- function(id) {
@@ -202,7 +204,7 @@ tab_switch <- function(ns, tab) {
 #' @noRd
 mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond = spond_api(),
                               now = Sys.time, past_days = 30, unsent_shown = 5, unsent_horizon_days = 183,
-                              rights = reactive(no_rights())) {
+                              rights = reactive(no_rights()), rights_now = NULL) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     tab <- reactiveVal("upcoming")
@@ -334,7 +336,8 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
                         events = known_events, open_event_input = ns("open"))
     }
     editing <- if (is.null(groups)) function() FALSE else groups$editing
-    if (!is.null(db)) mod_plans_server("plans", context, user, db, event = selected, now = now, rights = rights)
+    if (!is.null(db)) mod_plans_server("plans", context, user, db, event = selected, now = now, rights = rights,
+                                      rights_now = rights_now)
 
     # "Godkjenning" in the top bar: only with the database, once a team is
     # chosen, and not while the group editor is open.

@@ -23,6 +23,8 @@
 #' @param now Function giving the current time (tests pass a fixed time).
 #' @param make_pdf Function making the PDF (tests pass a fake).
 #' @param rights Reactive with the user's rights (`rights_reactive()`).
+#' @param rights_now NULL (use `rights()`), or a function reading the rights
+#'   from the database now (`rights_now_fn()`); used before KI calls.
 #' @param ai_http,ai_async,ai_key The Claude API (tests pass fakes).
 #' @noRd
 mod_plans_event_ui <- function(id) {
@@ -260,10 +262,13 @@ plan_editor_modal <- function(ns, s, choices, selected, minutes_hint = NULL) {
 
 #' @noRd
 mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_pdf = plan_pdf,
-                             rights = reactive(no_rights()), ai_http = ai_http_post, ai_async = ai_http_post_async,
+                             rights = reactive(no_rights()), rights_now = NULL, ai_http = ai_http_post, ai_async = ai_http_post_async,
                              ai_key = function() Sys.getenv("ANTHROPIC_API_KEY")) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
+    # Rights for an action: read again from the database when the app gives
+    # `rights_now`, so a right taken away stops working at once.
+    fresh_rights <- function() if (is.null(rights_now)) isolate(rights()) else rights_now()
     refresh <- reactiveVal(0)
     msg <- reactiveVal(NULL)       # list(type, text) under the plan
     ed_msg <- reactiveVal(NULL)    # message in the editor
@@ -642,7 +647,7 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
       # (for an adjustment with a stand-in for the wish).
       pre <- tryCatch(db$run(function(con) {
         c0 <- if (is.null(base)) ctx else modifyList(ctx, list(wish = "Endringsønske."))
-        prep <- ai_prepare(con, acc, rights(), gid, c0, now = now(), key = ai_key(), base_plan = base$plan)
+        prep <- ai_prepare(con, acc, fresh_rights(), gid, c0, now = now(), key = ai_key(), base_plan = base$plan)
         list(prep = prep, typical = ds_ai_typical_output(con, prep$kind, prep$model))
       }), error = function(e) e)
       if (inherits(pre, "error")) {
@@ -699,7 +704,7 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
       ev <- event()
       u <- user()
       gid <- context()$group_id
-      prep <- tryCatch(db$run(function(con) ai_prepare(con, u$access, rights(), gid, ctx, now = now(), key = ai_key(),
+      prep <- tryCatch(db$run(function(con) ai_prepare(con, u$access, fresh_rights(), gid, ctx, now = now(), key = ai_key(),
                                                         model = input$ki_model %||% o$model,
                                                         base_plan = o$base$plan)),
                        error = function(e) e)

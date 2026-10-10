@@ -392,8 +392,11 @@ ai_settings_ui <- function(ns, s, editable, group) {
 
 #' @noRd
 mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = Sys.getenv("SPONDNYMARK_SUPERADMIN"),
-                             today = Sys.Date) {
+                             today = Sys.Date, rights_now = NULL) {
   if (is.null(rights)) rights <- rights_reactive(user, db, superadmin)
+  # Every change reads the rights again from the database, so an admin whose
+  # right has been taken away cannot go on in an open session.
+  if (is.null(rights_now)) rights_now <- rights_now_fn(user, db, superadmin)
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     refresh <- reactiveVal(0)
@@ -459,7 +462,7 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
     # save with `f`. Database errors get a general message; the details go to
     # the log. Returns TRUE if saved.
     save <- function(tab, check, f, ok_text) {
-      if (!isTRUE(allowed()) || is.null(group_id())) {
+      if (!isTRUE(allowed()) || is.null(group_id()) || !isTRUE(rights_now()$admin)) {
         say(tab, "error", "Du har ikke tilgang til innstillingene.")
         return(FALSE)
       }
@@ -537,7 +540,7 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
       if (!pid %in% cand$profile_id || !role %in% c("app", "ai", "admin")) return()
       if (is_superadmin(pid, superadmin)) return()
       u <- user()
-      r <- rights()
+      r <- rights_now()
       name <- cand$name[cand$profile_id == pid][1]
       what <- switch(role, app = "app-tilgang", ai = "KI-tilgang", admin = "admin")
       save("trainers", function() {
@@ -575,7 +578,7 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
     })
 
     observeEvent(input$ai_save, {
-      r <- rights()
+      r <- rights_now()
       me <- user()$profile$id
       s <- list(model = input$ai_model, group_limit_nok = input$ai_group_limit, total_limit_usd = input$ai_total_limit,
                 max_new_exercises = input$ai_max_new, usd_nok = input$ai_usd_nok)

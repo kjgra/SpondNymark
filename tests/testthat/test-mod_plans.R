@@ -219,6 +219,23 @@ test_that("KI makes a plan in the background, with price before and cost after",
   expect_equal(DBI::dbGetQuery(con, "SELECT status FROM ai_usage")$status, "ok")
 })
 
+test_that("KI taken away while the dialog is open: the call is not made", {
+  con <- local_test_db()
+  allowed <- TRUE
+  seen <- new.env()
+  args <- ki_args(con, seen = seen)
+  args$rights_now <- function() list(superadmin = FALSE, admin = FALSE, ai = allowed, app = TRUE)
+  testServer(mod_plans_server, args = args, {
+    session$setInputs(ki = 1)
+    expect_false(is.null(ki_open()))
+    allowed <<- FALSE
+    session$setInputs(ki_theme = "", ki_minutes = 60, ki_wish = "", ki_model = "claude-haiku-5-5", ki_go = 1)
+    expect_match(ki_msg(), "ikke tilgang til KI")
+    expect_identical(ki_task$status(), "initial")
+    expect_null(seen$body)
+  })
+})
+
 test_that("a failed KI answer is logged and explained", {
   con <- local_test_db()
   testServer(mod_plans_server, args = ki_args(con, answer = fake_answer("{}", stop_reason = "max_tokens")), {

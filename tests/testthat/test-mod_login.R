@@ -82,6 +82,10 @@ testthat::test_that("an expired Spond session logs the trainer out with an expla
     session$userData$sn_session_expired()
     expect_null(session$returned())
     expect_match(error_msg(), "utløpt")
+    session$setInputs(email = "trener@klubb.no", password = "riktig", login = 2)
+    session$userData$sn_logout("Du har ikke lenger tilgang til appen.")
+    expect_null(session$returned())
+    expect_match(error_msg(), "ikke lenger tilgang")
   })
 })
 

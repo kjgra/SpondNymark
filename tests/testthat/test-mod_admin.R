@@ -239,6 +239,21 @@ test_that("an admin gets the gear and can give KI, but not admin", {
   })
 })
 
+test_that("an admin whose right is taken away cannot change anything in an open panel", {
+  con <- local_test_db()
+  boss <- list(superadmin = TRUE, admin = TRUE)
+  ds_set_role(con, boss, "P-boss", "P-me", "admin", TRUE, "P-me")
+  args <- admin_args(con, superadmin = "P-boss")
+  testServer(mod_admin_server, args = args, {
+    session$setInputs(open = 1)
+    ds_set_role(con, boss, "P-boss", "P-me", "admin", FALSE, "P-me")   # taken away while the panel is open
+    session$setInputs(theme_10 = "Samhandling", season_save = 1)
+    expect_equal(msg()$type, "error")
+    expect_match(msg()$text, "ikke tilgang")
+    expect_equal(nrow(ds_list_season_themes(con, user()$access, "G2016", 2026)), 0)
+  })
+})
+
 test_that("the panel has its own team picker", {
   con <- local_test_db()
   suppressMessages(testServer(mod_admin_server, args = admin_args(con), {
