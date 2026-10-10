@@ -201,7 +201,11 @@ test_that("KI makes a plan in the background, with price before and cost after",
     expect_match(ki_msg(), "sensitive")
     expect_identical(ki_task$status(), "initial")
 
-    session$setInputs(ki_wish = "Mer avslutning.", ki_go = 2)
+    session$setInputs(ki_wish = "Emma trenger mer avslutning.", ki_go = 2)        # a player's name
+    expect_match(ki_msg(), "Navn sendes ikke til KI")
+    expect_identical(ki_task$status(), "initial")
+
+    session$setInputs(ki_wish = "Mer avslutning.", ki_go = 3)
     expect_null(ki_open())
     ki_wait(session, ki_task)
     expect_identical(ki_task$status(), "success")
@@ -297,6 +301,9 @@ test_that("trainers comment on a plan, and KI can take the comments into account
     expect_match(as.character(output$comment_form$html), "Øvelse 2: Hjem bak ballen")
     session$setInputs(c_where = "", c_text = "Ola er skadet", c_add = 1)
     expect_match(c_msg(), "sensitive")
+    session$setInputs(c_where = "", c_text = "Noah Sand bør stå i mål", c_add = 11)    # a player's name
+    expect_match(c_msg(), "navn sendes ikke dit")
+    expect_equal(nrow(ds_list_plan_comments(con, plan_acc(), "G2016", "E-ulv")), 0)
     session$setInputs(c_where = "2", c_text = "For mye kø.", c_add = 2)
     session$setInputs(c_where = "", c_text = "Kortere oppvarming.", c_add = 3)
     expect_null(c_msg())

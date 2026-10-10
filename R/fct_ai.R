@@ -215,6 +215,8 @@ ai_revision_text <- function(base, ctx) {
   if (text_is_sensitive(c(wish, comments))) {
     stop("Ønskene skal ikke inneholde helseopplysninger eller andre sensitive opplysninger.", call. = FALSE)
   }
+  problem <- names_problem(c(wish, comments), ctx$names)
+  if (!is.null(problem)) stop(problem, call. = FALSE)
   paste0("# Gjeldende opplegg\n\n", jsonlite::toJSON(ai_answer_from_plan(base), auto_unbox = TRUE, null = "null"),
          "\n\n", facts,
          if (length(comments)) paste0("\n\n# Kommentarer fra trenerne\n\n", paste0("- ", comments, collapse = "\n")),
@@ -276,7 +278,8 @@ ai_catalogue <- function(bank, theme = "", max = 30) {
 #'
 #' @param ctx list(start (POSIXct), minutes, theme, theme_description, team
 #'   (from `ds_get_team_settings()`), n_players, group_sizes (integers),
-#'   wish (free text from the trainer), max_new).
+#'   wish (free text from the trainer), max_new, names (member names that
+#'   the wish must not contain; never sent, see `names_problem()`)).
 #' @noRd
 ai_order_text <- function(ctx) {
   wish <- txt1(ctx$wish)
@@ -284,6 +287,8 @@ ai_order_text <- function(ctx) {
   if (text_is_sensitive(wish)) {
     stop("Ønskene skal ikke inneholde helseopplysninger eller andre sensitive opplysninger.", call. = FALSE)
   }
+  problem <- names_problem(wish, ctx$names)
+  if (!is.null(problem)) stop(problem, call. = FALSE)
   team <- ctx$team %||% list()
   line <- function(label, x) if (nzchar(txt1(x))) paste0("- ", label, ": ", txt1(x))
   days <- c("søndag", "mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag")

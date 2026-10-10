@@ -366,3 +366,14 @@ test_that("usage is summed per day, trainer, model and kind", {
   expect_equal(empty$n, 0)
   expect_equal(nrow(empty$by_day), 30)
 })
+
+test_that("wishes and comments that name a member are stopped before KI", {
+  ctx <- list(minutes = 60, wish = "Emma skal stå i mål", names = c("Emma Haugen", "Emma"))
+  expect_error(ai_order_text(ctx), "Navn sendes ikke til KI")
+  ctx$wish <- "Mer avslutning."
+  txt <- ai_order_text(ctx)
+  expect_false(grepl("Emma", txt))                     # the names themselves are never in the text
+  base <- plan_validate(jsonlite::read_json(app_sys("extdata", "referanse-okt.json"), simplifyVector = FALSE))
+  ctx$comments <- c("Øvelse 2: Emma Haugen trenger flere ballberøringer")
+  expect_error(ai_revision_text(base, ctx), "«Emma Haugen»")
+})

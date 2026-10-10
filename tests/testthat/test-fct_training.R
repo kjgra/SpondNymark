@@ -99,3 +99,19 @@ test_that("bank candidates: new exercises are saved unless similar, adjusted one
   ref$ovelser[[2]]$kilde <- "ny"
   expect_equal(bank_candidates(ref, sim_bank())[[1]]$default, "save")
 })
+
+test_that("names of members are found in free text, whole words only", {
+  m <- data.frame(first_name = c("Emma", "Per", "Ola Martin", "Jo"), last_name = c("Haugen", "Berg", "Lie", "Ås"))
+  n <- member_names(m)
+  expect_true(all(c("Emma Haugen", "Per Berg", "Emma", "Ola Martin", "Ola", "Martin") %in% n))
+  expect_false("Per" %in% n)              # also a common word
+  expect_false("Jo" %in% n)               # too short
+  expect_equal(text_names_found("emma må stå i mål", n), "Emma")
+  expect_equal(text_names_found("2 per gruppe, Per Berg er keeper", n), "Per Berg")
+  expect_length(text_names_found("Emmaus og martinsdag", n), 0)
+  expect_length(text_names_found("Mer avslutning.", n), 0)
+  expect_length(text_names_found("Jo flere, jo bedre", n), 0)
+  expect_match(names_problem(c("Fint.", "Ola trenger mer ballkontakt"), n), "«Ola»")
+  expect_null(names_problem("Mer pasningsspill", n))
+  expect_length(member_names(NULL), 0)
+})

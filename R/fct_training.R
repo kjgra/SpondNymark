@@ -49,6 +49,52 @@ text_is_sensitive <- function(x) {
   nzchar(x) && any(vapply(tag_sensitive_patterns(), grepl, logical(1), x = x, ignore.case = TRUE, perl = TRUE))
 }
 
+# Names in free text --------------------------------------------------------------
+# Names are never sent to KI. Wishes and comments that go to KI are checked
+# against the names of the members in the team (which the app has in memory
+# from Spond). Full names are always caught; a first name alone only when it
+# has at least 3 letters and is not also a common word.
+
+name_common_words <- c("per", "dag", "liv", "sol", "ask", "stein", "kai", "mai", "vår", "var", "tor", "rom",
+                       "lin", "even", "hans", "frank", "storm", "fred", "rune", "ulv", "ørn", "vill", "siv")
+# The full name of someone with one of these first names is still caught.
+
+#' The names to look for, from the team's member list
+#' @param members data.frame with first_name and last_name.
+#' @return Character vector of names (full names and safe first names).
+#' @noRd
+member_names <- function(members) {
+  if (is.null(members) || !NROW(members)) return(character())
+  first <- trimws(as.character(members$first_name %||% character()))
+  last <- trimws(as.character(members$last_name %||% character()))
+  full <- trimws(paste(first, last))
+  parts <- unlist(strsplit(first, "[[:space:]-]+"))
+  firsts <- unique(c(first, parts))
+  firsts <- firsts[nchar(firsts) >= 3 & !tolower(firsts) %in% name_common_words]
+  out <- unique(c(full[grepl(" ", full)], firsts))
+  out[nzchar(out)]
+}
+
+#' The member names found in a text (case does not matter, whole words only)
+#' @noRd
+text_names_found <- function(text, names) {
+  text <- paste(text, collapse = "\n")
+  if (!nzchar(text) || !length(names)) return(character())
+  esc <- gsub("([][{}()+*^$|\\\\?.])", "\\\\\\1", names)
+  hit <- vapply(esc, function(n) grepl(paste0("(?<![\\p{L}\\p{N}])", n, "(?![\\p{L}\\p{N}])"), text,
+                                       ignore.case = TRUE, perl = TRUE), logical(1))
+  unique(names[hit])
+}
+
+#' Why a text may not be sent to KI because of names, or NULL
+#' @noRd
+names_problem <- function(text, names) {
+  found <- text_names_found(text, names)
+  if (!length(found)) return(NULL)
+  paste0("Teksten nevner ", paste0("«", utils::head(found, 3), "»", collapse = ", "),
+         ". Navn sendes ikke til KI: skriv f.eks. «en av keeperne» i stedet.")
+}
+
 # An optional whole number within [lo, hi]: "" if empty, otherwise the number
 # as a string. Stops with `label` in the message if it is not valid.
 int_or_empty <- function(x, label, lo, hi) {

@@ -439,6 +439,12 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
       if (is.null(cp) || !applies()) return()
       u <- user()
       no <- if (nzchar(input$c_where %||% "")) input$c_where else NA
+      # Comments can be sent to KI, so they must not name anyone in the team.
+      problem <- names_problem(input$c_text %||% "", member_names(context()$group$members))
+      if (!is.null(problem)) {
+        c_msg(sub("Navn sendes ikke til KI", "Kommentarer kan sendes til KI, og navn sendes ikke dit", problem, fixed = TRUE))
+        return()
+      }
       res <- tryCatch(db$run(function(con) ds_add_plan_comment(con, u$access, cp$id, u$profile$id, input$c_text %||% "", no)),
                       error = function(e) e)
       if (inherits(res, "error")) {
@@ -641,7 +647,10 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
       if (!is.null(base)) minutes <- plan_schedule(base$plan)$total
       counts <- ki_counts()
       ctx <- c(list(start = ev$start, minutes = minutes, theme = info$theme$theme %||% "",
-                    theme_description = info$theme$description %||% "", team = info$team, wish = ""), counts)
+                    theme_description = info$theme$description %||% "", team = info$team, wish = "",
+                    # Only for checking wishes and comments; never sent (see names_problem()).
+                    names = list(member_names(context()$group$members))), counts)
+      ctx$names <- unlist(ctx$names)
       if (!is.null(base)) ctx$theme <- base$plan$tema
       # Check rights, key and budget now, and count the tokens for the price
       # (for an adjustment with a stand-in for the wish).
