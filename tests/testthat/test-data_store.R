@@ -237,6 +237,14 @@ test_that("the app user can use the app tables but cannot change the schema", {
   expect_false(priv("schema_migrations", "SELECT"))
   expect_true(priv("group_proposals", "SELECT"))
   expect_false(priv("group_proposals", "TRUNCATE"))
+  # Supabase's public roles get nothing, also not on schema_migrations
+  # (only checked where the role exists, as in Supabase).
+  for (pr in DBI::dbGetQuery(con, "SELECT rolname FROM pg_roles WHERE rolname IN ('anon', 'authenticated')")$rolname) {
+    p2 <- function(table) DBI::dbGetQuery(con, "SELECT has_table_privilege($1, $2, 'SELECT') AS ok",
+                                          params = list(pr, paste0(schema, ".", table)))$ok
+    expect_false(p2("schema_migrations"), info = pr)
+    expect_false(p2("group_proposals"), info = pr)
+  }
 })
 
 test_that(".Renviron keeps comments and position when a value is replaced", {

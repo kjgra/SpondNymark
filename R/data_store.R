@@ -1114,7 +1114,7 @@ ds_random_password <- function(n = 32) {
 #' schema changes, no access to schema_migrations, other schemas or Supabase's
 #' own tables. Row Level Security stays on; a policy lets this user (and only
 #' this user) through. The public Supabase roles (anon, authenticated) get no
-#' rights. Safe to run again; run it after every new migration that adds tables.
+#' rights, neither on the app tables nor on schema_migrations. Safe to run again; run it after every new migration that adds tables.
 #'
 #' @param password Required when the user is created. When the user already
 #'   exists, a new password replaces the old one; NULL keeps the old one.
@@ -1147,6 +1147,10 @@ ds_setup_app_role <- function(con, role = "spondnymark_app", password = NULL) {
       ds_exec(con, paste0("CREATE POLICY ", policy, " ON ", q_t, " FOR ALL TO ", q_role, " USING (true) WITH CHECK (true)"))
       for (pr in public_roles) ds_exec(con, paste0("REVOKE ALL ON ", q_t, " FROM ", DBI::dbQuoteIdentifier(con, pr)))
     }
+    # The migrations table is for the admin only: no rights for the public
+    # Supabase roles either (RLS is turned on in migration 010).
+    q_m <- paste0(q_schema, ".", DBI::dbQuoteIdentifier(con, "schema_migrations"))
+    for (pr in public_roles) ds_exec(con, paste0("REVOKE ALL ON ", q_m, " FROM ", DBI::dbQuoteIdentifier(con, pr)))
   })
   invisible(!exists)
 }
