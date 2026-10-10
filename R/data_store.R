@@ -626,7 +626,8 @@ ds_exercise_select <- "
          coalesce(execution, '') AS execution, coalesce(learning_points, '') AS learning_points,
          coalesce(questions, '') AS questions, coalesce(easier, '') AS easier,
          coalesce(harder, '') AS harder, coalesce(nff_url, '') AS nff_url,
-         drawing::text AS drawing, source, created_by, created_at, updated_by, updated_at
+         drawing::text AS drawing, source, coalesce(based_on, '') AS based_on, status,
+         created_by, created_at, updated_by, updated_at
     FROM exercises"
 
 ds_exercise_rows <- function(rows) {
@@ -704,7 +705,12 @@ ds_save_exercise <- function(con, access, group_id, ex, actor, id = NULL) {
 
 ds_delete_exercise <- function(con, access, exercise_id) {
   group_id <- ds_exercise_group(con, access, exercise_id)
-  ds_exec(con, "DELETE FROM exercises WHERE id = $1 AND spond_group_id = $2", list(as.integer(exercise_id), group_id))
+  # Variants of the deleted exercise become exercises of their own.
+  ds_exec(con, "
+    WITH gone AS (DELETE FROM exercises WHERE id = $1 AND spond_group_id = $2 RETURNING code)
+    UPDATE exercises SET based_on = NULL
+     WHERE spond_group_id = $2 AND based_on IN (SELECT code FROM gone)",
+    list(as.integer(exercise_id), group_id))
   invisible(TRUE)
 }
 
@@ -762,17 +768,19 @@ ds_get_plan <- function(con, access, plan_id) {
 #' them; that save is tried once more.
 #' @return list(id, version).
 #' @noRd
-ds_save_plan <- function(con, access, group_id, event_id, plan, actor, source = "manual") {
+ds_save_plan <- function(con, access, group_id, event_id, plan, actor, source = "manual",
+                         model = "", cost_usd = NA) {
   assert_group_access(access, group_id)
   if (!nzchar(txt1(event_id))) stop("Mangler arrangement.", call. = FALSE)
   js <- plan_json(plan)
+  cost <- if (is.na(cost_usd)) "" else format(round(cost_usd, 5), scientific = FALSE)
   insert <- function() {
     ds_query(con, "
-      INSERT INTO training_plans (spond_group_id, spond_event_id, version, plan, source, created_by)
-      SELECT $1, $2, coalesce(max(version), 0) + 1, $3::jsonb, $4, $5
+      INSERT INTO training_plans (spond_group_id, spond_event_id, version, plan, source, created_by, model, cost_usd)
+      SELECT $1, $2, coalesce(max(version), 0) + 1, $3::jsonb, $4, $5, NULLIF($6, ''), NULLIF($7, '')::numeric
         FROM training_plans WHERE spond_group_id = $1 AND spond_event_id = $2
       RETURNING id, version",
-      list(group_id, event_id, js, source, actor))
+      list(group_id, event_id, js, source, actor, txt1(model), cost))
   }
   res <- tryCatch(insert(), error = function(e) {
     if (!grepl("training_plans_spond_group_id_spond_event_id_version_key|duplicate key", conditionMessage(e))) stop(e)
@@ -785,24 +793,130 @@ ds_save_plan <- function(con, access, group_id, event_id, plan, actor, source = 
 #'
 #' A new exercise gets the plan's code, so evaluations are collected on the
 #' same exercise. If the bank already has that code, nothing is changed.
+#' `basert_pa` in the exercise makes it a variant; a variant of a variant
+#' points to the base exercise instead, so families stay flat (kap. 15.4).
+#' @param status "active", or "candidate" for exercises from KI.
 #' @return list(id, created) where created is FALSE when it was there already.
 #' @noRd
-ds_save_plan_exercise <- function(con, access, group_id, exercise, actor, themes = character(), source = "manual") {
+ds_save_plan_exercise <- function(con, access, group_id, exercise, actor, themes = character(), source = "manual",
+                                  status = "active") {
   assert_group_access(access, group_id)
+  if (!status %in% c("active", "candidate")) stop("Ugyldig status.", call. = FALSE)
   code <- txt1(exercise$kode)
-  old <- ds_query(con, "SELECT id FROM exercises WHERE spond_group_id = $1 AND code = $2", list(group_id, code))
+  base <- txt1(exercise$basert_pa)
+  known <- ds_query(con, "SELECT id, code, coalesce(based_on, '') AS based_on FROM exercises
+                           WHERE spond_group_id = $1 AND code IN ($2, $3)", list(group_id, code, base))
+  old <- known[known$code == code, , drop = FALSE]
   if (nrow(old)) return(list(id = as.integer(old$id[1]), created = FALSE))
+  b <- known[known$code == base, , drop = FALSE]
+  based_on <- if (!nzchar(base) || nrow(b) == 0) "" else if (nzchar(b$based_on[1])) b$based_on[1] else base
   v <- exercise_validate(bank_exercise_from_plan(exercise, themes))
   if (!grepl("^[a-z0-9]+(-[a-z0-9]+)*$", code) || nchar(code) > 60) code <- exercise_code(v$name)
   res <- ds_query(con, "
     INSERT INTO exercises (spond_group_id, code, name, category, themes, organisation, execution, learning_points,
-                           questions, easier, harder, nff_url, drawing, source, created_by, updated_by)
+                           questions, easier, harder, nff_url, drawing, source, created_by, updated_by,
+                           based_on, status)
     VALUES ($1, $2, $3, $4, $5::text[], NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''),
-            NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''), NULLIF($13, '')::jsonb, $15, $14, $14)
+            NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''), NULLIF($13, '')::jsonb, $15, $14, $14,
+            NULLIF($16, ''), $17)
     RETURNING id",
     list(group_id, code, v$name, v$category, ds_text_array(v$themes), v$organisation, v$execution,
-         v$learning_points, v$questions, v$easier, v$harder, v$nff_url, v$drawing, actor, source))
+         v$learning_points, v$questions, v$easier, v$harder, v$nff_url, v$drawing, actor, source,
+         based_on, status))
   list(id = as.integer(res$id), created = TRUE)
+}
+
+# KI (migration 005) -----------------------------------------------------------------
+# ai_usage logs tokens and cost of every call, never prompt or answer text.
+
+#' The KI settings, with the defaults from `ai_settings_default()` where no
+#' row has been saved
+#' @noRd
+ds_get_ai_settings <- function(con) {
+  row <- ds_query(con, "
+    SELECT model, group_limit_nok::float8 AS group_limit_nok, total_limit_usd::float8 AS total_limit_usd,
+           max_new_exercises, usd_nok::float8 AS usd_nok, updated_by, updated_at
+      FROM ai_settings WHERE id")
+  out <- ai_settings_default()
+  if (nrow(row)) {
+    for (f in names(out)) out[[f]] <- row[[f]][1]
+    out$max_new_exercises <- as.integer(out$max_new_exercises)
+  }
+  out
+}
+
+#' Save the KI settings (superadmin only, kap. 12.1)
+#' @noRd
+ds_save_ai_settings <- function(con, rights, actor, s) {
+  if (!isTRUE(rights$superadmin)) stop("Bare superadmin kan endre KI-innstillingene.", call. = FALSE)
+  v <- ai_settings_validate(s)
+  ds_exec(con, "
+    INSERT INTO ai_settings (id, model, group_limit_nok, total_limit_usd, max_new_exercises, usd_nok, updated_by)
+    VALUES (true, $1, $2, $3, $4, $5, $6)
+    ON CONFLICT (id) DO UPDATE SET model = EXCLUDED.model, group_limit_nok = EXCLUDED.group_limit_nok,
+           total_limit_usd = EXCLUDED.total_limit_usd, max_new_exercises = EXCLUDED.max_new_exercises,
+           usd_nok = EXCLUDED.usd_nok, updated_by = EXCLUDED.updated_by, updated_at = now()",
+    list(v$model, v$group_limit_nok, v$total_limit_usd, v$max_new_exercises, v$usd_nok, actor))
+  invisible(TRUE)
+}
+
+#' Log one KI call
+#' @param u list(kind, model, input_tokens, output_tokens, cache_read_tokens,
+#'   cache_write_tokens, cost_usd, duration_ms, status, error_code), see
+#'   `ai_usage_row()`.
+#' @return The id of the row.
+#' @noRd
+ds_log_ai_usage <- function(con, access, group_id, actor, u, event_id = "") {
+  assert_group_access(access, group_id)
+  int <- function(x) as.character(as.integer(round(x %||% 0)))
+  res <- ds_query(con, "
+    INSERT INTO ai_usage (spond_profile_id, spond_group_id, spond_event_id, kind, model, input_tokens,
+                          output_tokens, cache_read_tokens, cache_write_tokens, cost_usd, duration_ms,
+                          status, error_code)
+    VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6::integer, $7::integer, $8::integer, $9::integer,
+            $10::numeric, NULLIF($11, '')::integer, $12, NULLIF($13, ''))
+    RETURNING id",
+    list(actor, group_id, txt1(event_id), u$kind, u$model, int(u$input_tokens), int(u$output_tokens),
+         int(u$cache_read_tokens), int(u$cache_write_tokens),
+         format(round(u$cost_usd %||% 0, 5), scientific = FALSE),
+         if (is.null(u$duration_ms) || is.na(u$duration_ms)) "" else int(u$duration_ms),
+         u$status, txt1(u$error_code)))
+  as.integer(res$id)
+}
+
+#' Link a logged call to the plan version it made
+#' @noRd
+ds_ai_usage_set_plan <- function(con, access, group_id, usage_id, plan_id) {
+  assert_group_access(access, group_id)
+  ds_exec(con, "UPDATE ai_usage SET plan_id = $3 WHERE id = $1 AND spond_group_id = $2",
+          list(as.integer(usage_id), group_id, as.integer(plan_id)))
+  invisible(TRUE)
+}
+
+#' What has been spent since `since` (start of the month), for the group and
+#' for the whole app. The total is a sum only; no other group's rows are read.
+#' @return list(group_usd, total_usd).
+#' @noRd
+ds_ai_spend <- function(con, access, group_id, since) {
+  assert_group_access(access, group_id)
+  row <- ds_query(con, "
+    SELECT coalesce(sum(cost_usd) FILTER (WHERE spond_group_id = $1), 0)::float8 AS group_usd,
+           coalesce(sum(cost_usd), 0)::float8 AS total_usd
+      FROM ai_usage WHERE created_at >= $2::timestamptz",
+    list(group_id, format(since, "%Y-%m-%d %H:%M:%S%z")))
+  list(group_usd = row$group_usd[1], total_usd = row$total_usd[1])
+}
+
+#' Typical answer length for a kind of call and model: the median of the last
+#' 20 successful calls, or NA if there are none yet (for the price estimate)
+#' @noRd
+ds_ai_typical_output <- function(con, kind, model) {
+  row <- ds_query(con, "
+    SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY output_tokens)::float8 AS n
+      FROM (SELECT output_tokens FROM ai_usage WHERE kind = $1 AND model = $2 AND status = 'ok' AND output_tokens > 0
+             ORDER BY created_at DESC LIMIT 20) t",
+    list(kind, model))
+  row$n[1]
 }
 
 # Rights (app_roles, migration 004) ------------------------------------------------
@@ -858,7 +972,7 @@ ds_set_role <- function(con, rights, actor, profile_id, role, granted, allowed_i
 ds_app_tables <- c("member_tags", "group_proposals", "group_proposal_labels", "group_proposal_members",
                    "proposal_history", "proposal_comments", "edit_locks",
                    "season_themes", "team_settings", "exercises", "training_plans",
-                   "app_roles", "app_role_log")
+                   "app_roles", "app_role_log", "ai_usage", "ai_settings")
 
 #' A random password of letters and digits (cryptographically secure)
 #'

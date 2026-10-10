@@ -49,6 +49,12 @@ SPONDNYMARK_ENV=
 # hemmelig, men hører ikke hjemme i git.
 SPONDNYMARK_SUPERADMIN=
 
+# API-nøkkel til Claude (Anthropic) for KI-opplegg. Hemmelig. Lages i
+# platform.claude.com under en egen workspace med forbruksgrense (test-appen
+# bruker workspacen for test). Settes lokalt og i appene på Posit Connect.
+# Står den tom, er KI-knappene av. Aldri i git, aldri i chat eller e-post.
+ANTHROPIC_API_KEY=
+
 # E-postadressen din i Spond, brukt av dev/spike_spond.R så du slipper å skrive den.
 # Passordet ditt i Spond skal aldri stå her.
 SPOND_EMAIL=

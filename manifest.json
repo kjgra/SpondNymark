@@ -1991,11 +1991,14 @@
     "DESCRIPTION": {
       "checksum": "1c2875808bc0756c8885ec3b4cfa56f0"
     },
+    "inst/ai/system.md": {
+      "checksum": "269886d4087036da4ea4ae3f63d47380"
+    },
     "inst/app/www/apple-touch-icon.png": {
       "checksum": "f1e487de51821d7bbc18c371c3b7639e"
     },
     "inst/app/www/custom.css": {
-      "checksum": "6d1ce7af938c674a1f284e7dc7b64ee7"
+      "checksum": "7541ee8726c33dba9ff27c852862548d"
     },
     "inst/app/www/favicon.ico": {
       "checksum": "a5b73ffecee6a01c0a08ff0b176901cf"
@@ -2038,6 +2041,12 @@
     },
     "inst/db/migrations/003_treningsopplegg_t2.sql": {
       "checksum": "e9fd23f3d3cd4e7e85f96f5186955b7b"
+    },
+    "inst/db/migrations/004_tilganger_t2b.sql": {
+      "checksum": "cf040850f1bad70f1d965d5ab4bd54e7"
+    },
+    "inst/db/migrations/005_ki_t3a.sql": {
+      "checksum": "21ac1173b1947068d1b263d0b4e5b219"
     },
     "inst/db/migrations/README.md": {
       "checksum": "23f0960e67c885e20237e26a50df997a"
@@ -2088,16 +2097,19 @@
       "checksum": "0f79d97837ff91c50f065824b39a6fbc"
     },
     "R/app_server.R": {
-      "checksum": "6ac14ff3de8707b27c39680de94b98ec"
+      "checksum": "09d06158d6f23043ea0891e7652a5292"
     },
     "R/app_ui.R": {
       "checksum": "814fd6514fa58956349a09ee570ed1c7"
     },
     "R/data_store.R": {
-      "checksum": "5825cd2115cb585037bbe70c2810df97"
+      "checksum": "62f48f7c0f6193c55a182b1eef629110"
     },
     "R/fct_access.R": {
       "checksum": "18aa1da4027e2f0fdadde530d7675b43"
+    },
+    "R/fct_ai.R": {
+      "checksum": "ffff6b6b9240b1397dbabd2c5868bf9f"
     },
     "R/fct_db.R": {
       "checksum": "000e0b0ce7000a314bcf49536a785400"
@@ -2118,7 +2130,10 @@
       "checksum": "0a394e241b6b33a57234f336253f17b3"
     },
     "R/fct_plan.R": {
-      "checksum": "b697264efc4efc27b7c173d193ce935c"
+      "checksum": "a67476cc131f0351c823c39c5c3f6ae7"
+    },
+    "R/fct_roles.R": {
+      "checksum": "4a1a8fccc5babae4362781022ee37f5f"
     },
     "R/fct_spond_data.R": {
       "checksum": "c1439f8552b7e90ecb42e10706eeac0d"
@@ -2130,7 +2145,7 @@
       "checksum": "74f93f9656bdf8b8ac72e12cc21b4a82"
     },
     "R/mod_admin.R": {
-      "checksum": "eec13838d0b7140e34679d0ce0a762b6"
+      "checksum": "68b6bb8f38e6ecca7025385f44c9204a"
     },
     "R/mod_events.R": {
       "checksum": "61e208b7a75999dbd9cb543edbdfe078"

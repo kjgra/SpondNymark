@@ -109,6 +109,10 @@ plan_validate <- function(p) {
       stop(w, "Kilden må være bank, justert eller ny.", call. = FALSE)
     }
     r$basert_pa <- plan_str(e$basert_pa, paste0(w, "basert_pa"), 60)
+    # For new exercises from KI: the most similar bank exercise and what is
+    # new, used by the similarity check when the plan is approved (kap. 15.4).
+    r$naermeste_kode <- plan_str(e$naermeste_kode, paste0(w, "naermeste_kode"), 60)
+    r$hvorfor_ny <- plan_str(e$hvorfor_ny, paste0(w, "hvorfor_ny"), 300)
     r$tegning <- if (is.null(e$tegning)) NULL else {
       tryCatch(drawing_validate(e$tegning), error = function(err) stop(w, conditionMessage(err), call. = FALSE))
     }
