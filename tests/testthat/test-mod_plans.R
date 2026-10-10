@@ -13,8 +13,8 @@ plan_acc <- function() fake_user(fake_spond_groups_two())$access
 add_bank <- function(con) {
   ds_save_exercise(con, plan_acc(), "G2016", list(name = "Rondo 4 mot 1", category = "pasning_mottak",
                                                   learning_points = "- Se opp\n- Åpne kroppen",
-                                                  drawing = drawing_example_json()), "P-x")
-  ds_save_exercise(con, plan_acc(), "G2016", list(name = "4 mot 4", category = "smaaspill"), "P-x")
+                                                  drawing = drawing_example_json()), "P-x", rights = test_admin())
+  ds_save_exercise(con, plan_acc(), "G2016", list(name = "4 mot 4", category = "smaaspill"), "P-x", rights = test_admin())
 }
 
 test_that("matches get no plan section", {
@@ -28,7 +28,7 @@ test_that("a plan is put together from the bank, saved, changed and kept as vers
   con <- local_test_db()
   add_bank(con)
   themes <- rep("", 12); themes[10] <- "Samhandling"
-  ds_save_season(con, plan_acc(), "G2016", 2026, themes, actor = "P-x")
+  ds_save_season(con, plan_acc(), "G2016", 2026, themes, actor = "P-x", rights = test_admin())
   testServer(mod_plans_server, args = plan_args(con), {
     html <- as.character(output$section$html)
     expect_match(html, "Ingen opplegg enn")
@@ -64,7 +64,7 @@ test_that("a plan is put together from the bank, saved, changed and kept as vers
     ex <- ds_list_exercises(con, plan_acc(), "G2016")
     ds_save_exercise(con, plan_acc(), "G2016", list(name = "Rondo 4 mot 1", category = "pasning_mottak",
                                                     learning_points = "Ny tekst"), "P-x",
-                     id = ex$id[ex$code == "rondo-4-mot-1"])
+                     id = ex$id[ex$code == "rondo-4-mot-1"], rights = test_admin())
     session$setInputs(edit = 1)
     expect_equal(vapply(editor()$kept, `[[`, "", "kode"), c("rondo-4-mot-1", "4-mot-4"))
     session$setInputs(ed_ovelser = c("4-mot-4", "rondo-4-mot-1"), ed_rotasjon = "nei", ed_save = 3)
@@ -115,7 +115,7 @@ test_that("the PDF gets group names from the approved group proposal", {
   con <- local_test_db()
   acc <- plan_acc()
   add_bank(con)
-  ds_save_exercise(con, acc, "G2016", list(name = "Haien", category = "oppvarming"), "P-x")
+  ds_save_exercise(con, acc, "G2016", list(name = "Haien", category = "oppvarming"), "P-x", rights = test_admin())
   id <- ds_save_proposal(con, acc, "P-me", "G2016", "Tirsdag", labels = c("Gruppe A", "Gruppe B"),
                          assignments = c(`M-1` = "Gruppe A", `M-3` = "Gruppe B"), event_id = "E-ulv")
   ds_transition(con, acc, id, "submit", "P-me")
@@ -182,8 +182,8 @@ test_that("KI makes a plan in the background, with price before and cost after",
   con <- local_test_db()
   add_bank(con)
   themes <- rep("", 12); themes[10] <- "Samhandling"
-  ds_save_season(con, plan_acc(), "G2016", 2026, themes, actor = "P-x")
-  ds_save_team_settings(con, plan_acc(), "G2016", list(age_group = "G10", session_minutes = "65"), "P-x")
+  ds_save_season(con, plan_acc(), "G2016", 2026, themes, actor = "P-x", rights = test_admin())
+  ds_save_team_settings(con, plan_acc(), "G2016", list(age_group = "G10", session_minutes = "65"), "P-x", rights = test_admin())
   seen <- new.env()
   testServer(mod_plans_server, args = ki_args(con, seen = seen), {
     html <- as.character(output$section$html)
@@ -332,7 +332,7 @@ test_that("trainers comment on a plan, and KI can take the comments into account
 
 test_that("approving a version puts the chosen exercises into the bank as candidates", {
   con <- local_test_db()
-  ds_save_exercise(con, plan_acc(), "G2016", list(name = "Haien og fiskene", category = "oppvarming"), "P-x")
+  ds_save_exercise(con, plan_acc(), "G2016", list(name = "Haien og fiskene", category = "oppvarming"), "P-x", rights = test_admin())
   ref <- jsonlite::fromJSON(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"), simplifyVector = FALSE)
   ref$ovelser[[2]]$kilde <- "justert"; ref$ovelser[[2]]$basert_pa <- "haien-og-fiskene"
   ds_save_plan(con, plan_acc(), "G2016", "E-ulv", ref, "P-me", source = "ai")

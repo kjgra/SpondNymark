@@ -181,6 +181,8 @@ ds_add_tag <- function(con, access, group_id, member_id, tag, actor) {
   assert_group_access(access, group_id)
   tag <- trimws(tag)
   if (!nzchar(tag) || nchar(tag) > 40) stop("En tag må ha mellom 1 og 40 tegn.", call. = FALSE)
+  problem <- tag_problem(tag)
+  if (!is.null(problem)) stop(problem, call. = FALSE)
   ds_exec(con, "INSERT INTO member_tags (spond_group_id, spond_member_id, tag, created_by)
                 VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
           list(group_id, member_id, tag, actor))
@@ -474,6 +476,8 @@ ds_add_comment <- function(con, access, proposal_id, actor, body) {
   ds_proposal_group(con, access, proposal_id)
   body <- trimws(body)
   if (!nzchar(body) || nchar(body) > 2000) stop("En kommentar må ha mellom 1 og 2000 tegn.", call. = FALSE)
+  problem <- comment_problem(body)
+  if (!is.null(problem)) stop(problem, call. = FALSE)
   ds_query(con, "INSERT INTO proposal_comments (proposal_id, author, body) VALUES ($1, $2, $3) RETURNING id",
            list(as.integer(proposal_id), actor, body))$id
 }
@@ -549,8 +553,9 @@ ds_list_season_themes <- function(con, access, group_id, year) {
 #' Months with an empty theme are removed. One statement (one round trip).
 #' @param themes,descriptions Character vectors for January to December.
 #' @noRd
-ds_save_season <- function(con, access, group_id, year, themes, descriptions = rep("", 12), actor) {
+ds_save_season <- function(con, access, group_id, year, themes, descriptions = rep("", 12), actor, rights) {
   assert_group_access(access, group_id)
+  assert_admin(rights)
   v <- season_validate(year, themes, descriptions)
   ds_exec(con, "
     WITH d AS (
@@ -600,8 +605,9 @@ ds_get_team_settings <- function(con, access, group_id) {
   as.list(row[1, , drop = FALSE])
 }
 
-ds_save_team_settings <- function(con, access, group_id, settings, actor) {
+ds_save_team_settings <- function(con, access, group_id, settings, actor, rights) {
   assert_group_access(access, group_id)
+  assert_admin(rights)
   s <- team_settings_validate(settings)
   ds_exec(con, "
     INSERT INTO team_settings (spond_group_id, age_group, session_minutes, pitch, equipment, principles, updated_by)
@@ -666,10 +672,13 @@ ds_get_exercise <- function(con, access, exercise_id) {
 #' changed afterwards (evaluations are collected per code).
 #' @param ex List of fields, see `exercise_validate()`.
 #' @param id NULL to create, or the id of the exercise to update.
+#' @param rights The user's rights, read just before (`rights_read()`): only
+#'   admins may change the bank directly.
 #' @return The exercise id.
 #' @noRd
-ds_save_exercise <- function(con, access, group_id, ex, actor, id = NULL) {
+ds_save_exercise <- function(con, access, group_id, ex, actor, id = NULL, rights) {
   assert_group_access(access, group_id)
+  assert_admin(rights)
   v <- exercise_validate(ex)
   fields <- list(v$name, v$category, ds_text_array(v$themes), v$min_players, v$max_players, v$duration_minutes,
                  v$area, v$organisation, v$execution, v$learning_points, v$questions, v$easier, v$harder,
@@ -703,8 +712,9 @@ ds_save_exercise <- function(con, access, group_id, ex, actor, id = NULL) {
   as.integer(id)
 }
 
-ds_delete_exercise <- function(con, access, exercise_id) {
+ds_delete_exercise <- function(con, access, exercise_id, rights) {
   group_id <- ds_exercise_group(con, access, exercise_id)
+  assert_admin(rights)
   # Variants of the deleted exercise become exercises of their own.
   ds_exec(con, "
     WITH gone AS (DELETE FROM exercises WHERE id = $1 AND spond_group_id = $2 RETURNING code)

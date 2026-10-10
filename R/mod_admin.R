@@ -461,8 +461,10 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
     # Check the input with `check` (its error message is shown as is), then
     # save with `f`. Database errors get a general message; the details go to
     # the log. Returns TRUE if saved.
+    # `f` is function(con, r), where r is the rights just read.
     save <- function(tab, check, f, ok_text) {
-      if (!isTRUE(allowed()) || is.null(group_id()) || !isTRUE(rights_now()$admin)) {
+      r <- if (isTRUE(allowed()) && !is.null(group_id())) rights_now()
+      if (!isTRUE(r$admin)) {
         say(tab, "error", "Du har ikke tilgang til innstillingene.")
         return(FALSE)
       }
@@ -475,7 +477,7 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
         return(FALSE)
       }
       ok <- tryCatch({
-        db$run(f)
+        db$run(function(con) f(con, r))
         TRUE
       }, error = function(e) {
         message("Lagring i adminpanelet feilet: ", conditionMessage(e))
@@ -546,7 +548,7 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
       save("trainers", function() {
         if (!isTRUE(r$admin)) stop("Du har ikke tilgang til å endre rettigheter.", call. = FALSE)
         if (role == "admin" && !isTRUE(r$superadmin)) stop("Bare superadmin kan gi og ta admin.", call. = FALSE)
-      }, function(con) ds_set_role(con, r, u$profile$id, pid, role, granted, cand$profile_id),
+      }, function(con, r2) ds_set_role(con, r2, u$profile$id, pid, role, granted, cand$profile_id),
       paste0(name, if (granted) " har fått " else " har ikke lenger ", what, "."))
     })
 
@@ -585,7 +587,7 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
       save("ai", function() {
         if (!isTRUE(r$superadmin)) stop("Bare superadmin kan endre grensene og modellen.", call. = FALSE)
         ai_settings_validate(s)
-      }, function(con) ds_save_ai_settings(con, r, me, s), "KI-innstillingene er lagret.")
+      }, function(con, r2) ds_save_ai_settings(con, r2, me, s), "KI-innstillingene er lagret.")
     })
 
     # Season plan -----------------------------------------------------------------
@@ -612,7 +614,7 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
       gid <- group_id()
       y <- year()
       save("season", function() season_validate(y, themes, descs),
-           function(con) ds_save_season(con, u$access, gid, y, themes, descs, u$profile$id),
+           function(con, r) ds_save_season(con, u$access, gid, y, themes, descs, u$profile$id, rights = r),
            paste0("Årshjulet for ", y, " er lagret."))
     })
 
@@ -637,7 +639,7 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
       u <- user()
       gid <- group_id()
       save("team", function() team_settings_validate(s),
-           function(con) ds_save_team_settings(con, u$access, gid, s, u$profile$id),
+           function(con, r) ds_save_team_settings(con, u$access, gid, s, u$profile$id, rights = r),
            "Lagets standard er lagret.")
     })
 
@@ -743,7 +745,7 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
       gid <- group_id()
       id <- if (identical(ed, "new")) NULL else as.integer(ed)
       ok <- save("exercises", function() exercise_validate(ex),
-                 function(con) ds_save_exercise(con, u$access, gid, ex, u$profile$id, id = id),
+                 function(con, r) ds_save_exercise(con, u$access, gid, ex, u$profile$id, id = id, rights = r),
                  paste0("«", trimws(ex$name %||% ""), "» er lagret."))
       if (ok) editing(NULL)
     })
@@ -762,7 +764,7 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
       name <- ex$name[as.character(ex$id) == id]
       confirm_delete(NULL)
       save("exercises", function() NULL,
-           function(con) ds_delete_exercise(con, u$access, as.integer(id)),
+           function(con, r) ds_delete_exercise(con, u$access, as.integer(id), rights = r),
            paste0("«", name, "» er slettet."))
     })
 

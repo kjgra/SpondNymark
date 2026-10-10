@@ -369,8 +369,8 @@ test_that("season plan: save a year, change it, and other years are left alone",
   con <- local_test_db(); acc <- test_access()
   themes <- rep("", 12); themes[c(9, 10)] <- c("Vending", "Samhandling")
   desc <- rep("", 12); desc[10] <- "Spille på lag"
-  ds_save_season(con, acc, "G1", 2026, themes, desc, "P1")
-  ds_save_season(con, acc, "G1", 2027, c("Ballmestring", rep("", 11)), actor = "P1")
+  ds_save_season(con, acc, "G1", 2026, themes, desc, "P1", rights = test_admin())
+  ds_save_season(con, acc, "G1", 2027, c("Ballmestring", rep("", 11)), actor = "P1", rights = test_admin())
   s <- ds_list_season_themes(con, acc, "G1", 2026)
   expect_equal(s$month, c(9L, 10L))
   expect_equal(s$description, c("", "Spille på lag"))
@@ -378,12 +378,12 @@ test_that("season plan: save a year, change it, and other years are left alone",
   expect_null(ds_season_theme(con, acc, "G1", as.Date("2026-11-01")))
 
   themes[9] <- ""; themes[11] <- "Avslutning"
-  ds_save_season(con, acc, "G1", 2026, themes, desc, "P2")
+  ds_save_season(con, acc, "G1", 2026, themes, desc, "P2", rights = test_admin())
   s <- ds_list_season_themes(con, acc, "G1", 2026)
   expect_equal(s$month, c(10L, 11L))
   expect_equal(s$updated_by, c("P1", "P2"))        # unchanged months keep who wrote them
   expect_equal(nrow(ds_list_season_themes(con, acc, "G1", 2027)), 1)
-  ds_save_season(con, acc, "G1", 2026, rep("", 12), actor = "P1")
+  ds_save_season(con, acc, "G1", 2026, rep("", 12), actor = "P1", rights = test_admin())
   expect_equal(nrow(ds_list_season_themes(con, acc, "G1", 2026)), 0)
 })
 
@@ -391,8 +391,8 @@ test_that("team settings: empty until saved, then updated in place", {
   con <- local_test_db(); acc <- test_access()
   s <- ds_get_team_settings(con, acc, "G1")
   expect_equal(s$session_minutes, "")
-  ds_save_team_settings(con, acc, "G1", list(age_group = "G10", session_minutes = "75", pitch = "7er"), "P1")
-  ds_save_team_settings(con, acc, "G1", list(age_group = "G10", session_minutes = "60", equipment = "Kjegler"), "P2")
+  ds_save_team_settings(con, acc, "G1", list(age_group = "G10", session_minutes = "75", pitch = "7er"), "P1", rights = test_admin())
+  ds_save_team_settings(con, acc, "G1", list(age_group = "G10", session_minutes = "60", equipment = "Kjegler"), "P2", rights = test_admin())
   s <- ds_get_team_settings(con, acc, "G1")
   expect_equal(s$session_minutes, "60")
   expect_equal(s$pitch, "")
@@ -405,8 +405,8 @@ test_that("exercises: create, list, update (code stays), delete", {
   con <- local_test_db(); acc <- test_access()
   id <- ds_save_exercise(con, acc, "G1", list(name = "Rondo 4 mot 1", category = "pasning_mottak",
                                               themes = c("Samhandling", "Pasning"), min_players = "5",
-                                              learning_points = "Åpne kroppen"), "P1")
-  id2 <- ds_save_exercise(con, acc, "G1", list(name = "Rondo 4 mot 1", category = "smaaspill"), "P1")
+                                              learning_points = "Åpne kroppen"), "P1", rights = test_admin())
+  id2 <- ds_save_exercise(con, acc, "G1", list(name = "Rondo 4 mot 1", category = "smaaspill"), "P1", rights = test_admin())
   ex <- ds_list_exercises(con, acc, "G1")
   expect_equal(ex$code, c("rondo-4-mot-1", "rondo-4-mot-1-2"))
   expect_equal(ex$themes[[1]], c("Samhandling", "Pasning"))
@@ -418,14 +418,14 @@ test_that("exercises: create, list, update (code stays), delete", {
   expect_equal(ex$source[1], "manual")
 
   ds_save_exercise(con, acc, "G1", list(name = "Rondo med to touch", category = "pasning_mottak",
-                                        themes = "Samhandling"), "P2", id = id)
+                                        themes = "Samhandling"), "P2", id = id, rights = test_admin())
   e <- ds_get_exercise(con, acc, id)
   expect_equal(e$name, "Rondo med to touch")
   expect_equal(e$code, "rondo-4-mot-1")
   expect_equal(e$learning_points, "")
   expect_equal(c(e$created_by, e$updated_by), c("P1", "P2"))
 
-  ds_delete_exercise(con, acc, id2)
+  ds_delete_exercise(con, acc, id2, rights = test_admin())
   expect_equal(nrow(ds_list_exercises(con, acc, "G1")), 1)
   expect_error(ds_get_exercise(con, acc, id2), "Fant ikke")
 })
@@ -433,36 +433,36 @@ test_that("exercises: create, list, update (code stays), delete", {
 test_that("training data in other groups cannot be read or changed", {
   con <- local_test_db(); acc <- test_access()
   expect_error(ds_list_season_themes(con, acc, "G2", 2026), "ikke tilgang")
-  expect_error(ds_save_season(con, acc, "G2", 2026, rep("", 12), actor = "P1"), "ikke tilgang")
+  expect_error(ds_save_season(con, acc, "G2", 2026, rep("", 12), actor = "P1", rights = test_admin()), "ikke tilgang")
   expect_error(ds_get_team_settings(con, acc, "G2"), "ikke tilgang")
-  expect_error(ds_save_team_settings(con, acc, "G2", list(), "P1"), "ikke tilgang")
+  expect_error(ds_save_team_settings(con, acc, "G2", list(), "P1", rights = test_admin()), "ikke tilgang")
   expect_error(ds_list_exercises(con, acc, "G2"), "ikke tilgang")
   DBI::dbExecute(con, "INSERT INTO exercises (spond_group_id, code, name, category, created_by, updated_by)
                        VALUES ('G2', 'fremmed', 'Fremmed', 'annet', 'P9', 'P9')")
   other <- DBI::dbGetQuery(con, "SELECT id FROM exercises WHERE spond_group_id = 'G2'")$id
   expect_error(ds_get_exercise(con, acc, other), "ikke tilgang")
-  expect_error(ds_save_exercise(con, acc, "G1", list(name = "X", category = "annet"), "P1", id = other), "ikke tilgang")
-  expect_error(ds_delete_exercise(con, acc, other), "ikke tilgang")
+  expect_error(ds_save_exercise(con, acc, "G1", list(name = "X", category = "annet"), "P1", id = other, rights = test_admin()), "ikke tilgang")
+  expect_error(ds_delete_exercise(con, acc, other, rights = test_admin()), "ikke tilgang")
   expect_equal(DBI::dbGetQuery(con, "SELECT name FROM exercises WHERE id = $1", list(other))$name, "Fremmed")
 })
 
 test_that("invalid training data is rejected before anything is written", {
   con <- local_test_db(); acc <- test_access()
-  expect_error(ds_save_exercise(con, acc, "G1", list(name = "X", category = "tull"), "P1"), "kategori")
-  expect_error(ds_save_season(con, acc, "G1", 2026, c("Skadeforebygging", rep("", 11)), actor = "P1"), "sensitive")
+  expect_error(ds_save_exercise(con, acc, "G1", list(name = "X", category = "tull"), "P1", rights = test_admin()), "kategori")
+  expect_error(ds_save_season(con, acc, "G1", 2026, c("Skadeforebygging", rep("", 11)), actor = "P1", rights = test_admin()), "sensitive")
   expect_equal(DBI::dbGetQuery(con, "SELECT ((SELECT count(*) FROM exercises) + (SELECT count(*) FROM season_themes))::integer AS n")$n, 0L)
 })
 
 test_that("an exercise keeps its drawing as JSON, and can drop it again", {
   con <- local_test_db(); acc <- test_access()
-  id <- ds_save_exercise(con, acc, "G1", list(name = "Rondo", category = "annet", drawing = drawing_example_json()), "P1")
+  id <- ds_save_exercise(con, acc, "G1", list(name = "Rondo", category = "annet", drawing = drawing_example_json()), "P1", rights = test_admin())
   e <- ds_get_exercise(con, acc, id)
   d <- drawing_validate(e$drawing)
   expect_equal(d$skisser[[1]]$tittel, "3 mot 1")
   expect_length(d$skisser[[1]]$objekter, 9)
-  ds_save_exercise(con, acc, "G1", list(name = "Rondo", category = "annet", drawing = ""), "P1", id = id)
+  ds_save_exercise(con, acc, "G1", list(name = "Rondo", category = "annet", drawing = ""), "P1", id = id, rights = test_admin())
   expect_true(is.na(ds_get_exercise(con, acc, id)$drawing))
-  expect_error(ds_save_exercise(con, acc, "G1", list(name = "Y", category = "annet", drawing = "{x"), "P1"), "Tegning")
+  expect_error(ds_save_exercise(con, acc, "G1", list(name = "Y", category = "annet", drawing = "{x"), "P1", rights = test_admin()), "Tegning")
 })
 
 # Training plans (migration 003) ---------------------------------------------------
@@ -591,4 +591,21 @@ test_that("one version per event is approved, and approval can be taken back", {
   expect_equal(ds_plan_versions(con, acc, "G1", "E1")$status, c("draft", "draft"))
   expect_error(DBI::dbExecute(con, paste("UPDATE training_plans SET status = 'approved' WHERE spond_event_id = 'E1'")),
                "duplicate|unique")
+})
+
+test_that("the data layer itself stops non-admins and sensitive words", {
+  con <- local_test_db(); acc <- test_access()
+  trainer <- list(superadmin = FALSE, admin = FALSE, ai = TRUE, app = TRUE)
+  expect_error(ds_save_season(con, acc, "G1", 2026, rep("", 12), actor = "P1", rights = trainer), "administratorer")
+  expect_error(ds_save_team_settings(con, acc, "G1", list(age_group = "G10"), "P1", rights = trainer), "administratorer")
+  expect_error(ds_save_exercise(con, acc, "G1", list(name = "Rondo", category = "annet"), "P1", rights = trainer),
+               "administratorer")
+  id <- ds_save_exercise(con, acc, "G1", list(name = "Rondo", category = "annet"), "P1", rights = test_admin())
+  expect_error(ds_delete_exercise(con, acc, id, rights = trainer), "administratorer")
+  expect_equal(nrow(ds_list_exercises(con, acc, "G1")), 1)
+
+  expect_error(ds_add_tag(con, acc, "G1", "M1", "Astma", "P1"), "sensitive")
+  pid <- ds_save_proposal(con, acc, "P1", "G1", "Forslag", "A")
+  expect_error(ds_add_comment(con, acc, pid, "P1", "Hun er syk i dag"), "sensitive")
+  expect_type(ds_add_comment(con, acc, pid, "P1", "Fint"), "integer")
 })

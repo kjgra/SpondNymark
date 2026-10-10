@@ -82,7 +82,7 @@ test_that("exercises: new, edit, delete with confirmation", {
   con <- local_test_db()
   acc <- fake_user(fake_spond_groups_two())$access
   themes <- rep("", 12); themes[10] <- "Samhandling"
-  ds_save_season(con, acc, "G2016", 2026, themes, actor = "P-x")
+  ds_save_season(con, acc, "G2016", 2026, themes, actor = "P-x", rights = test_admin())
   testServer(mod_admin_server, args = admin_args(con), {
     session$setInputs(open = 1)
     expect_match(as.character(output$ex_body$html), "Ingen øvelser")

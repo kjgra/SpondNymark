@@ -246,7 +246,7 @@ test_that("usage is logged and summed per month", {
 
 test_that("a variant points to the base exercise, and deleting the base frees it", {
   con <- local_test_db(); acc <- test_access()
-  base <- ds_save_exercise(con, acc, "G1", list(name = "Rondo", category = "pasning_mottak"), "P1")
+  base <- ds_save_exercise(con, acc, "G1", list(name = "Rondo", category = "pasning_mottak"), "P1", rights = test_admin())
   e <- list(kode = "rondo-to-touch", navn = "Rondo med to touch", kategori = "Pasning og mottak",
             basert_pa = "rondo")
   v1 <- ds_save_plan_exercise(con, acc, "G1", e, "P1", source = "ai", status = "candidate")
@@ -258,7 +258,7 @@ test_that("a variant points to the base exercise, and deleting the base frees it
   expect_equal(ds_get_exercise(con, acc, v2$id)$based_on, "rondo")       # flat families
   expect_equal(ds_get_exercise(con, acc, base)$status, "active")
   expect_error(ds_save_plan_exercise(con, acc, "G1", e, "P1", status = "archived"), "Ugyldig status")
-  ds_delete_exercise(con, acc, base)
+  ds_delete_exercise(con, acc, base, rights = test_admin())
   expect_equal(ds_get_exercise(con, acc, v1$id)$based_on, "")
 })
 
@@ -267,7 +267,7 @@ test_that("a KI plan is prepared, sent and saved with its cost", {
   ctx <- list(minutes = 65, theme = "Samhandling", n_players = 24, wish = "")
   expect_error(ai_prepare(con, acc, list(ai = FALSE), "G1", ctx, key = "k"), "ikke tilgang til KI")
   expect_error(ai_prepare(con, acc, list(ai = TRUE), "G1", ctx, key = ""), "ANTHROPIC_API_KEY")
-  ds_save_exercise(con, acc, "G1", list(name = "Rondo", category = "pasning_mottak", themes = "Samhandling"), "P1")
+  ds_save_exercise(con, acc, "G1", list(name = "Rondo", category = "pasning_mottak", themes = "Samhandling"), "P1", rights = test_admin())
 
   prep <- ai_prepare(con, acc, list(ai = TRUE), "G1", ctx, key = "k")
   expect_match(prep$body$system[[2]]$text, "- rondo | Rondo", fixed = TRUE)
