@@ -262,7 +262,14 @@ test_that("connection strings are split into separate arguments for RPostgres", 
   expect_equal(a$user, "spondnymark_app.abcd")
   expect_equal(a$password, "p@ss:w/rd")
   expect_equal(a$dbname, "postgres")
-  expect_equal(a$sslmode, "require")
+  # Supabase: require becomes verify-full with Supabase's root certificate
+  expect_equal(a$sslmode, "verify-full")
+  expect_true(file.exists(a$sslrootcert))
+  expect_match(paste(readLines(a$sslrootcert), collapse = ""), "BEGIN CERTIFICATE")
+  expect_equal(ds_connect_args(sub("require", "verify-ca", url))$sslmode, "verify-ca")   # explicit choice kept
+  expect_null(ds_connect_args("postgresql://u:p@localhost?sslmode=require")$sslrootcert)  # other hosts as before
+  expect_equal(ds_connect_args("postgresql://u:p@localhost?sslmode=require")$sslmode, "require")
+  expect_error(ds_connect_args(url, ca_file = tempfile()), "sertifikatet")
   # the admin URL produced by ds_fill_password round-trips to the original password
   tpl <- "postgresql://postgres.abcd:[YOUR-PASSWORD]@aws-0-eu-west-1.pooler.supabase.com:5432/postgres"
   pw <- "Æ#ø %å!*'()+,;=&$?[]"

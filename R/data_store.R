@@ -44,8 +44,14 @@ ds_connect <- function(url = Sys.getenv("SPONDNYMARK_DB_URL")) {
 #'
 #' User name and password are percent-decoded. Query parameters such as
 #' `sslmode=require` are passed on as libpq options.
+#'
+#' For Supabase, `sslmode=require` (or none) becomes `verify-full` with
+#' Supabase's root certificate (`inst/db/supabase-ca.crt`, «Supabase Root
+#' 2021 CA», valid to 2031): the connection is then not only encrypted, but
+#' also checked to be Supabase. An explicit `verify-ca`/`verify-full` or
+#' `sslrootcert` in the URL is kept.
 #' @noRd
-ds_connect_args <- function(url) {
+ds_connect_args <- function(url, ca_file = app_sys("db", "supabase-ca.crt")) {
   m <- regmatches(url, regexec(
     "^postgres(?:ql)?://([^:/@]+)(?::([^@]*))?@([^:/?]+)(?::([0-9]+))?(?:/([^?]*))?(?:\\?(.*))?$",
     url, perl = TRUE))[[1]]
@@ -64,6 +70,14 @@ ds_connect_args <- function(url) {
       key <- sub("=.*$", "", kv)
       if (nzchar(key)) args[[key]] <- utils::URLdecode(sub("^[^=]*=?", "", kv))
     }
+  }
+  supabase <- grepl("\\.supabase\\.(com|co)$", args$host)
+  if (supabase && (is.null(args$sslmode) || args$sslmode %in% c("require", "prefer", "allow"))) {
+    if (!nzchar(ca_file) || !file.exists(ca_file)) {
+      stop("Fant ikke Supabase-sertifikatet (inst/db/supabase-ca.crt).", call. = FALSE)
+    }
+    args$sslmode <- "verify-full"
+    if (is.null(args$sslrootcert)) args$sslrootcert <- normalizePath(ca_file)
   }
   args
 }
