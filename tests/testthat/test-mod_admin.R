@@ -14,7 +14,7 @@ test_that("only the superadmin from the environment is superadmin", {
   expect_s3_class(mod_admin_bar_ui("admin"), "shiny.tag")
 })
 
-test_that("the gear is shown only to the superadmin, and only when a team is chosen", {
+test_that("the gear is shown only to admins, right after login (before a team is chosen)", {
   # No database here: reading the rights fails (logged), so no gear.
   suppressMessages(testServer(mod_admin_server, args = admin_args(superadmin = "P-other"), {
     expect_null(output$bar$html)
@@ -25,11 +25,11 @@ test_that("the gear is shown only to the superadmin, and only when a team is cho
   ctx <- reactiveVal(NULL)
   # No database here: the panel's outputs log a read error, which is expected.
   suppressMessages(testServer(mod_admin_server, args = admin_args(ctx = ctx), {
-    expect_null(output$bar$html)
-    ctx(teams_context(fake_group()))
-    session$flushReact()
     expect_match(as.character(output$bar$html), "aria-label=\"Innstillinger\"")
     expect_match(as.character(output$bar$html), "proxy1-open")
+    # Opened without a team: the panel uses the first team the trainer has.
+    session$setInputs(open = 1)
+    expect_equal(group_id(), user()$access$id[1])
   }))
 })
 
@@ -239,45 +239,37 @@ test_that("an admin gets the gear and can give KI, but not admin", {
   })
 })
 
-test_that("admins add and remove e-mail addresses and numbers on the allowlist", {
+test_that("the panel has its own team picker", {
   con <- local_test_db()
-  withr::local_envvar(SPONDNYMARK_LOGIN_KEY = "testnokkel")
   suppressMessages(testServer(mod_admin_server, args = admin_args(con), {
     session$setInputs(open = 1)
-    expect_match(as.character(output$allow_body$html), "Listen er tom")
-    session$setInputs(allow_new = "ola", allow_add = 1)
-    expect_equal(msg()$type, "error")
-    expect_match(msg()$text, "8 siffer")
-    session$setInputs(allow_new = " Ola@Klubb.no ", allow_add = 2)
-    expect_equal(msg()$type, "ok")
-    expect_match(msg()$text, "o•••@klubb.no er lagt til")
-    session$setInputs(allow_new = "ola@klubb.no", allow_add = 3)
-    expect_match(msg()$text, "stod allerede")
-    session$setInputs(allow_new = "99887766", allow_add = 4)
-    html <- as.character(output$allow_body$html)
-    expect_match(html, "+47 •••• ••66", fixed = TRUE)
-    expect_match(html, "Ikke logget inn ennå")
-    expect_match(html, "lagt til av Kjetil G.")
-    expect_false(grepl("ola@klubb|99887766", html))
-
-    # After the first login the name from Spond is shown.
-    ds_allowlist_login(con, login_hash(login_identifier("ola@klubb.no")), "P-me")
-    session$setInputs(allow_new = "", allow_add = 5)            # refresh happens after any save attempt
-    rows <- ds_list_allowlist(con, list(admin = TRUE))
-    session$setInputs(allow_remove = rows$id_hash[rows$kind == "phone"])
-    expect_match(msg()$text, "Fjernet")
-    expect_equal(nrow(ds_list_allowlist(con, list(admin = TRUE))), 1)
-    expect_match(as.character(output$allow_body$html), "Kjetil G., sist innlogget")
-    session$setInputs(allow_remove = "ikke-en-hash")            # ignored
-    expect_equal(nrow(ds_list_allowlist(con, list(admin = TRUE))), 1)
+    expect_equal(group_id(), "G2016")
+    session$setInputs(admin_group = "G-senior")
+    expect_equal(group_id(), "G-senior")
+    session$setInputs(admin_group = "G-annen")                  # not one of the trainer's teams: ignored
+    expect_equal(group_id(), "G-senior")
   }))
 })
 
-test_that("the allowlist needs the key", {
+test_that("admins give app access; admins always have it", {
   con <- local_test_db()
-  withr::local_envvar(SPONDNYMARK_LOGIN_KEY = "")
-  suppressMessages(testServer(mod_admin_server, args = admin_args(con), {
-    session$setInputs(open = 1, allow_new = "ola@klubb.no", allow_add = 1)
-    expect_match(msg()$text, "SPONDNYMARK_LOGIN_KEY")
+  ds_set_role(con, list(superadmin = TRUE, admin = TRUE), "P-boss", "P-me", "admin", TRUE, "P-me")
+  g <- fake_group()
+  g$members <- rbind(g$members, transform(g$members[g$members$id == "M-me", ], id = "M-t2", first_name = "Trine",
+                                          last_name = "Trener", profile_id = "P-t2"))
+  args <- admin_args(con, superadmin = "P-boss")
+  args$context <- reactiveVal(teams_context(g))
+  suppressMessages(testServer(mod_admin_server, args = args, {
+    session$setInputs(open = 1)
+    html <- as.character(output$roles_body$html)
+    expect_match(html, "aria-label=\"App-tilgang for Kjetil G.\" checked disabled")   # admin
+    expect_match(html, "aria-label=\"App-tilgang for Trine T.\" onchange")
+    session$setInputs(role = list(p = "P-t2", f = "app", v = TRUE))
+    expect_match(msg()$text, "Trine T. har fått app-tilgang")
   }))
+  expect_true(ds_get_role(con, "P-t2")$can_use_app)
+  expect_equal(login_check(list(run = function(f) f(con)), "P-t2", superadmin = "P-boss"), "ok")
+  expect_equal(login_check(list(run = function(f) f(con)), "P-me", superadmin = "P-boss"), "ok")       # admin
+  expect_equal(login_check(list(run = function(f) f(con)), "P-x", superadmin = "P-boss"), "denied")
+  expect_equal(DBI::dbGetQuery(con, "SELECT role FROM app_role_log WHERE spond_profile_id = 'P-t2'")$role, "app")
 })

@@ -102,7 +102,7 @@ testthat::test_that("a mobile number can be used, and odd input is caught before
   expect_null(seen)
 })
 
-testthat::test_that("someone not on the allowlist gets a clear message and no data", {
+testthat::test_that("someone without app access gets a clear message and no data", {
   asked <- NULL
   allow <- function(ident, profile_id) { asked <<- list(ident, profile_id); "denied" }
   testServer(mod_login_server, args = list(spond = fake_spond_api(), role_names = c("Teamleder"), allow = allow), {
@@ -112,8 +112,8 @@ testthat::test_that("someone not on the allowlist gets a clear message and no da
     expect_null(state()$spond)
     html <- paste(output$ui$html)
     expect_match(html, "Ingen tilgang til appen")
-    expect_match(html, "trener@klubb.no")
-    expect_match(html, "administrator")
+    expect_match(html, "ikke fått tilgang")
+    expect_match(html, "app-tilgang")
     session$setInputs(logout = 1)
     expect_equal(state(), list(status = "logged_out"))
   })
@@ -121,7 +121,7 @@ testthat::test_that("someone not on the allowlist gets a clear message and no da
   expect_equal(asked[[2]], "P-me")
 })
 
-testthat::test_that("the allowlist is not asked when Spond says no, and errors are explained", {
+testthat::test_that("app access is not checked when Spond says no, and errors are explained", {
   asked <- FALSE
   allow <- function(ident, profile_id) { asked <<- TRUE; "ok" }
   testServer(mod_login_server, args = list(spond = fake_spond_api(), role_names = c("Teamleder"), allow = allow), {

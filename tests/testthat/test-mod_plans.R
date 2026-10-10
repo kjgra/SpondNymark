@@ -305,3 +305,47 @@ test_that("trainers comment on a plan, and KI can take the comments into account
   expect_true(is.na(used$used_in_plan_id[1]))
   expect_false(is.na(used$used_in_plan_id[2]))
 })
+
+test_that("approving a version puts the chosen exercises into the bank as candidates", {
+  con <- local_test_db()
+  ds_save_exercise(con, plan_acc(), "G2016", list(name = "Haien og fiskene", category = "oppvarming"), "P-x")
+  ref <- jsonlite::fromJSON(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"), simplifyVector = FALSE)
+  ref$ovelser[[2]]$kilde <- "justert"; ref$ovelser[[2]]$basert_pa <- "haien-og-fiskene"
+  ds_save_plan(con, plan_acc(), "G2016", "E-ulv", ref, "P-me", source = "ai")
+  testServer(mod_plans_server, args = plan_args(con), {
+    expect_match(as.character(output$section$html), "Godkjenn versjon 1")
+    session$setInputs(approve = 1)
+    a <- approving()
+    expect_length(a$cands, 3)
+    expect_equal(vapply(a$cands, `[[`, "", "default"), c("save", "skip", "save"))
+    session$setInputs(ap_1 = "save", ap_2 = "variant", ap_3 = "skip", ap_go = 1)
+    expect_null(approving())
+    expect_match(msg()$text, "Versjon 1 er godkjent. 2 øvelser er lagt i banken som kandidat.")
+    html <- as.character(output$section$html)
+    expect_match(html, "Godkjent av Kjetil G.")
+    expect_match(html, "Angre godkjenning")
+    expect_false(grepl("Godkjenn versjon", html))
+    session$setInputs(unapprove = 1)
+    expect_match(msg()$text, "angret")
+    expect_match(as.character(output$section$html), "Godkjenn versjon 1")
+  })
+  bank <- ds_list_exercises(con, plan_acc(), "G2016")
+  new <- bank[bank$source == "ai", , drop = FALSE]
+  expect_equal(sort(new$code), c("3-mot-1-alltid-to-alternativer", "hjem-bak-ballen"))
+  expect_true(all(new$status == "candidate"))
+  expect_equal(new$based_on[new$code == "hjem-bak-ballen"], "haien-og-fiskene")
+  expect_equal(new$themes[[1]], "Samhandling – spille på lag")
+})
+
+test_that("a plan made only from the bank is approved at once", {
+  con <- local_test_db()
+  add_bank(con)
+  bank <- ds_list_exercises(con, plan_acc(), "G2016")
+  p <- plan_from_exercises(bank, plan_settings_default("Pasning"))
+  ds_save_plan(con, plan_acc(), "G2016", "E-ulv", p, "P-me")
+  testServer(mod_plans_server, args = plan_args(con), {
+    session$setInputs(approve = 1)
+    expect_null(approving())
+    expect_equal(msg()$text, "Versjon 1 er godkjent.")
+  })
+})

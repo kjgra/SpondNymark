@@ -1998,7 +1998,7 @@
       "checksum": "f1e487de51821d7bbc18c371c3b7639e"
     },
     "inst/app/www/custom.css": {
-      "checksum": "75d66fda86361fd4ae080be7e3285b60"
+      "checksum": "5bc5d12eb624849fdc2bf264905ea8bc"
     },
     "inst/app/www/favicon.ico": {
       "checksum": "a5b73ffecee6a01c0a08ff0b176901cf"
@@ -2054,6 +2054,12 @@
     "inst/db/migrations/007_kommentarer_t3c.sql": {
       "checksum": "a5183279b893f78241faf8025e9429f5"
     },
+    "inst/db/migrations/008_godkjenning_t3c.sql": {
+      "checksum": "53b4a069b53ddde7555ed68a7e8faaf7"
+    },
+    "inst/db/migrations/009_apptilgang.sql": {
+      "checksum": "7035b6f11e0039d8aa8b5db5efa8f246"
+    },
     "inst/db/migrations/README.md": {
       "checksum": "23f0960e67c885e20237e26a50df997a"
     },
@@ -2103,13 +2109,13 @@
       "checksum": "0f79d97837ff91c50f065824b39a6fbc"
     },
     "R/app_server.R": {
-      "checksum": "9405e2b33fd15c6e7856fe6defcafa22"
+      "checksum": "89aebd75b4267ec6ee55469c2061526a"
     },
     "R/app_ui.R": {
       "checksum": "814fd6514fa58956349a09ee570ed1c7"
     },
     "R/data_store.R": {
-      "checksum": "4022c83a2783b8838c61234a28f87326"
+      "checksum": "5f97adda0bbe383927e6711cf7a182a8"
     },
     "R/fct_access.R": {
       "checksum": "18aa1da4027e2f0fdadde530d7675b43"
@@ -2118,7 +2124,7 @@
       "checksum": "b8051c1823456c032859fde4f460f82b"
     },
     "R/fct_allowlist.R": {
-      "checksum": "d8b029289295a1e2ffc210327bb19bd4"
+      "checksum": "a856ddb4c05069d158da7a8d691c9047"
     },
     "R/fct_db.R": {
       "checksum": "000e0b0ce7000a314bcf49536a785400"
@@ -2142,7 +2148,7 @@
       "checksum": "a67476cc131f0351c823c39c5c3f6ae7"
     },
     "R/fct_roles.R": {
-      "checksum": "4a1a8fccc5babae4362781022ee37f5f"
+      "checksum": "8e13dcb50fd5019056f12b5fd5a90c91"
     },
     "R/fct_spond_data.R": {
       "checksum": "c1439f8552b7e90ecb42e10706eeac0d"
@@ -2151,10 +2157,10 @@
       "checksum": "10d897b7d87f34028c5db2ed1465db63"
     },
     "R/fct_training.R": {
-      "checksum": "74f93f9656bdf8b8ac72e12cc21b4a82"
+      "checksum": "6ab6103645dfbc7e186f9fc192cef04c"
     },
     "R/mod_admin.R": {
-      "checksum": "ef90987b4b4b8b1257b89f7a20f92791"
+      "checksum": "b5f199a43299b3fb38bddfead324dc6a"
     },
     "R/mod_events.R": {
       "checksum": "a1984fb7ab888ff42a686f4d52acbc2a"
@@ -2163,13 +2169,13 @@
       "checksum": "d3a1060a4de7541b16d3b3fb8a642fa1"
     },
     "R/mod_login.R": {
-      "checksum": "399e4dab55793fc518c9fecee604a948"
+      "checksum": "5745869e1935e09db4ce90c0c0cd4bd1"
     },
     "R/mod_participants.R": {
       "checksum": "12abc7b138c9d91b16944f795618838b"
     },
     "R/mod_plans.R": {
-      "checksum": "ba13522aa05c83b2af9cf39edcaa9e05"
+      "checksum": "ca21bdeda5db17d8ebc61211264e62f1"
     },
     "R/mod_quarto_test.R": {
       "checksum": "ca5771a7ad99efa7e7684aa7c5388332"

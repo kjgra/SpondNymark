@@ -443,12 +443,6 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-roles .form-check-input:checked { background-color: var(--sn-black); border-color: var(--sn-black); }
 .sn-roles-name { font-weight: 600; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 
-/* Admin: allowlist for login */
-.sn-allow-add { display: flex; gap: .5rem; align-items: flex-end; margin-bottom: .75rem; }
-.sn-allow-add .form-group { flex: 1; margin-bottom: 0; }
-.sn-allow-hint { font-weight: 600; }
-.sn-allow td { vertical-align: middle; }
-.sn-allow-c { text-align: right; width: 1%; white-space: nowrap; }
 
 /* Plans: KI */
 .sn-plan-busy { display: flex; gap: .5rem; align-items: center; margin: .5rem 0; color: var(--sn-grey); }
@@ -459,3 +453,8 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-plan-comment-add { margin-top: .5rem; }
 .sn-comment-del { margin-left: .5rem; font-size: .78rem; }
 .sn-comment-meta .sn-tag { margin-left: .4rem; }
+.sn-plan-title .sn-tag { margin-left: .5rem; vertical-align: middle; font-family: inherit; }
+.sn-approve-ex { padding: .5rem 0; border-bottom: 1px dashed var(--bs-border-color); }
+.sn-approve-ex .shiny-input-container { margin-bottom: 0; }
+.sn-admin-group-pick { margin-top: .25rem; }
+.sn-admin-group-pick .form-group, .sn-admin-group-pick .shiny-input-container { margin-bottom: 0; }

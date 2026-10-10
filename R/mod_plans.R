@@ -134,6 +134,42 @@ plan_comments_ui <- function(ns, com, p, group, me) {
       }))
 }
 
+# The dialog when a version is approved: which new or adjusted exercises go
+# into the bank, one by one (kap. 15.4).
+approve_modal <- function(ns, cands, version, bank) {
+  name_of <- function(code) {
+    n <- bank$name[match(code, bank$code)]
+    if (is.na(n)) code else n
+  }
+  m <- modalDialog(
+    title = paste("Godkjenn versjon", version),
+    size = "l", easyClose = FALSE,
+    footer = tagList(actionButton(ns("ap_go"), "Godkjenn", class = "btn-primary"), modalButton("Avbryt")),
+    div(class = "sn-admin-pane",
+        p(class = "sn-hint", "Opplegget har øvelser som ikke er i øvelsesbanken. Velg for hver øvelse om den skal",
+          " lagres i banken. Den lagres som kandidat, og opplegget endres ikke."),
+        lapply(seq_along(cands), function(k) {
+          c <- cands[[k]]
+          choices <- if (c$kilde == "justert") {
+            stats::setNames(c("skip", "variant"), c("Ikke lagre", paste0("Lagre som variant av «", name_of(c$basert_pa), "»")))
+          } else if (!is.null(c$match)) {
+            stats::setNames(c("skip", "variant", "save"),
+                            c(paste0("Ikke lagre: «", c$match$name, "» finnes alt"),
+                              paste0("Lagre som variant av «", c$match$name, "»"), "Lagre som ny øvelse"))
+          } else {
+            c("Lagre i banken" = "save", "Ikke lagre" = "skip")
+          }
+          div(class = "sn-approve-ex",
+              div(class = "sn-plan-ex", paste0("Øvelse ", c$index, ": ", c$navn)),
+              if (!is.null(c$match)) {
+                p(class = "sn-hint sn-plan-warn", paste0("Ligner på «", c$match$name, "» (", round(100 * c$match$score), " %)."))
+              },
+              radioButtons(ns(paste0("ap_", k)), NULL, choices = choices, selected = c$default))
+        }))
+  )
+  htmltools::tagQuery(m)$find(".modal-dialog")$addClass("modal-fullscreen-sm-down sn-admin-modal")$allTags()
+}
+
 # Busy message while KI writes the plan.
 ki_busy_ui <- function() {
   div(class = "sn-plan-busy", role = "status",
@@ -271,7 +307,8 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
       v <- versions()
       if (is.null(v) || nrow(v) == 0) return(NULL)
       id <- chosen()
-      if (is.null(id) || !id %in% v$id) id <- v$id[1]
+      # Shown first: the approved version, otherwise the newest.
+      if (is.null(id) || !id %in% v$id) id <- if (any(v$status == "approved")) v$id[v$status == "approved"][1] else v$id[1]
       acc <- isolate(user())$access
       read(function(con) ds_get_plan(con, acc, id))
     })
@@ -309,20 +346,30 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
       tagList(
         head, alert,
         div(class = "sn-plan-card",
-            div(class = "sn-plan-title", cur$plan$tittel),
+            div(class = "sn-plan-title", cur$plan$tittel,
+                if (identical(cur$status, "approved")) span(class = "sn-tag sn-tag-match", "Godkjent")),
             div(class = "sn-hint", plan_version_line(cur$version, nrow(v), plan_author_name(cur$created_by, group),
                                                      cur$created_at, plan_ai_note(cur))),
+            if (identical(cur$status, "approved")) {
+              div(class = "sn-hint", paste0("Godkjent av ", plan_author_name(cur$approved_by, group), " ",
+                                            short_time(cur$approved_at), " · "),
+                  actionLink(ns("unapprove"), "Angre godkjenning"))
+            },
             plan_summary_ui(cur$plan),
             if (busy) ki_busy_ui(),
             div(class = "sn-plan-actions",
                 downloadButton(ns("pdf"), "Last ned PDF", class = "btn-sm btn-primary"),
+                if (!busy && !identical(cur$status, "approved")) {
+                  actionButton(ns("approve"), paste("Godkjenn versjon", cur$version), class = "btn-sm btn-outline-primary")
+                },
                 if (upcoming() && !busy) actionButton(ns("edit"), "Endre", class = "btn-sm btn-outline-primary"),
                 if (can_ki) actionButton(ns("ki_revise"), "Juster med KI", class = "btn-sm btn-outline-primary"),
                 ki_button("Nytt med KI", "btn-sm btn-outline-primary"),
                 if (nrow(v) > 1) {
                   htmltools::tagAppendAttributes(
                     selectInput(ns("version"), NULL, selectize = FALSE, width = "auto", selected = cur$id,
-                                choices = stats::setNames(v$id, paste("Versjon", v$version))),
+                                choices = stats::setNames(v$id, paste0("Versjon ", v$version,
+                                                                         ifelse(v$status == "approved", " (godkjent)", "")))),
                     `aria-label` = "Velg versjon", .cssSelector = "select")
                 }))
       )
@@ -686,6 +733,84 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
         msg(list(type = "error", text = ki_error_text(e, "KI-opplegg")))
         refresh(refresh() + 1)
       }
+    })
+
+    # Approval (kap. 15.4) ---------------------------------------------------------------
+    # Approving a version may put its new exercises into the bank, one by one,
+    # after the similarity check. The plan itself is not changed.
+    approving <- reactiveVal(NULL)   # list(plan, cands, bank) while the dialog is open
+
+    approve_now <- function(cur, cands, choices, bank) {
+      u <- user()
+      gid <- context()$group_id
+      src <- if (identical(cur$source, "ai")) "ai" else "manual"
+      res <- tryCatch(db$run(function(con) {
+        ds_approve_plan(con, u$access, cur$id, u$profile$id)
+        n <- 0L
+        for (k in seq_along(cands)) {
+          ch <- choices[[k]]
+          if (!ch %in% c("save", "variant")) next
+          c <- cands[[k]]
+          e <- cur$plan$ovelser[[c$index]]
+          e$basert_pa <- if (ch == "variant") (if (c$kilde == "justert") c$basert_pa else c$match$code) else ""
+          r <- ds_save_plan_exercise(con, u$access, gid, e, u$profile$id, themes = Filter(nzchar, cur$plan$tema),
+                                     source = src, status = "candidate")
+          if (isTRUE(r$created)) n <- n + 1L
+        }
+        n
+      }), error = function(e) e)
+      if (inherits(res, "error")) {
+        message("Godkjenning av treningsopplegg feilet: ", conditionMessage(res))
+        msg(list(type = "error", text = "Fikk ikke godkjent opplegget. Prøv igjen om litt."))
+        return(FALSE)
+      }
+      chosen(cur$id)
+      msg(list(type = "ok", text = paste0("Versjon ", cur$version, " er godkjent.",
+                                           if (res > 0) paste0(" ", res, if (res == 1) " øvelse er" else " øvelser er",
+                                                               " lagt i banken som kandidat."))))
+      refresh(refresh() + 1)
+      TRUE
+    }
+
+    observeEvent(input$approve, {
+      cur <- current()
+      if (is.null(cur) || identical(cur$status, "approved") || ki_busy()) return()
+      acc <- user()$access
+      bank <- read(function(con) ds_list_exercises(con, acc, context()$group_id))
+      if (is.null(bank)) return()
+      cands <- bank_candidates(cur$plan, bank)
+      if (!length(cands)) {
+        approve_now(cur, list(), list(), bank)
+        return()
+      }
+      approving(list(plan = cur, cands = cands, bank = bank))
+      showModal(approve_modal(ns, cands, cur$version, bank))
+    })
+
+    observeEvent(input$ap_go, {
+      a <- approving()
+      if (is.null(a)) return()
+      choices <- lapply(seq_along(a$cands), function(k) input[[paste0("ap_", k)]] %||% a$cands[[k]]$default)
+      if (approve_now(a$plan, a$cands, choices, a$bank)) {
+        approving(NULL)
+        removeModal()
+      }
+    })
+
+    observeEvent(input$unapprove, {
+      cur <- current()
+      if (is.null(cur) || !identical(cur$status, "approved")) return()
+      acc <- user()$access
+      ok <- tryCatch({
+        db$run(function(con) ds_unapprove_plan(con, acc, cur$id))
+        TRUE
+      }, error = function(e) {
+        message("Angring av godkjenning feilet: ", conditionMessage(e))
+        FALSE
+      })
+      msg(if (ok) list(type = "ok", text = paste0("Godkjenningen av versjon ", cur$version, " er angret."))
+          else list(type = "error", text = "Fikk ikke angret godkjenningen. Prøv igjen om litt."))
+      if (ok) refresh(refresh() + 1)
     })
 
     # PDF -----------------------------------------------------------------------------

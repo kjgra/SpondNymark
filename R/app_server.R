@@ -8,8 +8,8 @@ app_server <- function(input, output, session) {
   # One database connection per session, opened when first needed.
   db <- db_handle()
 
-  # Only people on the allowlist (and admins) may log in; see R/fct_allowlist.R.
-  user <- mod_login_server("login", allow = function(ident, profile_id) login_check(db, ident, profile_id))
+  # Only trainers with app access (and admins) may log in; see R/fct_allowlist.R.
+  user <- mod_login_server("login", allow = function(ident, profile_id) login_check(db, profile_id))
   context <- mod_teams_server("teams", user)
   tagger <- mod_tags_server("tags", context, user, db)
   # Extra rights (KI, admin) for the logged-in trainer; see R/fct_roles.R.

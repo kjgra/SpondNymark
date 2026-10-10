@@ -4,7 +4,7 @@ test_that("migrations create the tables and are only applied once", {
   expect_setequal(tables, c("schema_migrations", "member_tags", "group_proposals", "group_proposal_labels",
                             "group_proposal_members", "proposal_history", "proposal_comments", "edit_locks",
                             "season_themes", "team_settings", "exercises", "training_plans",
-                            "app_roles", "app_role_log", "ai_usage", "ai_settings", "login_allowlist", "login_allowlist_log", "training_plan_comments"))
+                            "app_roles", "app_role_log", "ai_usage", "ai_settings", "training_plan_comments"))
   expect_length(ds_migrate(con, dir = test_migrations_dir()), 0)
 })
 
@@ -566,4 +566,21 @@ test_that("plan comments are added, listed, marked as used and only deleted by t
   ds_delete_plan_comment(con, acc, "G1", c2, "P2")
   expect_equal(nrow(ds_list_plan_comments(con, acc, "G1", "E1")), 1)
   expect_error(ds_list_plan_comments(con, acc, "G2", "E1"), "ikke tilgang")
+})
+
+test_that("one version per event is approved, and approval can be taken back", {
+  con <- local_test_db(); acc <- test_access()
+  ref <- jsonlite::fromJSON(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"), simplifyVector = FALSE)
+  v1 <- ds_save_plan(con, acc, "G1", "E1", ref, "P1")
+  v2 <- ds_save_plan(con, acc, "G1", "E1", ref, "P1")
+  ds_approve_plan(con, acc, v1$id, "P2")
+  expect_equal(ds_get_plan(con, acc, v1$id)$approved_by, "P2")
+  ds_approve_plan(con, acc, v2$id, "P3")
+  vers <- ds_plan_versions(con, acc, "G1", "E1")
+  expect_equal(vers$status, c("approved", "draft"))
+  expect_equal(vers$approved_by, c("P3", ""))
+  ds_unapprove_plan(con, acc, v2$id)
+  expect_equal(ds_plan_versions(con, acc, "G1", "E1")$status, c("draft", "draft"))
+  expect_error(DBI::dbExecute(con, paste("UPDATE training_plans SET status = 'approved' WHERE spond_event_id = 'E1'")),
+               "duplicate|unique")
 })

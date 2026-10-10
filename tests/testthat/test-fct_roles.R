@@ -1,10 +1,12 @@
 test_that("rights: the superadmin has everything, others what app_roles gives", {
-  expect_equal(user_rights("P-me", NULL, "P-me"), list(superadmin = TRUE, admin = TRUE, ai = TRUE))
-  expect_equal(user_rights("P-x", NULL, "P-me"), list(superadmin = FALSE, admin = FALSE, ai = FALSE))
-  r <- data.frame(spond_profile_id = "P-x", can_use_ai = TRUE, is_admin = FALSE)
-  expect_equal(user_rights("P-x", r, "P-me"), list(superadmin = FALSE, admin = FALSE, ai = TRUE))
+  expect_equal(user_rights("P-me", NULL, "P-me"), list(superadmin = TRUE, admin = TRUE, ai = TRUE, app = TRUE))
+  expect_equal(user_rights("P-x", NULL, "P-me"), list(superadmin = FALSE, admin = FALSE, ai = FALSE, app = FALSE))
+  r <- data.frame(spond_profile_id = "P-x", can_use_ai = TRUE, is_admin = FALSE, can_use_app = TRUE)
+  expect_equal(user_rights("P-x", r, "P-me"), list(superadmin = FALSE, admin = FALSE, ai = TRUE, app = TRUE))
   r$is_admin <- TRUE
+  r$can_use_app <- FALSE
   expect_true(user_rights("P-x", r, "")$admin)
+  expect_true(user_rights("P-x", r, "")$app)                 # admins always have app access
 })
 
 test_that("only trainers with a Spond profile can get rights", {
@@ -23,7 +25,7 @@ test_that("rights are read from the database, and missing rights do not stop the
   r <- rights_reactive(u, db, superadmin = "P-me")
   expect_equal(isolate(r()), no_rights())
   u(list(profile = list(id = "P-x")))
-  expect_equal(isolate(r()), list(superadmin = FALSE, admin = FALSE, ai = TRUE))
+  expect_equal(isolate(r()), list(superadmin = FALSE, admin = FALSE, ai = TRUE, app = FALSE))
   broken <- db_handle(function() stop("ingen database"))
   r2 <- rights_reactive(reactive(list(profile = list(id = "P-x"))), broken, superadmin = "P-me")
   expect_message(expect_equal(isolate(r2()), no_rights()), "Lesing av rettigheter feilet")

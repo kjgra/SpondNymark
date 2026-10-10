@@ -20,17 +20,19 @@ NULL
 
 #' The rights of a user
 #' @param role One row of `ds_get_role()` (or NULL).
-#' @return list(superadmin, admin, ai): admin and ai are TRUE for the
-#'   superadmin.
+#' @return list(superadmin, admin, ai, app): all TRUE for the superadmin;
+#'   app is TRUE for admins.
 #' @noRd
 user_rights <- function(profile_id, role = NULL, superadmin = Sys.getenv("SPONDNYMARK_SUPERADMIN")) {
   sa <- is_superadmin(profile_id, superadmin)
+  admin <- sa || isTRUE(role$is_admin[1])
   list(superadmin = sa,
-       admin = sa || isTRUE(role$is_admin[1]),
-       ai = sa || isTRUE(role$can_use_ai[1]))
+       admin = admin,
+       ai = sa || isTRUE(role$can_use_ai[1]),
+       app = admin || isTRUE(role$can_use_app[1]))
 }
 
-no_rights <- function() list(superadmin = FALSE, admin = FALSE, ai = FALSE)
+no_rights <- function() list(superadmin = FALSE, admin = FALSE, ai = FALSE, app = FALSE)
 
 #' A reactive with the logged-in user's rights
 #'

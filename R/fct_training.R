@@ -181,3 +181,89 @@ team_settings_validate <- function(s) {
   }
   out[c("age_group", "session_minutes", "pitch", "equipment", "principles")]
 }
+
+# Similarity between exercises (kap. 15.4) -----------------------------------------------
+# Used when a plan is approved, so the bank does not fill up with nearly
+# identical exercises. Pure R; the bank is small.
+
+exercise_similarity_threshold <- 0.6
+
+exercise_stopwords <- c("og", "med", "som", "til", "den", "det", "der", "for", "fra", "har", "ikke", "kan", "men",
+                        "når", "seg", "sin", "skal", "slik", "the", "eller", "etter", "før", "hver", "inn", "mot",
+                        "opp", "over", "også", "alle", "blir", "dem", "deg", "din", "dere", "han", "hun", "meg",
+                        "mer", "noe", "nye", "ved", "vil", "være", "spiller", "spillere", "ballen", "ball")
+
+# The words of a text, for comparing (lower case, at least 3 letters, no
+# common words).
+exercise_words <- function(...) {
+  x <- tolower(paste(unlist(list(...)), collapse = " "))
+  w <- unique(strsplit(x, "[^[:alnum:]æøå]+", perl = TRUE)[[1]])
+  w[nchar(w) >= 3 & !w %in% exercise_stopwords & !grepl("^[0-9]+$", w)]
+}
+
+# Number of players and size of the (first) pitch in a drawing, or NULL.
+exercise_shape <- function(d) {
+  d <- tryCatch(if (is.null(d) || (is.character(d) && (is.na(d) || !nzchar(d)))) NULL else drawing_validate(d),
+                error = function(e) NULL)
+  if (is.null(d)) return(NULL)
+  s <- d$skisser[[1]]
+  list(players = sum(vapply(s$objekter, function(o) o$type == "spiller", logical(1))),
+       area = s$bane$bredde * s$bane$lengde)
+}
+
+#' How similar a plan exercise is to each bank exercise (0–1)
+#'
+#' Words in name and description count 40 %, the same category 20 %, a
+#' shared theme 20 %, and the number of players and pitch size in the
+#' drawing 20 % (half of that when a drawing is missing).
+#' @param e Exercise from a plan (plan_validate format).
+#' @param bank `ds_list_exercises()`; archived exercises are skipped.
+#' @param theme The plan's theme.
+#' @return data.frame(code, name, score), most similar first.
+#' @noRd
+exercise_similarity <- function(e, bank, theme = "") {
+  if (!"status" %in% names(bank)) bank$status <- rep("active", nrow(bank))
+  bank <- bank[bank$status != "archived", , drop = FALSE]
+  if (nrow(bank) == 0) return(data.frame(code = character(), name = character(), score = numeric()))
+  key <- names(exercise_categories)[tolower(exercise_categories) == tolower(txt1(e$kategori))]
+  key <- if (length(key)) key[1] else txt1(e$kategori)
+  w1 <- exercise_words(e$navn, e$organisering, e$gjennomforing)
+  sh1 <- exercise_shape(e$tegning)
+  ratio <- function(a, b) if (a <= 0 || b <= 0) as.numeric(a == b) else min(a, b) / max(a, b)
+  score <- vapply(seq_len(nrow(bank)), function(i) {
+    w2 <- exercise_words(bank$name[i], bank$organisation[i], bank$execution[i])
+    words <- if (length(union(w1, w2))) length(intersect(w1, w2)) / length(union(w1, w2)) else 0
+    cat <- as.numeric(identical(key, bank$category[i]))
+    th <- as.numeric(nzchar(theme) && tolower(theme) %in% tolower(bank$themes[[i]]))
+    sh2 <- exercise_shape(bank$drawing[i])
+    shape <- if (is.null(sh1) || is.null(sh2)) 0.5 else (ratio(sh1$players, sh2$players) + ratio(sh1$area, sh2$area)) / 2
+    0.4 * words + 0.2 * cat + 0.2 * th + 0.2 * shape
+  }, numeric(1))
+  out <- data.frame(code = bank$code, name = bank$name, score = round(score, 2), stringsAsFactors = FALSE)
+  out[order(-out$score), , drop = FALSE]
+}
+
+#' The exercises in a plan that may go into the bank when it is approved
+#'
+#' New exercises (kilde ny) and adjusted ones (justert) whose code is not in
+#' the bank. Each gets a suggested choice: a new exercise with no similar
+#' bank exercise is saved; one that is similar, or an adjusted one, is not
+#' saved unless the trainer says so.
+#' @return list of list(index, kode, navn, kilde, basert_pa, match (NULL or
+#'   list(code, name, score)), default = "save"/"skip").
+#' @noRd
+bank_candidates <- function(p, bank) {
+  out <- list()
+  for (i in seq_along(p$ovelser)) {
+    e <- p$ovelser[[i]]
+    if (!e$kilde %in% c("ny", "justert") || e$kode %in% bank$code) next
+    m <- NULL
+    if (e$kilde == "ny") {
+      sim <- exercise_similarity(e, bank, p$tema)
+      if (nrow(sim) && sim$score[1] >= exercise_similarity_threshold) m <- as.list(sim[1, ])
+    }
+    out[[length(out) + 1]] <- list(index = i, kode = e$kode, navn = e$navn, kilde = e$kilde, basert_pa = e$basert_pa,
+                                   match = m, default = if (e$kilde == "ny" && is.null(m)) "save" else "skip")
+  }
+  out
+}

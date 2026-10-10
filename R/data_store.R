@@ -739,7 +739,8 @@ ds_list_plans <- function(con, access, group_id, event_ids) {
 ds_plan_versions <- function(con, access, group_id, event_id) {
   assert_group_access(access, group_id)
   ds_query(con, "
-    SELECT id, version, status, source, plan->>'tittel' AS title, created_by, created_at
+    SELECT id, version, status, source, plan->>'tittel' AS title, created_by, created_at,
+           coalesce(approved_by, '') AS approved_by, approved_at
       FROM training_plans
      WHERE spond_group_id = $1 AND spond_event_id = $2 AND status <> 'deleted'
      ORDER BY version DESC",
@@ -753,13 +754,15 @@ ds_plan_versions <- function(con, access, group_id, event_id) {
 ds_get_plan <- function(con, access, plan_id) {
   row <- ds_query(con, "
     SELECT id, spond_group_id, spond_event_id, version, status, source, coalesce(model, '') AS model,
-           cost_usd::float8 AS cost_usd, created_by, created_at, plan::text AS plan
+           cost_usd::float8 AS cost_usd, created_by, created_at, coalesce(approved_by, '') AS approved_by,
+           approved_at, plan::text AS plan
       FROM training_plans WHERE id = $1 AND status <> 'deleted'", list(as.integer(plan_id)))
   if (nrow(row) == 0) stop("Fant ikke opplegget.", call. = FALSE)
   assert_group_access(access, row$spond_group_id)
   list(id = row$id, group_id = row$spond_group_id, event_id = row$spond_event_id, version = row$version,
        status = row$status, source = row$source, model = row$model, cost_usd = row$cost_usd,
-       created_by = row$created_by, created_at = row$created_at, plan = plan_validate(row$plan))
+       created_by = row$created_by, created_at = row$created_at, approved_by = row$approved_by,
+       approved_at = row$approved_at, plan = plan_validate(row$plan))
 }
 
 #' Save a plan as a new version for an event
@@ -788,6 +791,34 @@ ds_save_plan <- function(con, access, group_id, event_id, plan, actor, source = 
     insert()
   })
   list(id = as.integer(res$id), version = as.integer(res$version))
+}
+
+#' Approve one version of a plan; any other approved version for the same
+#' event goes back to draft (one approved version per event).
+#' @noRd
+ds_approve_plan <- function(con, access, plan_id, actor) {
+  pl <- ds_get_plan(con, access, plan_id)
+  ds_transaction(con, {
+    ds_exec(con, "
+      UPDATE training_plans SET status = 'draft', approved_by = NULL, approved_at = NULL
+       WHERE spond_group_id = $1 AND spond_event_id = $2 AND status = 'approved' AND id <> $3",
+      list(pl$group_id, pl$event_id, as.integer(plan_id)))
+    ds_exec(con, "
+      UPDATE training_plans SET status = 'approved', approved_by = $2, approved_at = now()
+       WHERE id = $1 AND status IN ('draft', 'approved')",
+      list(as.integer(plan_id), actor))
+  })
+  invisible(TRUE)
+}
+
+#' Take back the approval of a version
+#' @noRd
+ds_unapprove_plan <- function(con, access, plan_id) {
+  ds_get_plan(con, access, plan_id)
+  ds_exec(con, "
+    UPDATE training_plans SET status = 'draft', approved_by = NULL, approved_at = NULL
+     WHERE id = $1 AND status = 'approved'", list(as.integer(plan_id)))
+  invisible(TRUE)
 }
 
 #' Put one exercise from a plan into the bank («Lagre i banken»)
@@ -989,33 +1020,33 @@ ds_mark_comments_used <- function(con, access, group_id, comment_ids, plan_id) {
 #' The extra rights of one profile (0 or 1 row)
 #' @noRd
 ds_get_role <- function(con, profile_id) {
-  ds_query(con, "SELECT spond_profile_id, can_use_ai, is_admin FROM app_roles WHERE spond_profile_id = $1",
+  ds_query(con, "SELECT spond_profile_id, can_use_ai, is_admin, can_use_app FROM app_roles WHERE spond_profile_id = $1",
            list(as.character(profile_id)))
 }
 
 #' The extra rights of several profiles, with who changed them last
 #' @noRd
 ds_list_roles <- function(con, profile_ids) {
-  ds_query(con, "SELECT spond_profile_id, can_use_ai, is_admin, updated_by, updated_at
+  ds_query(con, "SELECT spond_profile_id, can_use_ai, is_admin, can_use_app, updated_by, updated_at
                    FROM app_roles WHERE spond_profile_id = ANY($1::text[])",
            list(ds_text_array(profile_ids)))
 }
 
-#' Give or take one right ("ai" or "admin") and log it
+#' Give or take one right ("app", "ai" or "admin") and log it
 #'
 #' @param rights The acting user's rights (`user_rights()`): admins may
-#'   change KI, only the superadmin may change admin.
+#'   change app access and KI, only the superadmin may change admin.
 #' @param allowed_ids Profiles the actor may change (the trainers in the
 #'   chosen main group).
 #' @noRd
 ds_set_role <- function(con, rights, actor, profile_id, role, granted, allowed_ids) {
   profile_id <- as.character(profile_id)
-  if (!role %in% c("ai", "admin")) stop("Ukjent rettighet.", call. = FALSE)
+  if (!role %in% c("app", "ai", "admin")) stop("Ukjent rettighet.", call. = FALSE)
   if (!isTRUE(rights$admin)) stop("Du har ikke tilgang til \u00e5 endre rettigheter.", call. = FALSE)
   if (role == "admin" && !isTRUE(rights$superadmin)) stop("Bare superadmin kan gi og ta admin.", call. = FALSE)
   if (!profile_id %in% allowed_ids) stop("Treneren er ikke med i dette laget.", call. = FALSE)
   if (!is.logical(granted) || length(granted) != 1 || is.na(granted)) stop("Ugyldig verdi.", call. = FALSE)
-  col <- if (role == "ai") "can_use_ai" else "is_admin"
+  col <- switch(role, ai = "can_use_ai", admin = "is_admin", app = "can_use_app")
   ds_transaction(con, {
     ds_exec(con, paste0("
       INSERT INTO app_roles (spond_profile_id, ", col, ", updated_by) VALUES ($1, $2, $3)
@@ -1028,70 +1059,6 @@ ds_set_role <- function(con, rights, actor, profile_id, role, granted, allowed_i
   invisible(TRUE)
 }
 
-# Allowlist for login (migration 006) ----------------------------------------------
-# The list is for the whole app. Only hashes and masked hints are stored; see
-# R/fct_allowlist.R.
-
-ds_assert_admin <- function(rights) {
-  if (!isTRUE(rights$admin)) stop("Du har ikke tilgang til å endre innloggingslisten.", call. = FALSE)
-}
-
-#' The allowlist, newest first (admins only)
-#' @noRd
-ds_list_allowlist <- function(con, rights) {
-  ds_assert_admin(rights)
-  ds_query(con, "
-    SELECT id_hash, kind, hint, coalesce(spond_profile_id, '') AS spond_profile_id, last_login_at,
-           added_by, added_at
-      FROM login_allowlist ORDER BY added_at DESC, hint")
-}
-
-#' Add an e-mail address or mobile number to the allowlist
-#' @param ident From `login_identifier()`.
-#' @return TRUE if added, FALSE if it was on the list already.
-#' @noRd
-ds_add_allowlist <- function(con, rights, actor, ident, key = login_key()) {
-  ds_assert_admin(rights)
-  if (is.null(ident)) stop("Skriv en e-postadresse eller et mobilnummer.", call. = FALSE)
-  h <- login_hash(ident, key)
-  hint <- login_hint(ident)
-  added <- FALSE
-  ds_transaction(con, {
-    res <- ds_query(con, "
-      INSERT INTO login_allowlist (id_hash, kind, hint, added_by) VALUES ($1, $2, $3, $4)
-      ON CONFLICT (id_hash) DO NOTHING RETURNING id_hash", list(h, ident$kind, hint, actor))
-    added <- nrow(res) == 1
-    if (added) {
-      ds_exec(con, "INSERT INTO login_allowlist_log (id_hash, hint, action, actor) VALUES ($1, $2, 'add', $3)",
-              list(h, hint, actor))
-    }
-  })
-  added
-}
-
-#' Remove a row from the allowlist
-#' @noRd
-ds_remove_allowlist <- function(con, rights, actor, id_hash) {
-  ds_assert_admin(rights)
-  ds_transaction(con, {
-    res <- ds_query(con, "DELETE FROM login_allowlist WHERE id_hash = $1 RETURNING hint", list(as.character(id_hash)))
-    if (nrow(res)) {
-      ds_exec(con, "INSERT INTO login_allowlist_log (id_hash, hint, action, actor) VALUES ($1, $2, 'remove', $3)",
-              list(as.character(id_hash), res$hint[1], actor))
-    }
-  })
-  invisible(TRUE)
-}
-
-#' At login: is this hash on the list? If so, note who logged in and when.
-#' @noRd
-ds_allowlist_login <- function(con, id_hash, profile_id) {
-  res <- ds_query(con, "
-    UPDATE login_allowlist SET spond_profile_id = $2, last_login_at = now()
-     WHERE id_hash = $1 RETURNING id_hash", list(id_hash, as.character(profile_id)))
-  nrow(res) == 1
-}
-
 # Database setup (admin only) -----------------------------------------------------
 # These functions are used by dev/setup_db.R with the admin connection. The
 # running app never calls them, and the app user is not allowed to.
@@ -1102,7 +1069,6 @@ ds_app_tables <- c("member_tags", "group_proposals", "group_proposal_labels", "g
                    "proposal_history", "proposal_comments", "edit_locks",
                    "season_themes", "team_settings", "exercises", "training_plans",
                    "app_roles", "app_role_log", "ai_usage", "ai_settings",
-                   "login_allowlist", "login_allowlist_log",
                    "training_plan_comments")
 
 #' A random password of letters and digits (cryptographically secure)

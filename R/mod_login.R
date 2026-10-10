@@ -15,7 +15,7 @@
 #' @param spond Functions used to talk to Spond. Tests pass fakes.
 #' @param role_names Role names that give access.
 #' @param allow NULL (everyone with a Spond login) or function(ident, profile_id)
-#'   returning "ok", "denied" or "error": the allowlist (`login_check()`).
+#'   returning "ok", "denied" or "error": app access (`login_check()`).
 #' @return A reactive: NULL while logged out, otherwise a list with `spond`
 #'   (session), `profile`, `groups` and `access`.
 #' @noRd
@@ -84,7 +84,7 @@ no_access_ui <- function(ns, s) {
   )
 }
 
-# Logged in to Spond, but not on the app's allowlist (or the list could not
+# Logged in to Spond, but without app access (or it could not
 # be checked).
 not_allowed_ui <- function(ns, s) {
   div(
@@ -96,9 +96,9 @@ not_allowed_ui <- function(ns, s) {
           p("Fikk ikke sjekket om du har tilgang akkurat nå. Prøv igjen om litt.")
         } else {
           tagList(
-            p("Innloggingen i Spond var riktig, men ", strong(s$hint), " er ikke godkjent for denne appen."),
-            p("Appen er for trenere og lagledere i Nymark. Be en administrator i appen om å legge til ",
-              "e-postadressen eller mobilnummeret du logger inn med."))
+            p("Innloggingen i Spond var riktig, men du har ikke fått tilgang til denne appen."),
+            p("Appen er for trenere og lagledere i Nymark. Be en administrator i appen om å gi deg app-tilgang ",
+              "(Innstillinger → Trenere)."))
         },
         actionButton(ns("logout"), "Tilbake", class = "btn-outline-secondary")
       )
@@ -195,12 +195,12 @@ mod_login_server <- function(id, spond = spond_api(), role_names = access_role_n
       }
 
       d <- result$data
-      # The allowlist (R/fct_allowlist.R). Not on it: the Spond session is
+      # App access (R/fct_allowlist.R). Without it, the Spond session is
       # dropped right away.
       if (!is.null(allow)) {
         verdict <- allow(ident, d$profile$id)
         if (!identical(verdict, "ok")) {
-          state(list(status = "not_allowed", reason = verdict, hint = ident$value))
+          state(list(status = "not_allowed", reason = verdict))
           return()
         }
       }

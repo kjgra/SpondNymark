@@ -63,33 +63,30 @@ admin_saved_line <- function(t) {
 }
 
 # The dialog. On phones it fills the screen.
-admin_modal <- function(ns, group_name, years, year) {
+# `groups`: named vector of main group ids (names are the group names).
+admin_modal <- function(ns, groups, selected, years, year) {
   m <- modalDialog(
-    title = tagList("Innstillinger", span(class = "sn-admin-group", group_name)),
+    title = tagList("Innstillinger",
+                    if (length(groups) > 1) {
+                      div(class = "sn-admin-group-pick",
+                          htmltools::tagAppendAttributes(
+                            selectInput(ns("admin_group"), NULL, choices = groups, selected = selected, selectize = FALSE,
+                                        width = "auto"),
+                            `aria-label` = "Lag", .cssSelector = "select"))
+                    } else {
+                      span(class = "sn-admin-group", names(groups)[1])
+                    }),
     size = "xl", easyClose = TRUE, footer = modalButton("Lukk"),
     bslib::navset_underline(
       id = ns("tab"),
       bslib::nav_panel(
         "Trenere", value = "trainers",
         div(class = "sn-admin-pane",
-            p(class = "sn-hint", "Trenere med profil i Spond. KI gir tilgang til å lage opplegg med KI (kommer).",
-              " Admin gir tannhjulet: årshjul, lagets standard, øvelser og KI-tilgang. Bare superadmin kan gi admin."),
+            p(class = "sn-hint", "Trenere med profil i Spond. App gir tilgang til å logge inn i appen; ingen andre",
+              " kommer inn. KI gir tilgang til å lage opplegg med KI. Admin gir tannhjulet og alltid app-tilgang.",
+              " Bare superadmin kan gi admin."),
             uiOutput(ns("roles_msg")),
             uiOutput(ns("roles_body")))
-      ),
-      bslib::nav_panel(
-        "Innlogging", value = "login",
-        div(class = "sn-admin-pane",
-            p(class = "sn-hint", "Bare de som står her, kan logge inn i appen. Superadmin og trenere med admin",
-              " slipper alltid inn. Listen gjelder hele appen. E-post og mobilnummer lagres ikke; listen viser",
-              " en maskert versjon, og navnet når personen har logget inn."),
-            div(class = "sn-allow-add",
-                htmltools::tagAppendAttributes(
-                  textInput(ns("allow_new"), "E-post eller mobilnummer i Spond", width = "100%"),
-                  autocomplete = "off", .cssSelector = "input"),
-                actionButton(ns("allow_add"), "Legg til", class = "btn-primary")),
-            uiOutput(ns("allow_msg")),
-            uiOutput(ns("allow_body")))
       ),
       bslib::nav_panel(
         "Årshjul", value = "season",
@@ -272,13 +269,15 @@ role_checkbox <- function(ns, pid, field, checked, enabled, label) {
 role_rows <- function(ns, cand, roles, rights, me, superadmin, group) {
   tags$table(
     class = "table table-sm sn-roles",
-    tags$thead(tags$tr(tags$th("Trener"), tags$th(class = "sn-roles-c", "KI"), tags$th(class = "sn-roles-c", "Admin"))),
+    tags$thead(tags$tr(tags$th("Trener"), tags$th(class = "sn-roles-c", "App"), tags$th(class = "sn-roles-c", "KI"),
+                       tags$th(class = "sn-roles-c", "Admin"))),
     tags$tbody(lapply(seq_len(nrow(cand)), function(i) {
       pid <- cand$profile_id[i]
       r <- roles[roles$spond_profile_id == pid, , drop = FALSE]
       sa <- is_superadmin(pid, superadmin)
       ai <- sa || isTRUE(r$can_use_ai[1])
       adm <- sa || isTRUE(r$is_admin[1])
+      app <- adm || isTRUE(r$can_use_app[1])     # admins always have app access
       changed <- if (nrow(r) && !sa) {
         paste0("Endret av ", plan_author_name(r$updated_by[1], group), " ", short_time(r$updated_at[1]))
       }
@@ -286,34 +285,11 @@ role_rows <- function(ns, cand, roles, rights, me, superadmin, group) {
         tags$td(div(class = "sn-roles-name", cand$name[i], if (sa) span(class = "sn-tag sn-tag-match", "Superadmin"),
                     if (identical(pid, me)) span(class = "sn-hint", " (deg)")),
                 div(class = "sn-hint", paste(Filter(nzchar, c(cand$roles[i], changed)), collapse = " \u00b7 "))),
+        tags$td(class = "sn-roles-c", role_checkbox(ns, pid, "app", app, !adm && isTRUE(rights$admin),
+                                                    paste("App-tilgang for", cand$name[i]))),
         tags$td(class = "sn-roles-c", role_checkbox(ns, pid, "ai", ai, !sa && isTRUE(rights$admin), paste("KI for", cand$name[i]))),
         tags$td(class = "sn-roles-c", role_checkbox(ns, pid, "admin", adm, !sa && isTRUE(rights$superadmin),
                                                     paste("Admin for", cand$name[i])))
-      )
-    }))
-  )
-}
-
-# The allowlist: masked e-mail/number, who it is (after the first login),
-# who added it, and a remove button.
-allow_rows <- function(ns, rows, group) {
-  if (nrow(rows) == 0) return(p(class = "sn-hint", "Listen er tom. Bare superadmin og admins kan logge inn."))
-  tags$table(
-    class = "table table-sm sn-allow",
-    tags$tbody(lapply(seq_len(nrow(rows)), function(i) {
-      r <- rows[i, , drop = FALSE]
-      who <- if (!nzchar(r$spond_profile_id)) "Ikke logget inn ennå" else {
-        paste0(plan_author_name(r$spond_profile_id, group), ", sist innlogget ", short_time(r$last_login_at))
-      }
-      h <- gsub("[^0-9a-f]", "", r$id_hash)
-      tags$tr(
-        tags$td(div(class = "sn-allow-hint", r$hint, span(class = "sn-hint", if (r$kind == "phone") " mobil" else " e-post")),
-                div(class = "sn-hint", paste0(who, " \u00b7 lagt til av ", plan_author_name(r$added_by, group), " ",
-                                              short_time(r$added_at)))),
-        tags$td(class = "sn-allow-c",
-                tags$button(type = "button", class = "btn btn-sm btn-outline-danger", `aria-label` = paste("Fjern", r$hint),
-                            onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})", ns("allow_remove"), h),
-                            "Fjern"))
       )
     }))
   )
@@ -331,14 +307,25 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
     confirm_delete <- reactiveVal(NULL) # exercise id waiting for confirmation
 
     allowed <- reactive(!is.null(user()) && isTRUE(rights()$admin))
+    # The main group the panel works on. The gear is there right after login;
+    # the panel starts on the team chosen in the app, or the first one, and
+    # has its own picker.
+    admin_gid <- reactiveVal(NULL)
     group_id <- reactive({
+      gid <- admin_gid()
+      u <- user()
+      if (is.null(u) || is.null(gid) || !gid %in% u$access$id) NULL else gid
+    })
+    the_group <- reactive({
+      gid <- group_id()
+      if (is.null(gid)) return(NULL)
       ctx <- context()
-      if (is.null(ctx)) NULL else ctx$group_id
+      if (!is.null(ctx) && identical(ctx$group_id, gid)) ctx$group else user()$groups[[gid]]
     })
     this_year <- function() as.integer(format(today(), "%Y"))
 
     output$bar <- renderUI({
-      if (!allowed() || is.null(group_id())) return(NULL)
+      if (!allowed() || nrow(user()$access) == 0) return(NULL)
       admin_button(ns)
     })
     # The slot starts empty; render it anyway so the gear can appear.
@@ -350,7 +337,6 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
       if (is.null(m) || !identical(m$tab, tab)) NULL else admin_alert(m)
     })
     output$roles_msg <- tab_msg("trainers")
-    output$allow_msg <- tab_msg("login")
     output$season_msg <- tab_msg("season")
     output$team_msg <- tab_msg("team")
     # Exercises: in the list the message is at the top; in the form it is
@@ -406,19 +392,31 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
     }
 
     observeEvent(input$open, {
-      req(allowed(), group_id())
+      req(allowed())
+      acc <- user()$access
+      if (nrow(acc) == 0) return()
+      ctx <- context()
+      admin_gid(if (!is.null(ctx) && ctx$group_id %in% acc$id) ctx$group_id else acc$id[1])
       msg(NULL)
       editing(NULL)
       confirm_delete(NULL)
       y <- this_year()
-      showModal(admin_modal(ns, context()$group_name, years = (y - 1):(y + 1), year = y))
+      showModal(admin_modal(ns, stats::setNames(acc$id, acc$name), admin_gid(), years = (y - 1):(y + 1), year = y))
     })
+    observeEvent(input$admin_group, {
+      acc <- user()$access
+      if (!input$admin_group %in% acc$id || identical(input$admin_group, admin_gid())) return()
+      admin_gid(input$admin_group)
+      msg(NULL)
+      editing(NULL)
+      confirm_delete(NULL)
+    }, ignoreInit = TRUE)
     observeEvent(input$tab, msg(NULL), ignoreInit = TRUE)
 
     # Trainers and their rights ---------------------------------------------------
     candidates <- reactive({
-      ctx <- context()
-      if (is.null(ctx)) role_candidates(list()) else role_candidates(ctx$group)
+      g <- the_group()
+      if (is.null(g)) role_candidates(list()) else role_candidates(g)
     })
 
     output$roles_body <- renderUI({
@@ -430,7 +428,7 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
       if (is.null(roles)) return(NULL)
       r <- isolate(rights())
       me <- isolate(user())$profile$id
-      role_rows(ns, cand, roles, r, me, superadmin, context()$group)
+      role_rows(ns, cand, roles, r, me, superadmin, the_group())
     })
 
     observeEvent(input$role, {
@@ -439,51 +437,17 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
       pid <- as.character(x$p %||% "")
       role <- as.character(x$f %||% "")
       granted <- isTRUE(x$v)
-      if (!pid %in% cand$profile_id || !role %in% c("ai", "admin")) return()
+      if (!pid %in% cand$profile_id || !role %in% c("app", "ai", "admin")) return()
       if (is_superadmin(pid, superadmin)) return()
       u <- user()
       r <- rights()
       name <- cand$name[cand$profile_id == pid][1]
-      what <- if (role == "ai") "KI-tilgang" else "admin"
+      what <- switch(role, app = "app-tilgang", ai = "KI-tilgang", admin = "admin")
       save("trainers", function() {
         if (!isTRUE(r$admin)) stop("Du har ikke tilgang til å endre rettigheter.", call. = FALSE)
         if (role == "admin" && !isTRUE(r$superadmin)) stop("Bare superadmin kan gi og ta admin.", call. = FALSE)
       }, function(con) ds_set_role(con, r, u$profile$id, pid, role, granted, cand$profile_id),
       paste0(name, if (granted) " har fått " else " har ikke lenger ", what, "."))
-    })
-
-    # Allowlist for login -----------------------------------------------------------
-    output$allow_body <- renderUI({
-      req(allowed(), group_id())
-      refresh()
-      r <- isolate(rights())
-      rows <- read(function(con) ds_list_allowlist(con, r), "login")
-      if (is.null(rows)) return(NULL)
-      allow_rows(ns, rows, context()$group)
-    })
-
-    observeEvent(input$allow_add, {
-      ident <- login_identifier(input$allow_new)
-      r <- rights()
-      me <- user()$profile$id
-      added <- NA
-      ok <- save("login", function() {
-        if (is.null(ident)) stop("Skriv en e-postadresse eller et mobilnummer (8 siffer).", call. = FALSE)
-        if (!nzchar(login_key())) stop("Innloggingslisten er ikke satt opp (SPONDNYMARK_LOGIN_KEY mangler).", call. = FALSE)
-      }, function(con) added <<- ds_add_allowlist(con, r, me, ident),
-      if (!is.null(ident)) paste0(login_hint(ident), " er lagt til.") else "")
-      if (ok) {
-        updateTextInput(session, "allow_new", value = "")
-        if (isFALSE(added)) say("login", "ok", paste0(login_hint(ident), " stod allerede på listen."))
-      }
-    })
-
-    observeEvent(input$allow_remove, {
-      h <- as.character(input$allow_remove)
-      if (!grepl("^[0-9a-f]{64}$", h)) return()
-      r <- rights()
-      me <- user()$profile$id
-      save("login", function() NULL, function(con) ds_remove_allowlist(con, r, me, h), "Fjernet fra listen.")
     })
 
     # Season plan -----------------------------------------------------------------
