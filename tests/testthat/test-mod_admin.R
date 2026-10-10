@@ -327,3 +327,18 @@ test_that("the KI tab shows this month's use, and only the superadmin changes th
   }))
   expect_equal(ds_get_ai_settings(con)$group_limit_nok, 50)
 })
+
+test_that("the drawing preview works only for admins with the panel open", {
+  # Not logged in: setting the inputs from the browser console does nothing.
+  args <- admin_args()
+  args$user <- reactive(NULL)
+  suppressMessages(testServer(mod_admin_server, args = args, {
+    session$setInputs(ex_drawing = drawing_example_json(), ex_preview = 1, ex_example = 1)
+    expect_null(preview())
+  }))
+  # A trainer without admin: the same.
+  suppressMessages(testServer(mod_admin_server, args = admin_args(superadmin = "P-other"), {
+    session$setInputs(ex_new = 1, ex_drawing = drawing_example_json(), ex_preview = 1)
+    expect_null(preview())
+  }))
+})

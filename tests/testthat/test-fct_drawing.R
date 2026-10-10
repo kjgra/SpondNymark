@@ -101,3 +101,17 @@ test_that("drawings are stored with an exercise as cleaned JSON", {
   ref <- ref_session()$ovelser[[2]]$tegning
   expect_equal(drawing_validate(drawing_json(drawing_validate(ref))), drawing_validate(ref))
 })
+
+test_that("drawings have limits, so they cannot keep the server busy", {
+  many <- function(n) lapply(seq_len(n), function(i) list(x = 1, y = 1, tekst = "x"))
+  d <- list(skisser = list(list(bane = list(bredde = 20, lengde = 20), etiketter = many(16))))
+  expect_error(drawing_validate(d), "Maks 15 etiketter")
+  d$skisser[[1]]$etiketter <- NULL
+  d$skisser[[1]]$soner <- lapply(1:11, function(i) list(x = 1, y = 1, b = 1, h = 1))
+  expect_error(drawing_validate(d), "Maks 10 soner")
+  expect_error(drawing_validate(strrep(" ", 20001)), NA)            # only blanks: no drawing
+  expect_error(drawing_validate(paste0("{", strrep(" ", 20001), "}")), "for stor")
+  ref <- jsonlite::read_json(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"),
+                             simplifyVector = FALSE)
+  for (ex in ref$ovelser) if (!is.null(ex$tegning)) expect_error(drawing_validate(ex$tegning), NA)
+})

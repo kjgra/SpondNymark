@@ -700,10 +700,13 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
     # Drawing preview: drawn on request, cleared when another exercise is opened.
     preview <- reactiveVal(NULL)   # list(src, problems) or list(error)
     observeEvent(editing(), preview(NULL), ignoreNULL = FALSE)
+    # Only for admins with the panel open: drawing takes time on the server.
     observeEvent(input$ex_preview, {
+      req(allowed(), group_id(), editing())
       preview(tryCatch(drawing_preview(input$ex_drawing), error = function(e) list(error = conditionMessage(e))))
     })
     observeEvent(input$ex_example, {
+      req(allowed(), editing())
       updateTextAreaInput(session, "ex_drawing", value = drawing_example_json())
       preview(NULL)
     })

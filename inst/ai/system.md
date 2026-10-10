@@ -98,4 +98,5 @@ Regler for en tydelig tegning:
 - Ingen pil går gjennom en spiller den ikke starter eller slutter ved. En forsvarer står ikke i pasningslinjen med mindre det er poenget.
 - Etiketter står ikke oppå spillere.
 - Alt ligger innenfor banen pluss margen.
+- Høyst 40 objekter, 20 piler, 10 soner, 20 linjer, 10 hjelpelinjer, 15 etiketter og 15 tekster per skisse.
 - Kjegler i hjørnene av ruter og soner.

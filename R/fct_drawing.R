@@ -81,6 +81,7 @@ drawing_parse <- function(x) {
   if (is.list(x)) return(x)
   x <- txt1(x)
   if (!nzchar(x)) return(NULL)
+  if (nchar(x) > drawing_max_chars) stop("Tegningen er for stor (maks ", drawing_max_chars, " tegn).", call. = FALSE)
   tryCatch(jsonlite::fromJSON(x, simplifyVector = FALSE),
             error = function(e) stop("Tegningen er ikke gyldig JSON. Sjekk komma, klammer og anf\u00f8rselstegn.", call. = FALSE))
 }
@@ -98,6 +99,13 @@ drawing_point <- function(p, what) {
   if (length(v) != 2 || anyNA(v)) stop(what, " må være et punkt [x, y].", call. = FALSE)
   v
 }
+
+# Limits, so a drawing cannot keep the server busy (a few times what a rich
+# sketch needs; the reference session uses at most 13 objects, 5 arrows,
+# 2 zones, 1 label and 3 texts per sketch).
+drawing_max_chars <- 20000
+drawing_max_items <- c(objekter = 40, piler = 20, soner = 10, linjer = 20, hjelpelinjer = 10, etiketter = 15,
+                       tekster = 15)
 
 drawing_text <- function(t, what, max) {
   t <- txt1(t)
@@ -118,6 +126,12 @@ drawing_validate <- function(d) {
   out <- lapply(seq_along(sk), function(i) {
     s <- sk[[i]]
     w <- paste0("Skisse ", i, ": ")
+    # Count first, so a huge drawing is stopped before any work is done.
+    for (k in names(drawing_max_items)) {
+      if (length(s[[k]]) > drawing_max_items[[k]]) {
+        stop(w, "Maks ", drawing_max_items[[k]], " ", k, " per skisse.", call. = FALSE)
+      }
+    }
     b <- s$bane %||% list()
     bane <- list(bredde = drawing_num(b$bredde, paste0(w, "Banens bredde"), 4, 120),
                  lengde = drawing_num(b$lengde, paste0(w, "Banens lengde"), 4, 120),
@@ -158,14 +172,12 @@ drawing_validate <- function(d) {
       }
       r
     })
-    if (length(objs) > 40) stop(w, "Maks 40 objekter per skisse.", call. = FALSE)
     arrows <- lapply(s$piler %||% list(), function(a) {
       type <- txt1(a$type)
       if (!type %in% drawing_arrow_types) stop(w, "Ukjent piltype «", type, "».", call. = FALSE)
       list(type = type, fra = pt(a$fra, "Pilens start"), til = pt(a$til, "Pilens slutt"),
            bue = if (is.null(a$bue)) 0 else drawing_num(a$bue, paste0(w, "Bue"), -1, 1))
     })
-    if (length(arrows) > 20) stop(w, "Maks 20 piler per skisse.", call. = FALSE)
     zones <- lapply(s$soner %||% list(), function(z) {
       r <- list(x = drawing_num(z$x, paste0(w, "Sone x")), y = drawing_num(z$y, paste0(w, "Sone y")),
                 b = drawing_num(z$b, paste0(w, "Sonens bredde"), 0.5, 120),
