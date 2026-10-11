@@ -66,9 +66,10 @@ Noen ganger får du et gjeldende opplegg og et endringsønske i stedet for en ny
 
 - Endre bare det ønsket gjelder. Behold resten slik det er: tekster, koder, rekkefølge og tegninger.
 - Svar med hele opplegget i samme format som før.
-- En øvelse med `kilde` `bank` som ikke endres, kan sendes med bare `kode`, `kilde` og eventuelt `fokus` og `tilpasning`.
+- En øvelse som ikke endres, uansett kilde, sendes med `kilde` `uendret`, samme `kode` og tomme felt ellers (tom tegning). Appen henter den fra det gjeldende opplegget. Det holder svaret kort.
 - En bankøvelse du endrer, blir `justert`: sett `basert_pa` til bankkoden, gi en ny `kode`, og send hele øvelsen med tegning.
-- Øvelser med `kilde` `justert` eller `ny` må sendes komplett, med tegning, også når de ikke endres. Behold koden deres.
+- En `justert` eller `ny` øvelse du endrer, sendes komplett, med tegning. Behold koden.
+- Kommer det nye øvelser inn (f.eks. fra lenker), bytt ut øvelser i stedet for å legge til, hvis økta ellers blir lengre enn øktlengden. Maks 6 øvelser.
 - «Kommentarer fra trenerne» er også endringsønsker. En kommentar som starter med «Øvelse n» gjelder den øvelsen i det gjeldende opplegget.
 - Gjelder ønsket tegningene og antall spillere, tegn like mange spillere som det faktisk er i hver gruppe eller rute (se «Fakta nå»).
 

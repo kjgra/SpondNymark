@@ -39,8 +39,11 @@ ai_models <- list(
                              cache_write = 2.50, cache_read = 0.10)
 )
 
-# Long enough for six exercises with drawings; a normal plan is about 6 000.
-ai_max_tokens <- 16000L
+# A normal plan is about 6 000 tokens; six new exercises with drawings can
+# pass 16 000. The models allow far more (128 000); the time limit for the
+# call is raised to match (`ai_timeout`).
+ai_max_tokens <- 32000L
+ai_timeout <- 300
 
 # The longest wish from the trainer, in characters.
 ai_wish_max <- 1000L
@@ -138,7 +141,8 @@ ai_plan_schema <- function() {
   obj <- function(props) list(type = "object", properties = props, required = as.list(names(props)),
                               additionalProperties = FALSE)
   exercise <- obj(list(
-    kilde = list(type = "string", enum = as.list(plan_exercise_sources)),
+    # "uendret": an exercise kept as it is when adjusting (only `kode` is sent).
+    kilde = list(type = "string", enum = as.list(c(plan_exercise_sources, "uendret"))),
     kode = str, basert_pa = str, naermeste_kode = str, hvorfor_ny = str,
     navn = str, kategori = list(type = "string", enum = as.list(names(exercise_categories))),
     fokus = str, organisering = strs, gjennomforing = strs, tilpasning = strs, laeringsmomenter = strs,
@@ -417,7 +421,7 @@ ai_request_body <- function(model, catalogue, order, system = ai_system_text(), 
 #' come back as status NA.
 #' @return list(status, body) where body is the parsed JSON (or NULL).
 #' @noRd
-ai_http_post <- function(path, body, key = Sys.getenv("ANTHROPIC_API_KEY"), timeout = 180) {
+ai_http_post <- function(path, body, key = Sys.getenv("ANTHROPIC_API_KEY"), timeout = ai_timeout) {
   req <- ai_http_request(path, body, key, timeout) |>
     httr2::req_retry(max_tries = 2, is_transient = function(resp) httr2::resp_status(resp) %in% c(429, 500, 502, 503, 529))
   ai_http_result(tryCatch(httr2::req_perform(req), error = function(e) NULL))
@@ -426,7 +430,7 @@ ai_http_post <- function(path, body, key = Sys.getenv("ANTHROPIC_API_KEY"), time
 #' The same as `ai_http_post()`, but as a promise, so the call does not block
 #' other sessions while the model writes (20–60 s). No retry.
 #' @noRd
-ai_http_post_async <- function(path, body, key = Sys.getenv("ANTHROPIC_API_KEY"), timeout = 180) {
+ai_http_post_async <- function(path, body, key = Sys.getenv("ANTHROPIC_API_KEY"), timeout = ai_timeout) {
   promises::then(httr2::req_perform_promise(ai_http_request(path, body, key, timeout)),
                  onFulfilled = ai_http_result,
                  onRejected = function(e) ai_http_result(NULL))
@@ -525,6 +529,22 @@ ai_plan_from_answer <- function(answer, bank, ctx = list(), max_new = 2L) {
     w <- paste0("Øvelse ", i)
     kilde <- txt1(e$kilde)
     kode <- txt1(e$kode)
+    if (kilde == "uendret") {
+      # Kept as it is in the plan being adjusted; KI only sent the code.
+      old <- Filter(function(x) identical(txt1(x$kode), kode), ctx$base_exercises %||% list())
+      if (length(old) && !kode %in% used) {
+        r <- old[[1]]
+        if (nzchar(txt1(e$fokus))) r$fokus <- ai_clip(e$fokus, 300)
+        ex[[length(ex) + 1]] <- r
+        used <- c(used, kode)
+        next
+      }
+      if (!nzchar(txt1(e$navn))) {
+        warn <- c(warn, paste0(w, ": koden «", kode, "» fantes ikke i opplegget, så øvelsen er utelatt."))
+        next
+      }
+      kilde <- "ny"
+    }
     if (kilde == "bank") {
       row <- bank[bank$code == kode, , drop = FALSE]
       if (nrow(row) == 1) {
@@ -651,6 +671,7 @@ ai_prepare <- function(con, access, rights, group_id, ctx, kind = NULL, now = Sy
   if (!is.null(base_plan)) {
     ctx$base_codes <- vapply(base_plan$ovelser, function(e) txt1(e$kode), "")
     ctx$base_links <- vapply(base_plan$ovelser, function(e) txt1(e$nff_url), "")
+    ctx$base_exercises <- base_plan$ovelser   # for «uendret»; never sent
   }
   order <- tryCatch(if (is.null(base_plan)) ai_order_text(ctx) else ai_revision_text(base_plan, ctx),
                     error = function(e) ai_stop(conditionMessage(e)))

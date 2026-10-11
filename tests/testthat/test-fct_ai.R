@@ -99,7 +99,7 @@ test_that("the schema only uses what structured output supports", {
   walk(ai_plan_schema())
   js <- jsonlite::toJSON(ai_plan_schema(), auto_unbox = TRUE)
   expect_match(js, '"additionalProperties":false', fixed = TRUE)
-  expect_match(js, '"enum":["bank","justert","ny"]', fixed = TRUE)
+  expect_match(js, '"enum":["bank","justert","ny","uendret"]', fixed = TRUE)
 })
 
 test_that("the system prompt covers the categories and has a worked example", {
@@ -222,7 +222,7 @@ test_that("the request caches the system prompt and the catalogue", {
   expect_equal(b$output_config$format$type, "json_schema")
   expect_equal(b$messages[[1]]$content, "# Bestilling")
   js <- jsonlite::toJSON(b, auto_unbox = TRUE, null = "null")
-  expect_match(js, '"max_tokens":16000', fixed = TRUE)
+  expect_match(js, '"max_tokens":32000', fixed = TRUE)
 })
 
 # Answer -------------------------------------------------------------------------------------
@@ -419,6 +419,26 @@ test_that("a saved plan goes back to the model in the answer format, and comes b
   expect_equal(vapply(back$plan$ovelser, `[[`, "", "kode"), vapply(ref$ovelser, `[[`, "", "kode"))
   expect_equal(back$plan$ovelser[[3]]$gjennomforing, ref$ovelser[[3]]$gjennomforing)
   expect_length(back$warnings, 0)                              # exercises already in the plan are not "new"
+})
+
+test_that("when adjusting, unchanged exercises come back with only their code and are taken from the plan", {
+  ref <- plan_validate(jsonlite::fromJSON(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"),
+                                          simplifyVector = FALSE))
+  a <- ai_answer_from_plan(ref)
+  k1 <- ref$ovelser[[1]]$kode
+  k2 <- ref$ovelser[[2]]$kode
+  a$ovelser[[1]] <- list(kilde = "uendret", kode = k1, navn = "", tegning_json = "")
+  a$ovelser[[2]] <- list(kilde = "uendret", kode = k2, fokus = "Nytt fokus.", navn = "", tegning_json = "")
+  a$ovelser[[4]] <- list(kilde = "uendret", kode = "finnes-ikke", navn = "")
+  ctx <- list(theme = ref$tema, base_codes = vapply(ref$ovelser, `[[`, "", "kode"), base_exercises = ref$ovelser)
+  back <- ai_plan_from_answer(jsonlite::toJSON(a, auto_unbox = TRUE, null = "null"), test_bank()[0, ], ctx)
+  expect_length(back$plan$ovelser, 3)
+  expect_equal(back$plan$ovelser[[1]]$gjennomforing, ref$ovelser[[1]]$gjennomforing)
+  expect_false(is.null(back$plan$ovelser[[1]]$tegning))                  # drawing kept
+  expect_equal(back$plan$ovelser[[2]]$fokus, "Nytt fokus.")
+  expect_match(back$warnings, "«finnes-ikke» fantes ikke i opplegget", all = FALSE)
+  expect_true("uendret" %in% unlist(ai_plan_schema()$properties$ovelser$items$properties$kilde$enum))
+  expect_match(ai_system_text(), "`kilde` `uendret`", fixed = TRUE)
 })
 
 test_that("the adjustment order has the plan, the facts and the wish, and needs a wish", {
