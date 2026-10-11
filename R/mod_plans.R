@@ -622,12 +622,17 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
     })
     ki_busy <- reactive(identical(ki_task$status(), "running"))
 
+    # Players who have said they are coming (not the trainers, who are
+    # recipients of the event too).
+    players_coming <- function() {
+      p <- event_participants(event(), context()$group)
+      sum(p$status == "accepted" & (is.na(p$kind) | p$kind != "coach"))
+    }
+
     # Only counts go to KI: players signed up, and the sizes of the groups in
     # the approved group proposal.
     ki_counts <- function() {
-      ev <- event()
-      r <- ev$responses$status %||% character()
-      list(n_players = sum(r == "accepted"),
+      list(n_players = players_coming(),
            group_sizes = vapply(print_groups(), function(g) length(g$spillere), integer(1)))
     }
 

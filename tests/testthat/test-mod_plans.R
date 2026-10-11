@@ -223,6 +223,22 @@ test_that("KI makes a plan in the background, with price before and cost after",
   expect_equal(DBI::dbGetQuery(con, "SELECT status FROM ai_usage")$status, "ok")
 })
 
+test_that("KI is told how many players are coming, not counting the trainers", {
+  con <- local_test_db()
+  seen <- new.env()
+  ev <- plan_event()
+  ev$responses <- rbind(ev$responses, data.frame(member_id = "M-me", status = "accepted"))   # a trainer
+  args <- ki_args(con, seen = seen)
+  args$event <- reactiveVal(ev)
+  testServer(mod_plans_server, args = args, {
+    session$setInputs(ki = 1)
+    expect_equal(ki_open()$ctx$n_players, 2L)                 # M-1 and M-3
+    session$setInputs(ki_theme = "", ki_minutes = 60, ki_wish = "", ki_model = "claude-haiku-5-5", ki_go = 1)
+    ki_wait(session, ki_task)
+    expect_match(seen$body$messages[[1]]$content, "Påmeldte spillere: 2")
+  })
+})
+
 test_that("KI taken away while the dialog is open: the call is not made", {
   con <- local_test_db()
   allowed <- TRUE
