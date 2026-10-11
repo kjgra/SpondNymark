@@ -25,7 +25,7 @@ test_that("printing a session never shows the token", {
 test_that("wrong credentials give a clear Norwegian error", {
   expect_error(
     httr2::with_mocked_responses(function(req) httr2::response(401), spond_login("a@b.no", "feil")),
-    "feil e-post eller passord"
+    "feil e-post, mobilnummer eller passord"
   )
 })
 
@@ -107,4 +107,12 @@ test_that("an expired session has its own class, so the app can log out", {
     httr2::with_mocked_responses(function(req) httr2::response(401), spond_get_events(session, group_id = "G1")),
     class = "spond_expired"
   )
+})
+
+test_that("a mobile number is sent in the email field as +47..., and junk is stopped", {
+  seen <- NULL
+  httr2::with_mocked_responses(function(req) { seen <<- req; login_ok(req) }, spond_login("+47 998 87 766", "x"))
+  body <- if (exists("req_get_body", asNamespace("httr2"))) httr2::req_get_body(seen) else seen$body$data
+  expect_equal(body, list(email = "+4799887766", password = "x"))
+  expect_error(spond_login("ola", "x"), "e-postadressen eller mobilnummeret")
 })

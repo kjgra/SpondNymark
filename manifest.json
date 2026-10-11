@@ -1753,23 +1753,53 @@
     }
   },
   "files": {
-    ".here": {
-      "checksum": "d41d8cd98f00b204e9800998ecf8427e"
-    },
     ".Rbuildignore": {
-      "checksum": "c81240138348798e86c85a0078f8bbfb"
+      "checksum": "17f847933966777e7397760158d3dc05"
     },
     "app.R": {
       "checksum": "83f7784fbb8bb2059f3b11bdd12dae4f"
     },
     "DESCRIPTION": {
-      "checksum": "b6992bedb812649dd3358aee87a88d8c"
+      "checksum": "072b692702db0d58c2d0ac5af0aa563b"
+    },
+    "inst/ai/system.md": {
+      "checksum": "6135ca1664cd99b50b229cb61a70e934"
+    },
+    "inst/app/www/apple-touch-icon.png": {
+      "checksum": "f1e487de51821d7bbc18c371c3b7639e"
     },
     "inst/app/www/custom.css": {
-      "checksum": "aa03205ebc487a3e5baadfe08103b13e"
+      "checksum": "9ab4ee2df9b235029625dede28c351ef"
     },
     "inst/app/www/favicon.ico": {
-      "checksum": "81560d1b906a530c87fa0acbb2f5cca4"
+      "checksum": "a5b73ffecee6a01c0a08ff0b176901cf"
+    },
+    "inst/app/www/favicon.svg": {
+      "checksum": "b6605d2521e15bb98b7e259522e92677"
+    },
+    "inst/app/www/fonts/barlow-condensed-latin-700-normal.woff2": {
+      "checksum": "93674060037764a36d225e483fcc24b5"
+    },
+    "inst/app/www/fonts/barlow-condensed-latin-800-normal.woff2": {
+      "checksum": "7afb40486142a9c6cd6d2acaed7518c0"
+    },
+    "inst/app/www/fonts/barlow-latin-400-normal.woff2": {
+      "checksum": "2bc7630144496092dc786ce63109e560"
+    },
+    "inst/app/www/fonts/barlow-latin-500-normal.woff2": {
+      "checksum": "d312d179276a175029c56c50e9bc9d0b"
+    },
+    "inst/app/www/fonts/barlow-latin-600-normal.woff2": {
+      "checksum": "8074c760fbdd366fc1c33ce702911abf"
+    },
+    "inst/app/www/fonts/barlow-latin-700-normal.woff2": {
+      "checksum": "c3609c36a150ce088ea4dcab92b7c00b"
+    },
+    "inst/app/www/fonts/barlow-latin-800-normal.woff2": {
+      "checksum": "f27acc0d33d769a3da576516ca236c41"
+    },
+    "inst/app/www/fonts/OFL.txt": {
+      "checksum": "6deb6906edb5ff6baac2bce971994836"
     },
     "inst/app/www/sn.js": {
       "checksum": "e8dd92612328b37e80361f2450ed9e5c"
@@ -1777,17 +1807,71 @@
     "inst/db/migrations/001_init.sql": {
       "checksum": "d3fd32653c816d3ef29f774a239f5f9b"
     },
+    "inst/db/migrations/002_treningsopplegg_t1.sql": {
+      "checksum": "71e0ca7e60ac114766c695825f9aee02"
+    },
+    "inst/db/migrations/003_treningsopplegg_t2.sql": {
+      "checksum": "e9fd23f3d3cd4e7e85f96f5186955b7b"
+    },
+    "inst/db/migrations/004_tilganger_t2b.sql": {
+      "checksum": "cf040850f1bad70f1d965d5ab4bd54e7"
+    },
+    "inst/db/migrations/005_ki_t3a.sql": {
+      "checksum": "21ac1173b1947068d1b263d0b4e5b219"
+    },
+    "inst/db/migrations/006_innlogging.sql": {
+      "checksum": "938e082bbfe78dc10e168f811ebfbd9d"
+    },
+    "inst/db/migrations/007_kommentarer_t3c.sql": {
+      "checksum": "a5183279b893f78241faf8025e9429f5"
+    },
+    "inst/db/migrations/008_godkjenning_t3c.sql": {
+      "checksum": "53b4a069b53ddde7555ed68a7e8faaf7"
+    },
+    "inst/db/migrations/009_apptilgang.sql": {
+      "checksum": "7035b6f11e0039d8aa8b5db5efa8f246"
+    },
+    "inst/db/migrations/010_rls_schema_migrations.sql": {
+      "checksum": "d305a59a4f37f6ea0b37a112fa333e99"
+    },
     "inst/db/migrations/README.md": {
       "checksum": "23f0960e67c885e20237e26a50df997a"
     },
+    "inst/db/supabase-ca.crt": {
+      "checksum": "03161b39ad27a6ea9e6fcd5aed3da21c"
+    },
+    "inst/extdata/referanse-okt.json": {
+      "checksum": "6945ee8708337e7f5c9aa62bf8f384b3"
+    },
     "inst/golem-config.yml": {
-      "checksum": "6a4fdb4b871ec56d078059fce6005c16"
+      "checksum": "2be972b76a51591a802e75bd38018489"
+    },
+    "inst/typst/fonts/Barlow-Bold.ttf": {
+      "checksum": "6cbe034ff9c2bbad5a1e57a27a400a5d"
+    },
+    "inst/typst/fonts/Barlow-Italic.ttf": {
+      "checksum": "91902124b2fb364546629dafef03251f"
+    },
+    "inst/typst/fonts/Barlow-Regular.ttf": {
+      "checksum": "90af7baeeb14e5434bc8ea30bc25d340"
+    },
+    "inst/typst/fonts/Barlow-SemiBold.ttf": {
+      "checksum": "e1f2fbfbe3cc8b18508d1fffe5e14f76"
+    },
+    "inst/typst/fonts/BarlowCondensed-Bold.ttf": {
+      "checksum": "f599739e94768bec57f6899c422a5119"
+    },
+    "inst/typst/fonts/BarlowCondensed-ExtraBold.ttf": {
+      "checksum": "a53b6eaca2419b9b7b63a91c100eda0c"
+    },
+    "inst/typst/fonts/OFL.txt": {
+      "checksum": "46cbde1f44ff31807ec209f1b72acad2"
+    },
+    "inst/typst/opplegg.typ": {
+      "checksum": "502cd5564a15c870de7f7b40829910f6"
     },
     "LICENSE": {
       "checksum": "e3ad0d9dd33d2ed6b893fd1efb346b26"
-    },
-    "man/run_app.Rd": {
-      "checksum": "eb32a8dff09564aea287fdd742e2140d"
     },
     "NAMESPACE": {
       "checksum": "9096f7f5795633f990d3fe1352f8f9fc"
@@ -1799,52 +1883,76 @@
       "checksum": "0f79d97837ff91c50f065824b39a6fbc"
     },
     "R/app_server.R": {
-      "checksum": "1a5b59606ee6af6b1d229656fca92722"
+      "checksum": "0ffcd456358284aeeacc321af7555e72"
     },
     "R/app_ui.R": {
-      "checksum": "a87e0728544c4844ab368e4b9a55f456"
+      "checksum": "3c0cbf727fbf4557c3c81aa56750908e"
     },
     "R/data_store.R": {
-      "checksum": "53ed35a006553fad0e4b0c83e5d7298a"
+      "checksum": "e1528de626bfd59cda7d1a7535f594df"
     },
     "R/fct_access.R": {
-      "checksum": "adccd3b7289b91aa5d317814344ad673"
+      "checksum": "0f3f42aaf2b05546a5608ea9529bd4f7"
+    },
+    "R/fct_ai.R": {
+      "checksum": "23a794bc009f80fe75640229edf78968"
+    },
+    "R/fct_allowlist.R": {
+      "checksum": "c90f30bc85278989bfe0bb819d88522f"
     },
     "R/fct_db.R": {
       "checksum": "000e0b0ce7000a314bcf49536a785400"
     },
+    "R/fct_drawing.R": {
+      "checksum": "eabf3f023667de404e22106b5a65c0d0"
+    },
     "R/fct_env.R": {
-      "checksum": "f8ceb63a9a09c34c810dc08c33452407"
+      "checksum": "f5f5808207abf35ab7d86a3dc375a1ba"
     },
     "R/fct_events.R": {
-      "checksum": "1bbe98eea685dd34d3ae7a597aea27ef"
+      "checksum": "091b4b6334c73b7a3417b0d54662a02c"
     },
     "R/fct_groups.R": {
-      "checksum": "9dab1bc7f12cbfedf33b4f12db27b773"
+      "checksum": "43401c75dc49b6e27281f01e408850fd"
     },
     "R/fct_members.R": {
       "checksum": "0a394e241b6b33a57234f336253f17b3"
     },
+    "R/fct_plan.R": {
+      "checksum": "a67476cc131f0351c823c39c5c3f6ae7"
+    },
+    "R/fct_roles.R": {
+      "checksum": "84718127ed6ed96b0630195f5c05556d"
+    },
     "R/fct_spond_data.R": {
-      "checksum": "7617a7e5a9f0f2d323b0f339bc4a9046"
+      "checksum": "c1439f8552b7e90ecb42e10706eeac0d"
     },
     "R/fct_tags.R": {
-      "checksum": "04f03e3ee563496aec7931a5ccf25ca9"
+      "checksum": "10d897b7d87f34028c5db2ed1465db63"
+    },
+    "R/fct_training.R": {
+      "checksum": "a4d98d36f18096f20f2e1fdbd8c5cfee"
+    },
+    "R/mod_admin.R": {
+      "checksum": "1191c5250c4ce2cd9a7f768c5417b6ac"
     },
     "R/mod_events.R": {
-      "checksum": "d2de60437e1fa56aa9fa4be457eed04d"
+      "checksum": "891bc63bcb0b4c805f3a45f4eef6ec78"
     },
     "R/mod_groups.R": {
-      "checksum": "e0df9f4838e9fb40d157232af9308697"
+      "checksum": "616230a17e35b5d984119fca15757c41"
     },
     "R/mod_login.R": {
-      "checksum": "04f24b08eba396400926f8192e8ce5da"
+      "checksum": "78c2e10e9239c23c4ac4ad007def9310"
     },
     "R/mod_participants.R": {
-      "checksum": "380a955c1318d9cb8eeeb0dc7cc912c8"
+      "checksum": "12abc7b138c9d91b16944f795618838b"
+    },
+    "R/mod_plans.R": {
+      "checksum": "98c1d96e5d73a9fa8acf6295042cebb4"
     },
     "R/mod_tags.R": {
-      "checksum": "b99ed57e0f3ff622e8209ee77cb75a51"
+      "checksum": "991352776c7534175dadfb9615077aff"
     },
     "R/mod_teams.R": {
       "checksum": "72a9132deb5f56bb75be085eebee6bb6"
@@ -1853,7 +1961,7 @@
       "checksum": "87b5e16fefaf5166b9375f7dfdc71e73"
     },
     "R/spond_client.R": {
-      "checksum": "f76b70e6eb323f296ac390ace2f0d985"
+      "checksum": "437a0cd46db9df685f004e3ccd673ced"
     }
   },
   "users": null

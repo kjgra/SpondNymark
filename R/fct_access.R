@@ -112,4 +112,14 @@ assert_group_access <- function(accessible, group_id) {
   invisible(TRUE)
 }
 
+#' Stop unless `rights` (from `user_rights()`, read just before) include admin
+#'
+#' Used by the data functions that only admins may call (season plan, team
+#' settings, exercises), in addition to the check in the admin panel.
+#' @noRd
+assert_admin <- function(rights) {
+  if (!isTRUE(rights$admin)) stop("Bare administratorer kan endre dette.", call. = FALSE)
+  invisible(TRUE)
+}
+
 `%||%` <- function(x, y) if (is.null(x)) y else x

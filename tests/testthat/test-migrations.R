@@ -13,7 +13,8 @@ test_that("every table has Row Level Security turned on", {
   rls <- DBI::dbGetQuery(con, "SELECT c.relname, c.relrowsecurity FROM pg_class c
                                  JOIN pg_namespace n ON n.oid = c.relnamespace
                                 WHERE n.nspname = current_schema() AND c.relkind = 'r'")
-  expect_true(all(rls$relrowsecurity[rls$relname %in% ds_app_tables]), info = paste(rls$relname, collapse = ", "))
+  expect_true(all(rls$relrowsecurity[rls$relname %in% c(ds_app_tables, "schema_migrations")]),
+              info = paste(rls$relname, collapse = ", "))
 })
 
 test_that("migration files are numbered, in order, and follow the format rules", {

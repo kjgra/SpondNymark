@@ -2,7 +2,9 @@ test_that("migrations create the tables and are only applied once", {
   con <- local_test_db()
   tables <- DBI::dbGetQuery(con, "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()")$table_name
   expect_setequal(tables, c("schema_migrations", "member_tags", "group_proposals", "group_proposal_labels",
-                            "group_proposal_members", "proposal_history", "proposal_comments", "edit_locks"))
+                            "group_proposal_members", "proposal_history", "proposal_comments", "edit_locks",
+                            "season_themes", "team_settings", "exercises", "training_plans",
+                            "app_roles", "app_role_log", "ai_usage", "ai_settings", "training_plan_comments"))
   expect_length(ds_migrate(con, dir = test_migrations_dir()), 0)
 })
 
@@ -235,6 +237,14 @@ test_that("the app user can use the app tables but cannot change the schema", {
   expect_false(priv("schema_migrations", "SELECT"))
   expect_true(priv("group_proposals", "SELECT"))
   expect_false(priv("group_proposals", "TRUNCATE"))
+  # Supabase's public roles get nothing, also not on schema_migrations
+  # (only checked where the role exists, as in Supabase).
+  for (pr in DBI::dbGetQuery(con, "SELECT rolname FROM pg_roles WHERE rolname IN ('anon', 'authenticated')")$rolname) {
+    p2 <- function(table) DBI::dbGetQuery(con, "SELECT has_table_privilege($1, $2, 'SELECT') AS ok",
+                                          params = list(pr, paste0(schema, ".", table)))$ok
+    expect_false(p2("schema_migrations"), info = pr)
+    expect_false(p2("group_proposals"), info = pr)
+  }
 })
 
 test_that(".Renviron keeps comments and position when a value is replaced", {
@@ -252,7 +262,14 @@ test_that("connection strings are split into separate arguments for RPostgres", 
   expect_equal(a$user, "spondnymark_app.abcd")
   expect_equal(a$password, "p@ss:w/rd")
   expect_equal(a$dbname, "postgres")
-  expect_equal(a$sslmode, "require")
+  # Supabase: require becomes verify-full with Supabase's root certificate
+  expect_equal(a$sslmode, "verify-full")
+  expect_true(file.exists(a$sslrootcert))
+  expect_match(paste(readLines(a$sslrootcert), collapse = ""), "BEGIN CERTIFICATE")
+  expect_equal(ds_connect_args(sub("require", "verify-ca", url))$sslmode, "verify-ca")   # explicit choice kept
+  expect_null(ds_connect_args("postgresql://u:p@localhost?sslmode=require")$sslrootcert)  # other hosts as before
+  expect_equal(ds_connect_args("postgresql://u:p@localhost?sslmode=require")$sslmode, "require")
+  expect_error(ds_connect_args(url, ca_file = tempfile()), "sertifikatet")
   # the admin URL produced by ds_fill_password round-trips to the original password
   tpl <- "postgresql://postgres.abcd:[YOUR-PASSWORD]@aws-0-eu-west-1.pooler.supabase.com:5432/postgres"
   pw <- "Æ#ø %å!*'()+,;=&$?[]"
@@ -351,4 +368,251 @@ test_that("comments and history of several proposals come in one query", {
   expect_equal(th$kind[th$proposal_id == a], c("history", "history", "comment"))
   expect_false("hemmelig" %in% th$text)
   expect_equal(names(ds_proposal_threads(con, acc, "G1", integer())), c("proposal_id", "kind", "actor", "text", "created_at"))
+})
+
+# Training plans, phase T1 (migration 002) ---------------------------------------
+
+test_that("season plan: save a year, change it, and other years are left alone", {
+  con <- local_test_db(); acc <- test_access()
+  themes <- rep("", 12); themes[c(9, 10)] <- c("Vending", "Samhandling")
+  desc <- rep("", 12); desc[10] <- "Spille på lag"
+  ds_save_season(con, acc, "G1", 2026, themes, desc, "P1", rights = test_admin())
+  ds_save_season(con, acc, "G1", 2027, c("Ballmestring", rep("", 11)), actor = "P1", rights = test_admin())
+  s <- ds_list_season_themes(con, acc, "G1", 2026)
+  expect_equal(s$month, c(9L, 10L))
+  expect_equal(s$description, c("", "Spille på lag"))
+  expect_equal(ds_season_theme(con, acc, "G1", as.Date("2026-10-14"))$theme, "Samhandling")
+  expect_null(ds_season_theme(con, acc, "G1", as.Date("2026-11-01")))
+
+  themes[9] <- ""; themes[11] <- "Avslutning"
+  ds_save_season(con, acc, "G1", 2026, themes, desc, "P2", rights = test_admin())
+  s <- ds_list_season_themes(con, acc, "G1", 2026)
+  expect_equal(s$month, c(10L, 11L))
+  expect_equal(s$updated_by, c("P1", "P2"))        # unchanged months keep who wrote them
+  expect_equal(nrow(ds_list_season_themes(con, acc, "G1", 2027)), 1)
+  ds_save_season(con, acc, "G1", 2026, rep("", 12), actor = "P1", rights = test_admin())
+  expect_equal(nrow(ds_list_season_themes(con, acc, "G1", 2026)), 0)
+})
+
+test_that("team settings: empty until saved, then updated in place", {
+  con <- local_test_db(); acc <- test_access()
+  s <- ds_get_team_settings(con, acc, "G1")
+  expect_equal(s$session_minutes, "")
+  ds_save_team_settings(con, acc, "G1", list(age_group = "G10", session_minutes = "75", pitch = "7er"), "P1", rights = test_admin())
+  ds_save_team_settings(con, acc, "G1", list(age_group = "G10", session_minutes = "60", equipment = "Kjegler"), "P2", rights = test_admin())
+  s <- ds_get_team_settings(con, acc, "G1")
+  expect_equal(s$session_minutes, "60")
+  expect_equal(s$pitch, "")
+  expect_equal(s$equipment, "Kjegler")
+  expect_equal(s$updated_by, "P2")
+  expect_equal(DBI::dbGetQuery(con, "SELECT count(*)::integer AS n FROM team_settings")$n, 1L)
+})
+
+test_that("exercises: create, list, update (code stays), delete", {
+  con <- local_test_db(); acc <- test_access()
+  id <- ds_save_exercise(con, acc, "G1", list(name = "Rondo 4 mot 1", category = "pasning_mottak",
+                                              themes = c("Samhandling", "Pasning"), min_players = "5",
+                                              learning_points = "Åpne kroppen"), "P1", rights = test_admin())
+  id2 <- ds_save_exercise(con, acc, "G1", list(name = "Rondo 4 mot 1", category = "smaaspill"), "P1", rights = test_admin())
+  ex <- ds_list_exercises(con, acc, "G1")
+  expect_equal(ex$code, c("rondo-4-mot-1", "rondo-4-mot-1-2"))
+  expect_equal(ex$themes[[1]], c("Samhandling", "Pasning"))
+  expect_equal(ex$themes[[2]], character())
+  expect_equal(ex$min_players[1], 5L)
+  expect_true(is.na(ex$max_players[1]))
+  expect_equal(ex$learning_points[1], "Åpne kroppen")
+  expect_equal(ex$easier[1], "")
+  expect_equal(ex$source[1], "manual")
+
+  ds_save_exercise(con, acc, "G1", list(name = "Rondo med to touch", category = "pasning_mottak",
+                                        themes = "Samhandling"), "P2", id = id, rights = test_admin())
+  e <- ds_get_exercise(con, acc, id)
+  expect_equal(e$name, "Rondo med to touch")
+  expect_equal(e$code, "rondo-4-mot-1")
+  expect_equal(e$learning_points, "")
+  expect_equal(c(e$created_by, e$updated_by), c("P1", "P2"))
+
+  ds_delete_exercise(con, acc, id2, rights = test_admin())
+  expect_equal(nrow(ds_list_exercises(con, acc, "G1")), 1)
+  expect_error(ds_get_exercise(con, acc, id2), "Fant ikke")
+})
+
+test_that("training data in other groups cannot be read or changed", {
+  con <- local_test_db(); acc <- test_access()
+  expect_error(ds_list_season_themes(con, acc, "G2", 2026), "ikke tilgang")
+  expect_error(ds_save_season(con, acc, "G2", 2026, rep("", 12), actor = "P1", rights = test_admin()), "ikke tilgang")
+  expect_error(ds_get_team_settings(con, acc, "G2"), "ikke tilgang")
+  expect_error(ds_save_team_settings(con, acc, "G2", list(), "P1", rights = test_admin()), "ikke tilgang")
+  expect_error(ds_list_exercises(con, acc, "G2"), "ikke tilgang")
+  DBI::dbExecute(con, "INSERT INTO exercises (spond_group_id, code, name, category, created_by, updated_by)
+                       VALUES ('G2', 'fremmed', 'Fremmed', 'annet', 'P9', 'P9')")
+  other <- DBI::dbGetQuery(con, "SELECT id FROM exercises WHERE spond_group_id = 'G2'")$id
+  expect_error(ds_get_exercise(con, acc, other), "ikke tilgang")
+  expect_error(ds_save_exercise(con, acc, "G1", list(name = "X", category = "annet"), "P1", id = other, rights = test_admin()), "ikke tilgang")
+  expect_error(ds_delete_exercise(con, acc, other, rights = test_admin()), "ikke tilgang")
+  expect_equal(DBI::dbGetQuery(con, "SELECT name FROM exercises WHERE id = $1", list(other))$name, "Fremmed")
+})
+
+test_that("invalid training data is rejected before anything is written", {
+  con <- local_test_db(); acc <- test_access()
+  expect_error(ds_save_exercise(con, acc, "G1", list(name = "X", category = "tull"), "P1", rights = test_admin()), "kategori")
+  expect_error(ds_save_season(con, acc, "G1", 2026, c("Skadeforebygging", rep("", 11)), actor = "P1", rights = test_admin()), "sensitive")
+  expect_equal(DBI::dbGetQuery(con, "SELECT ((SELECT count(*) FROM exercises) + (SELECT count(*) FROM season_themes))::integer AS n")$n, 0L)
+})
+
+test_that("an exercise keeps its drawing as JSON, and can drop it again", {
+  con <- local_test_db(); acc <- test_access()
+  id <- ds_save_exercise(con, acc, "G1", list(name = "Rondo", category = "annet", drawing = drawing_example_json()), "P1", rights = test_admin())
+  e <- ds_get_exercise(con, acc, id)
+  d <- drawing_validate(e$drawing)
+  expect_equal(d$skisser[[1]]$tittel, "3 mot 1")
+  expect_length(d$skisser[[1]]$objekter, 9)
+  ds_save_exercise(con, acc, "G1", list(name = "Rondo", category = "annet", drawing = ""), "P1", id = id, rights = test_admin())
+  expect_true(is.na(ds_get_exercise(con, acc, id)$drawing))
+  expect_error(ds_save_exercise(con, acc, "G1", list(name = "Y", category = "annet", drawing = "{x"), "P1", rights = test_admin()), "Tegning")
+})
+
+# Training plans (migration 003) ---------------------------------------------------
+
+test_that("plans are saved as versions per event and read back", {
+  con <- local_test_db(); acc <- test_access()
+  ref <- jsonlite::fromJSON(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"), simplifyVector = FALSE)
+  v1 <- ds_save_plan(con, acc, "G1", "E1", ref, "P1")
+  ref$tittel <- "Ny tittel"
+  v2 <- ds_save_plan(con, acc, "G1", "E1", ref, "P2")
+  v3 <- ds_save_plan(con, acc, "G1", "E2", ref, "P1")
+  expect_equal(c(v1$version, v2$version, v3$version), c(1L, 2L, 1L))
+
+  latest <- ds_list_plans(con, acc, "G1", c("E1", "E2", "E9"))
+  expect_equal(latest$spond_event_id, c("E1", "E2"))
+  expect_equal(latest$version, c(2L, 1L))
+  expect_equal(latest$n_versions, c(2L, 1L))
+  expect_equal(latest$title[1], "Ny tittel")
+
+  vers <- ds_plan_versions(con, acc, "G1", "E1")
+  expect_equal(vers$version, c(2L, 1L))
+  expect_equal(vers$created_by, c("P2", "P1"))
+
+  p <- ds_get_plan(con, acc, v1$id)
+  expect_equal(p$plan$tittel, "Samhandling – spille på lag")
+  expect_equal(p$event_id, "E1")
+  expect_length(p$plan$ovelser[[1]]$tegning$skisser, 2)
+  expect_error(ds_save_plan(con, acc, "G1", "E1", list(tittel = "X", ovelser = list()), "P1"), "1 til 6")
+})
+
+test_that("plans in other groups cannot be read or saved", {
+  con <- local_test_db(); acc <- test_access()
+  expect_error(ds_list_plans(con, acc, "G2", "E1"), "ikke tilgang")
+  expect_error(ds_save_plan(con, acc, "G2", "E1", list(tittel = "X", ovelser = list(list(navn = "A"))), "P1"), "ikke tilgang")
+  DBI::dbExecute(con, "INSERT INTO training_plans (spond_group_id, spond_event_id, version, plan, created_by)
+                       VALUES ('G2', 'E1', 1, '{\"tittel\": \"X\", \"ovelser\": [{\"navn\": \"A\"}]}', 'P9')")
+  other <- DBI::dbGetQuery(con, "SELECT id FROM training_plans WHERE spond_group_id = 'G2'")$id
+  expect_error(ds_get_plan(con, acc, other), "ikke tilgang")
+})
+
+test_that("an exercise from a plan is put into the bank once, with its code", {
+  con <- local_test_db(); acc <- test_access()
+  ref <- jsonlite::fromJSON(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"), simplifyVector = FALSE)
+  e <- plan_validate(ref)$ovelser[[2]]
+  r1 <- ds_save_plan_exercise(con, acc, "G1", e, "P1", themes = "Samhandling")
+  r2 <- ds_save_plan_exercise(con, acc, "G1", e, "P1")
+  expect_true(r1$created)
+  expect_false(r2$created)
+  expect_equal(r2$id, r1$id)
+  ex <- ds_get_exercise(con, acc, r1$id)
+  expect_equal(ex$code, "hjem-bak-ballen")
+  expect_equal(ex$category, "annet")                  # "Overgang – angrep og forsvar" is not a bank category
+  expect_equal(ex$themes[[1]], "Samhandling")
+  expect_match(ex$learning_points, "Mistet ball")
+  expect_false(is.na(ex$drawing))
+})
+
+# Rights (migration 004) -----------------------------------------------------------
+
+test_that("rights are given and taken, logged, and checked", {
+  con <- local_test_db()
+  sa <- list(superadmin = TRUE, admin = TRUE)
+  adm <- list(superadmin = FALSE, admin = TRUE)
+  trainer <- list(superadmin = FALSE, admin = FALSE)
+  ids <- c("P-a", "P-b")
+  ds_set_role(con, sa, "P-me", "P-a", "admin", TRUE, ids)
+  ds_set_role(con, adm, "P-a", "P-b", "ai", TRUE, ids)
+  ds_set_role(con, adm, "P-a", "P-b", "ai", FALSE, ids)
+  roles <- ds_list_roles(con, ids)
+  expect_equal(roles$is_admin[roles$spond_profile_id == "P-a"], TRUE)
+  expect_equal(roles$can_use_ai[roles$spond_profile_id == "P-b"], FALSE)
+  expect_equal(roles$updated_by[roles$spond_profile_id == "P-b"], "P-a")
+  expect_equal(nrow(ds_get_role(con, "P-a")), 1)
+  expect_equal(nrow(ds_get_role(con, "P-zz")), 0)
+  log <- DBI::dbGetQuery(con, "SELECT spond_profile_id, role, granted, actor FROM app_role_log ORDER BY id")
+  expect_equal(log$granted, c(TRUE, TRUE, FALSE))
+  expect_equal(log$actor, c("P-me", "P-a", "P-a"))
+
+  expect_error(ds_set_role(con, adm, "P-a", "P-b", "admin", TRUE, ids), "Bare superadmin")
+  expect_error(ds_set_role(con, trainer, "P-b", "P-a", "ai", TRUE, ids), "ikke tilgang")
+  expect_error(ds_set_role(con, sa, "P-me", "P-c", "ai", TRUE, ids), "ikke med i dette laget")
+  expect_error(ds_set_role(con, sa, "P-me", "P-a", "kaffe", TRUE, ids), "Ukjent")
+  expect_equal(DBI::dbGetQuery(con, "SELECT count(*)::integer AS n FROM app_role_log")$n, 3L)
+})
+
+# Comments on plans (migration 007) ------------------------------------------------
+
+test_that("plan comments are added, listed, marked as used and only deleted by the author", {
+  con <- local_test_db(); acc <- test_access()
+  ref <- jsonlite::fromJSON(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"), simplifyVector = FALSE)
+  v1 <- ds_save_plan(con, acc, "G1", "E1", ref, "P1")
+  c1 <- ds_add_plan_comment(con, acc, v1$id, "P1", " For mye kø. ", exercise_no = 2)
+  c2 <- ds_add_plan_comment(con, acc, v1$id, "P2", "Bra økt!")
+  expect_error(ds_add_plan_comment(con, acc, v1$id, "P1", "", NA), "Skriv en kommentar")
+  expect_error(ds_add_plan_comment(con, acc, v1$id, "P1", "Ola er skadet", NA), "sensitive")
+  expect_error(ds_add_plan_comment(con, acc, v1$id, "P1", strrep("a", 1001), NA), "maks 1000")
+  expect_error(ds_add_plan_comment(con, acc, v1$id, "P1", "Hei", 7), "Ukjent øvelse")
+  com <- ds_list_plan_comments(con, acc, "G1", "E1")
+  expect_equal(com$body, c("For mye kø.", "Bra økt!"))
+  expect_equal(com$exercise_code[1], "hjem-bak-ballen")
+  expect_true(is.na(com$exercise_no[2]))
+
+  v2 <- ds_save_plan(con, acc, "G1", "E1", ref, "P1")
+  expect_equal(ds_mark_comments_used(con, acc, "G1", c1, v2$id), 1)
+  com <- ds_list_plan_comments(con, acc, "G1", "E1")
+  expect_equal(com$used_in_version[1], 2L)
+  expect_error(ds_delete_plan_comment(con, acc, "G1", c1, "P1"), "ikke er brukt")   # used by KI
+  expect_error(ds_delete_plan_comment(con, acc, "G1", c2, "P1"), "egne")           # not the author
+  ds_delete_plan_comment(con, acc, "G1", c2, "P2")
+  expect_equal(nrow(ds_list_plan_comments(con, acc, "G1", "E1")), 1)
+  expect_error(ds_list_plan_comments(con, acc, "G2", "E1"), "ikke tilgang")
+})
+
+test_that("one version per event is approved, and approval can be taken back", {
+  con <- local_test_db(); acc <- test_access()
+  ref <- jsonlite::fromJSON(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"), simplifyVector = FALSE)
+  v1 <- ds_save_plan(con, acc, "G1", "E1", ref, "P1")
+  v2 <- ds_save_plan(con, acc, "G1", "E1", ref, "P1")
+  ds_approve_plan(con, acc, v1$id, "P2")
+  expect_equal(ds_get_plan(con, acc, v1$id)$approved_by, "P2")
+  ds_approve_plan(con, acc, v2$id, "P3")
+  vers <- ds_plan_versions(con, acc, "G1", "E1")
+  expect_equal(vers$status, c("approved", "draft"))
+  expect_equal(vers$approved_by, c("P3", ""))
+  ds_unapprove_plan(con, acc, v2$id)
+  expect_equal(ds_plan_versions(con, acc, "G1", "E1")$status, c("draft", "draft"))
+  expect_error(DBI::dbExecute(con, paste("UPDATE training_plans SET status = 'approved' WHERE spond_event_id = 'E1'")),
+               "duplicate|unique")
+})
+
+test_that("the data layer itself stops non-admins and sensitive words", {
+  con <- local_test_db(); acc <- test_access()
+  trainer <- list(superadmin = FALSE, admin = FALSE, ai = TRUE, app = TRUE)
+  expect_error(ds_save_season(con, acc, "G1", 2026, rep("", 12), actor = "P1", rights = trainer), "administratorer")
+  expect_error(ds_save_team_settings(con, acc, "G1", list(age_group = "G10"), "P1", rights = trainer), "administratorer")
+  expect_error(ds_save_exercise(con, acc, "G1", list(name = "Rondo", category = "annet"), "P1", rights = trainer),
+               "administratorer")
+  id <- ds_save_exercise(con, acc, "G1", list(name = "Rondo", category = "annet"), "P1", rights = test_admin())
+  expect_error(ds_delete_exercise(con, acc, id, rights = trainer), "administratorer")
+  expect_equal(nrow(ds_list_exercises(con, acc, "G1")), 1)
+
+  expect_error(ds_add_tag(con, acc, "G1", "M1", "Astma", "P1"), "sensitive")
+  pid <- ds_save_proposal(con, acc, "P1", "G1", "Forslag", "A")
+  expect_error(ds_add_comment(con, acc, pid, "P1", "Hun er syk i dag"), "sensitive")
+  expect_type(ds_add_comment(con, acc, pid, "P1", "Fint"), "integer")
 })

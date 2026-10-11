@@ -43,3 +43,6 @@ drop_test_roles <- function(con) {
   }
   invisible(old)
 }
+
+# Rights of an admin, for the data functions only admins may call.
+test_admin <- function() list(superadmin = FALSE, admin = TRUE, ai = FALSE, app = TRUE)

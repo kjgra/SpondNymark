@@ -1,7 +1,7 @@
 test_that("only minimal fields are kept from an event", {
   e <- event_minimal(fake_spond_events()[[1]])
   expect_setequal(names(e), c("id", "heading", "start", "end", "cancelled", "match", "subgroup_ids",
-                              "invite_time", "not_sent", "responses"))
+                              "invite_time", "not_sent", "responses", "owners"))
   expect_false(e$not_sent)                    # sent: Spond gives no inviteTime
   expect_equal(e$subgroup_ids, "S-ulv")
   expect_equal(names(e$responses), c("member_id", "status"))
@@ -71,4 +71,13 @@ test_that("times are shown in Norwegian, in Norwegian time", {
   expect_equal(event_when(t("2027-01-29 16:00"), t("2027-01-31 12:00"), now = now),
                "fre. 29. jan. 2027 kl. 17:00–søn. 31. jan. 2027 kl. 13:00")
   expect_equal(event_when(NA), "Tid ikke satt")
+})
+
+test_that("only id, name and answer are kept from an organiser", {
+  raw <- fake_spond_events()[[1]]
+  raw$owners <- list(list(id = "P-x", firstName = "Kari", lastName = "Trener", response = "accepted",
+                          email = "kari@klubb.no", phoneNumber = "98765432"))
+  o <- event_minimal(raw)$owners
+  expect_equal(names(o), c("profile_id", "first_name", "last_name", "status"))
+  expect_false(any(grepl("klubb|98765432", unlist(o))))
 })

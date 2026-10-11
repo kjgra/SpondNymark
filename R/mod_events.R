@@ -21,6 +21,9 @@
 #' @param now Function giving the current time (replaceable in tests).
 #' @param past_days Size of the window for past events, and how much "Vis
 #'   eldre" adds.
+#' @param rights Reactive with the user's rights (for «Lag med KI»).
+#' @param rights_now NULL, or a function reading the rights again before an
+#'   action (`rights_now_fn()`); passed on to the plans.
 #' @noRd
 #' @importFrom shiny NS tagList
 mod_events_ui <- function(id) {
@@ -91,11 +94,20 @@ unsent_badge <- function(event, tz = "Europe/Oslo") {
   span(class = "sn-tag sn-tag-unsent", paste0("Ikke sendt ut", when))
 }
 
-# "12 kommer · 3 ikke svart"
-event_count_text <- function(event) {
+# "12 kommer (3 trenere) · 3 ikke svart": players only, with the trainers who
+# are coming in brackets (organisers and recipients with a trainer role, see
+# event_coaches()). Without `group`, every recipient is counted.
+event_count_text <- function(event, group = NULL) {
   r <- event$responses$status
-  if (isTRUE(event$not_sent)) return(paste(length(r), "får invitasjonen"))
-  parts <- c(paste(sum(r == "accepted"), "kommer"),
+  n_coach <- 0L
+  if (!is.null(group)) {
+    p <- event_participants(event, group)
+    r <- p$status[is.na(p$kind) | p$kind != "coach"]
+    n_coach <- sum(event_coaches(event, group)$status == "accepted")
+  }
+  coaches <- if (n_coach > 0) paste0(" (", n_coach, if (n_coach == 1) " trener)" else " trenere)")
+  if (isTRUE(event$not_sent)) return(paste0(length(r), " får invitasjonen"))
+  parts <- c(paste0(sum(r == "accepted"), " kommer", coaches %||% ""),
              if (any(r == "unanswered")) paste(sum(r == "unanswered"), "ikke svart"))
   paste(parts, collapse = " · ")
 }
@@ -152,16 +164,16 @@ member_sections <- function(m, tagger = NULL) {
   )
 }
 
-# "Trenere: Kari T., Per O. (fordeles ikke)" on the event page: trainers who
-# got the event and have not said no. NULL when there are none.
+# "Trenere: Kari T., Per O." on the event page: the trainers who are coming
+# (organisers and recipients with a trainer role, see event_coaches()).
+# NULL when there are none.
 event_coaches_line <- function(event, group) {
-  p <- event_participants(event, group)
-  p <- p[!is.na(p$kind) & p$kind == "coach" & p$status != "declined", , drop = FALSE]
+  p <- event_coaches(event, group)
+  p <- p[p$status == "accepted", , drop = FALSE]
   if (nrow(p) == 0) return(NULL)
   div(class = "sn-event-coaches",
       span(class = "sn-event-coaches-label", "Trenere:"), " ",
-      paste(p$display_name[order(tolower(p$display_name))], collapse = ", "),
-      span(class = "sn-hint", " (fordeles ikke)"))
+      paste(p$display_name, collapse = ", "))
 }
 
 # Classes shared by the event row and the event page header.
@@ -181,7 +193,7 @@ event_row <- function(ns, event, ctx, groups = NULL) {
         span(class = "sn-event-title", event$heading),
         span(class = "sn-event-when", event_when(event$start, event$end)),
         div(class = "sn-tags", event_badges(event, ctx), if (!is.null(groups)) groups$event_badge(event$id))),
-    span(class = "sn-event-count", event_count_text(event))
+    span(class = "sn-event-count", event_count_text(event, ctx$group))
   )
 }
 
@@ -200,7 +212,8 @@ tab_switch <- function(ns, tab) {
 
 #' @noRd
 mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond = spond_api(),
-                              now = Sys.time, past_days = 30, unsent_shown = 5, unsent_horizon_days = 183) {
+                              now = Sys.time, past_days = 30, unsent_shown = 5, unsent_horizon_days = 183,
+                              rights = reactive(no_rights()), rights_now = NULL) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     tab <- reactiveVal("upcoming")
@@ -332,6 +345,8 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
                         events = known_events, open_event_input = ns("open"))
     }
     editing <- if (is.null(groups)) function() FALSE else groups$editing
+    if (!is.null(db)) mod_plans_server("plans", context, user, db, event = selected, now = now, rights = rights,
+                                      rights_now = rights_now)
 
     # "Godkjenning" in the top bar: only with the database, once a team is
     # chosen, and not while the group editor is open.
@@ -425,6 +440,7 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
             ),
             bslib::card_body(
               if (!is.null(groups)) div(class = "sn-event-groups", mod_groups_event_ui(ns("groups"))),
+              if (!is.null(db) && !isTRUE(ev$match)) mod_plans_event_ui(ns("plans")),
               mod_participants_ui(ns("participants"))
             )
           )

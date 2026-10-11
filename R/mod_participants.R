@@ -1,6 +1,7 @@
 #' Participants of one event
 #'
-#' The participants are always the event's recipients, grouped by response:
+#' The participants are the event's recipients except the trainers (they are
+#' shown at the top of the event), grouped by response:
 #' Kommer, Venteliste, Ikke bekreftet, Ikke svart, Kommer ikke. Only members
 #' who are coming (and later: members already placed in a group) can be put
 #' in groups, so "Kommer" is shown first and open.
@@ -19,10 +20,13 @@ mod_participants_ui <- function(id) {
 mod_participants_server <- function(id, event, group, tagger = NULL) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
+    # Trainers are shown at the top of the event (event_coaches_line()), not
+    # in this list.
     participants <- reactive({
       ev <- event()
       req(ev)
-      event_participants(ev, group())
+      p <- event_participants(ev, group())
+      p[is.na(p$kind) | p$kind != "coach", , drop = FALSE]
     })
 
     output$list <- renderUI({

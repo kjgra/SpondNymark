@@ -1,0 +1,176 @@
+{
+  "versjon": 1,
+  "tittel": "Samhandling – spille på lag",
+  "undertittel": "Treningsøkt for gutter 10 år · tre stasjoner, tre grupper · ca. 65 min",
+  "tema": "Samhandling – spille på lag",
+  "fokus": {
+    "forsvar": "Når vi mister ballen, kommer vi ikke hjem bak ballen.",
+    "angrep": "Ballfører har få pasningsalternativer – vi beveger oss for lite i rom."
+  },
+  "stikkord": [
+    {"tittel": "Gi ballfører to valg", "tekst": "Ut av pasningsskyggen – én på hver side."},
+    {"tittel": "Ballen flytter seg – vi flytter oss", "tekst": "Støtt bak, løp forbi, løp i rom."},
+    {"tittel": "Mistet ball? Hjem bak ballen!", "tekst": "Kortest vei mot eget mål."}
+  ],
+  "stikkord_merknad": "Bruk de samme ordene på alle stasjonene, så kjenner guttene dem igjen – og bruk dem i kamp.",
+  "tidsplan": {
+    "oppvarming": {"minutter": 8, "tekst": "Felles samling og oppvarming (f.eks. pasningskaos: rop navn før pasning)"},
+    "stasjoner": {"minutter": 15, "bytte": 2, "grupper": 3},
+    "avslutning": {"minutter": 8, "tekst": "Felles avslutning: to spørsmål til hele gruppa (se under)"},
+    "merknad": "15 minutter per stasjon, 2 minutter til bytte. Én trener per stasjon som blir på sin stasjon hele økta. Planen er laget for ca. 24 spillere (3 grupper à 8); se «Tilpasning» på hver øvelse hvis dere er flere eller færre."
+  },
+  "avslutning_sporsmal": [
+    "«Hva kan du gjøre for å hjelpe den som har ballen?»",
+    "«Hva gjør vi alle sammen i det øyeblikket vi mister ballen?»",
+    "Be noen gutter vise det på banen. Ros konkrete eksempler du så på stasjonene."
+  ],
+  "kilde": "Læringsmomentene bygger på NFFs fagplan for 10–12 år: «være spillbar – ut av pasningsskyggen», «bevegelse bak, forbi og foran ballfører for å skaffe flere pasningsalternativ» og å hjelpe laget å samle seg bak ballen.",
+  "ovelser": [
+    {
+      "kode": "3-mot-1-alltid-to-alternativer",
+      "navn": "3 mot 1 – alltid to alternativer",
+      "kategori": "Spille med og mot",
+      "fokus": "Være spillbar – ut av pasningsskyggen. Ballfører skal alltid ha to å spille til.",
+      "organisering": ["To ruter à 12 × 12 m ved siden av hverandre.", "3 blå mot 1 rød i hver rute (8 spillere).", "Én ball per rute, ekstraballer i hjørnene."],
+      "gjennomforing": ["De tre holder ballen mot forsvareren. 5 pasninger på rad = 1 poeng.", "Vinner forsvareren ballen, eller ballen går ut, bytter han med den som slo pasningen.", "Bytt forsvarer uansett hvert 60. sekund, så alle får prøve.", "Etter 6–7 min: slå sammen rutene til én rute 15 × 15 m og spill 6 mot 2."],
+      "tilpasning": ["Flere spillere: lag en tredje rute. Færre: 4 mot 2 i én rute."],
+      "laeringsmomenter": ["**Uten ball:** Stå der ballfører kan se deg – ikke bak forsvareren.", "Én på hver side av ballfører, så vi lager en trekant.", "Hver gang ballen flytter seg, flytter du deg.", "**Med ball:** Se opp før du får ballen, og ta imot slik at du ser begge medspillerne."],
+      "sporsmal": ["«Kan ballfører spille til deg nå?»", "«Hva skjer når forsvareren står mellom deg og ballen?»", "«Hvor mange kan ballfører spille til akkurat nå?»"],
+      "enklere": "Større rute (15 × 15 m), fri touch, forsvarer går halvt tempo.",
+      "vanskeligere": "Maks to touch. Ikke lov å spille tilbake til den du fikk ballen fra. 6 mot 2 i felles rute.",
+      "tegning": {
+        "skisser": [
+          {
+            "tittel": "A: Alltid to alternativer",
+            "bane": {"bredde": 12, "lengde": 12, "marg": 2.5},
+            "objekter": [
+              {"type": "kjegle", "x": 0, "y": 0}, {"type": "kjegle", "x": 12, "y": 0},
+              {"type": "kjegle", "x": 0, "y": 12}, {"type": "kjegle", "x": 12, "y": 12},
+              {"type": "spiller", "lag": 1, "x": 1.0, "y": 9.5, "tekst": "2"},
+              {"type": "spiller", "lag": 1, "x": 1.5, "y": 1.2, "tekst": "1"},
+              {"type": "ball", "x": 2.5, "y": 1.9},
+              {"type": "spiller", "lag": 2, "x": 5.4, "y": 1.6, "tekst": "F"},
+              {"type": "spiller", "lag": 1, "x": 8.9, "y": 1.1, "tekst": "3"}
+            ],
+            "piler": [
+              {"type": "pasning", "fra": [2.5, 1.9], "til": [9.7, 7.2]},
+              {"type": "lop", "fra": [8.9, 1.1], "til": [10.6, 6.9], "bue": 0.25}
+            ],
+            "tekster": [{"x": 14.25, "y": -1.4, "tekst": "Rute 12 × 12 m  ·  3 mot 1 i hver rute"}]
+          },
+          {
+            "tittel": "B: Ballen flyttes – vi flytter oss",
+            "bane": {"bredde": 12, "lengde": 12, "marg": 2.5},
+            "objekter": [
+              {"type": "kjegle", "x": 0, "y": 0}, {"type": "kjegle", "x": 12, "y": 0},
+              {"type": "kjegle", "x": 0, "y": 12}, {"type": "kjegle", "x": 12, "y": 12},
+              {"type": "spiller", "lag": 1, "x": 6.5, "y": 11.0, "tekst": "2"},
+              {"type": "spiller", "lag": 2, "x": 6.5, "y": 5.8, "tekst": "F"},
+              {"type": "spiller", "lag": 1, "x": 10.9, "y": 6.0, "tekst": "1"},
+              {"type": "ball", "x": 10.2, "y": 6.8},
+              {"type": "spiller", "lag": 1, "x": 2.5, "y": 5.0, "tekst": "3"}
+            ],
+            "piler": [
+              {"type": "lop", "fra": [6.5, 11.0], "til": [9.5, 11.2]},
+              {"type": "lop", "fra": [2.5, 5.0], "til": [5.1, 1.5], "bue": 0.2}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kode": "hjem-bak-ballen",
+      "navn": "Hjem bak ballen",
+      "kategori": "Overgang – angrep og forsvar",
+      "fokus": "Når vi mister ballen, sprinter vi hjem bak ballen før vi presser.",
+      "organisering": ["Bane ca. 32 × 22 m. Stort mål med keeper i én ende, to småmål i den andre.", "Blå: 3 angripere. Rød: keeper, 2 forsvarere og 1 hjemløper (H) som starter ved siden av angriperne.", "Trener står ved småmålene med baller."],
+      "gjennomforing": ["Treneren spiller ballen inn til blå. I samme øyeblikk sprinter H hjem – forbi ballen og inn i forsvaret.", "Blå prøver å score raskt mens de har 3 mot 2.", "Vinner rød ballen, kontrer de mot småmålene – og da må **alle** blå sprinte hjem bak ballen.", "Ny ball fra trener etter hvert angrep. Bytt roller etter 4–5 angrep, så alle får være hjemløper."],
+      "tilpasning": ["8 spillere: 3 + 3 + keeper + 1 som bytter inn. Trener kan stå i mål hvis ingen vil.", "Flere: to hjemløpere, én på hver side."],
+      "laeringsmomenter": ["**Mistet ball:** Løp korteste vei mot eget mål – ikke mot ballen.", "Kom bak ballen først, så kan du hjelpe.", "Nærmeste spiller presser ballfører, de andre sikrer og samler seg bak.", "Snakk sammen: «Jeg tar’n!» – «Jeg sikrer!»", "**Angrep:** Bruk overtallet raskt, før hjemløperen kommer."],
+      "sporsmal": ["«Hvor er det lurt å løpe når vi mister ballen?»", "«Hvorfor hjelper det å komme bak ballen?»", "«Hvem skal presse, og hvem skal sikre?»"],
+      "enklere": "La H starte litt nærmere eget mål, så det fort blir 3 mot 3.",
+      "vanskeligere": "Blå må score innen 8 sekunder. Kontringsmål teller dobbelt hvis det scores før alle blå er bak ballen.",
+      "tegning": {
+        "skisser": [
+          {
+            "bane": {"bredde": 32, "lengde": 22, "marg": 2.5, "midtlinje": true},
+            "hjelpelinjer": [{"fra": [19.7, 0], "til": [19.7, 22], "tekst": "ball-linjen"}],
+            "objekter": [
+              {"type": "maal", "x": 0, "y": 11, "bredde": 5, "side": "venstre"},
+              {"type": "smaamaal", "x": 32, "y": 17, "bredde": 2, "side": "hoyre"},
+              {"type": "smaamaal", "x": 32, "y": 5, "bredde": 2, "side": "hoyre"},
+              {"type": "spiller", "lag": 2, "x": 1.2, "y": 11.0, "tekst": "K"},
+              {"type": "spiller", "lag": 2, "x": 7.5, "y": 14.5, "tekst": "R"},
+              {"type": "spiller", "lag": 2, "x": 7.5, "y": 7.5, "tekst": "R"},
+              {"type": "spiller", "lag": 2, "x": 26.9, "y": 20.4, "tekst": "H"},
+              {"type": "spiller", "lag": 1, "x": 21.9, "y": 16.0, "tekst": "B"},
+              {"type": "spiller", "lag": 1, "x": 21.5, "y": 11.0, "tekst": "B"},
+              {"type": "spiller", "lag": 1, "x": 21.9, "y": 4.0, "tekst": "B"},
+              {"type": "ball", "x": 20.0, "y": 11.0},
+              {"type": "trener", "x": 30.9, "y": 11.0}
+            ],
+            "piler": [
+              {"type": "lop", "fra": [26.9, 20.4], "til": [9.0, 19.5]},
+              {"type": "lop", "fra": [21.9, 16.0], "til": [13.6, 15.6]},
+              {"type": "lop", "fra": [21.9, 4.0], "til": [13.6, 3.6]},
+              {"type": "foring", "fra": [20.0, 11.0], "til": [14.6, 11.1]},
+              {"type": "pasning", "fra": [30.9, 11.0], "til": [21.5, 11.0]}
+            ],
+            "etiketter": [{"x": 26.4, "y": 7.5, "tekst": "H sprinter forbi ballen og hjem"}],
+            "tekster": [
+              {"x": 4.6, "y": -1.4, "tekst": "Mål + keeper"},
+              {"x": 16, "y": -1.4, "tekst": "ca. 32 × 22 m"},
+              {"x": 27.6, "y": -1.4, "tekst": "To småmål"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kode": "4-mot-4-med-endesoner",
+      "navn": "4 mot 4 med endesoner",
+      "kategori": "Smålagsspill",
+      "fokus": "Bevegelse i rom – én støtter, én løper forbi. Mistet ball: alle hjem bak ballen.",
+      "organisering": ["Bane ca. 32 × 22 m med en 4 m endesone i hver ende.", "4 mot 4, ingen keepere.", "Trener med baller på sidelinja."],
+      "gjennomforing": ["Mål: pass til en medspiller som **løper inn** i motstanderens endesone og tar imot.", "Ikke lov å stå og vente i sonen eller føre ballen inn.", "Etter mål starter det andre laget med ball fra egen endesone.", "Trener roper «Frys!» rett etter et balltap: alle står stille. Se sammen hvem som er foran ballen og må hjem, og hvor mange alternativer ballfører har."],
+      "tilpasning": ["Flere: 5 mot 5 på litt større bane. Færre: 3 mot 3 med joker."],
+      "laeringsmomenter": ["**I angrep:** Bevegelse bak, forbi og foran ballfører – flere pasningsalternativer.", "Gjør banen stor: bruk hele bredden og lengden.", "Spill og flytt deg. Start løpet i rom når ballfører kan se deg.", "**I forsvar:** Mistet ball – alle hjem bak ballen. Nærmeste presser."],
+      "sporsmal": ["«Hvem kan løpe i rommet nå?»", "«Hvor mange kan ballfører spille til?» (i frys-bildet)", "«Hvem er foran ballen og må hjem?»"],
+      "enklere": "Én joker som alltid spiller med laget som har ballen (5 mot 4).",
+      "vanskeligere": "Maks tre touch. Bonuspoeng hvis laget vinner ballen tilbake innen 5 sekunder etter balltap.",
+      "tegning": {
+        "skisser": [
+          {
+            "bane": {"bredde": 32, "lengde": 22, "marg": 2.5},
+            "soner": [
+              {"x": 0, "y": 0, "b": 4, "h": 22, "tekst": "Endesone 4 m"},
+              {"x": 28, "y": 0, "b": 4, "h": 22, "tekst": "Endesone 4 m"}
+            ],
+            "objekter": [
+              {"type": "kjegle", "x": 4, "y": 0, "farge": "gul"}, {"type": "kjegle", "x": 28, "y": 0, "farge": "gul"},
+              {"type": "kjegle", "x": 4, "y": 22, "farge": "gul"}, {"type": "kjegle", "x": 28, "y": 22, "farge": "gul"},
+              {"type": "spiller", "lag": 1, "x": 11.0, "y": 17.0, "tekst": "2"},
+              {"type": "spiller", "lag": 1, "x": 19.0, "y": 15.0, "tekst": "3"},
+              {"type": "spiller", "lag": 1, "x": 13.9, "y": 9.0, "tekst": "1"},
+              {"type": "spiller", "lag": 1, "x": 23.0, "y": 4.0, "tekst": "4"},
+              {"type": "ball", "x": 15.0, "y": 9.5},
+              {"type": "spiller", "lag": 2, "x": 20.9, "y": 12.5},
+              {"type": "spiller", "lag": 2, "x": 25.5, "y": 11.5},
+              {"type": "spiller", "lag": 2, "x": 16.96, "y": 8.0},
+              {"type": "spiller", "lag": 2, "x": 10.0, "y": 6.0}
+            ],
+            "piler": [
+              {"type": "lop", "fra": [11.0, 17.0], "til": [12.7, 13.9]},
+              {"type": "lop", "fra": [19.0, 15.0], "til": [22.5, 17.6]},
+              {"type": "pasning", "fra": [15.0, 9.5], "til": [28.9, 7.1]},
+              {"type": "lop", "fra": [10.0, 6.0], "til": [16.96, 5.8], "bue": -0.15},
+              {"type": "lop", "fra": [23.0, 4.0], "til": [29.5, 6.1], "bue": 0.2}
+            ],
+            "etiketter": [{"x": 10.0, "y": 3.5, "tekst": "Hjem bak ballen!"}],
+            "tekster": [{"x": 16, "y": -1.4, "tekst": "ca. 32 × 22 m"}]
+          }
+        ]
+      }
+    }
+  ]
+}

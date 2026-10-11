@@ -36,7 +36,7 @@ fake_spond_api <- function(profile_id = "P-me", fail_with = NULL) {
     login = function(email, password) {
       if (!is.null(fail_with)) stop(fail_with)
       if (!identical(email, "trener@klubb.no") || !identical(password, "riktig")) {
-        spond_stop("Innlogging mot Spond feilet: feil e-post eller passord.")
+        spond_stop("Innlogging mot Spond feilet: feil e-post, mobilnummer eller passord.")
       }
       structure(list(token = "tok", base_url = "x"), class = "spond_session")
     },
