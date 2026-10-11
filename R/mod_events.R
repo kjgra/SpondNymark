@@ -94,11 +94,20 @@ unsent_badge <- function(event, tz = "Europe/Oslo") {
   span(class = "sn-tag sn-tag-unsent", paste0("Ikke sendt ut", when))
 }
 
-# "12 kommer · 3 ikke svart"
-event_count_text <- function(event) {
+# "12 kommer (3 trenere) · 3 ikke svart": players only, with the trainers who
+# are coming in brackets (organisers and recipients with a trainer role, see
+# event_coaches()). Without `group`, every recipient is counted.
+event_count_text <- function(event, group = NULL) {
   r <- event$responses$status
-  if (isTRUE(event$not_sent)) return(paste(length(r), "får invitasjonen"))
-  parts <- c(paste(sum(r == "accepted"), "kommer"),
+  n_coach <- 0L
+  if (!is.null(group)) {
+    p <- event_participants(event, group)
+    r <- p$status[is.na(p$kind) | p$kind != "coach"]
+    n_coach <- sum(event_coaches(event, group)$status == "accepted")
+  }
+  coaches <- if (n_coach > 0) paste0(" (", n_coach, if (n_coach == 1) " trener)" else " trenere)")
+  if (isTRUE(event$not_sent)) return(paste0(length(r), " får invitasjonen"))
+  parts <- c(paste0(sum(r == "accepted"), " kommer", coaches %||% ""),
              if (any(r == "unanswered")) paste(sum(r == "unanswered"), "ikke svart"))
   paste(parts, collapse = " · ")
 }
@@ -184,7 +193,7 @@ event_row <- function(ns, event, ctx, groups = NULL) {
         span(class = "sn-event-title", event$heading),
         span(class = "sn-event-when", event_when(event$start, event$end)),
         div(class = "sn-tags", event_badges(event, ctx), if (!is.null(groups)) groups$event_badge(event$id))),
-    span(class = "sn-event-count", event_count_text(event))
+    span(class = "sn-event-count", event_count_text(event, ctx$group))
   )
 }
 

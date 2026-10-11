@@ -313,6 +313,19 @@ test_that("organisers (arrangører) are the event's trainers, with their own ans
   expect_null(event_coaches_line(within(ev, owners <- owners[1, ]), g))
 })
 
+test_that("the event row counts players, with the trainers who are coming in brackets", {
+  g <- fake_group()
+  raw <- fake_spond_events()[[1]]                  # M-1, M-3 coming, M-2 not answered, M-gone declined
+  raw$responses$acceptedIds <- list("M-1", "M-3", "M-me")
+  ev <- event_minimal(raw)
+  expect_equal(event_count_text(ev, g), "2 kommer (1 trener) · 1 ikke svart")
+  raw$owners <- list(list(id = "P-me", response = "declined"))
+  expect_equal(event_count_text(event_minimal(raw), g), "2 kommer · 1 ikke svart")
+  expect_equal(event_count_text(ev), "3 kommer · 1 ikke svart")    # without the group: everyone
+  ev$not_sent <- TRUE
+  expect_equal(event_count_text(ev, g), "4 får invitasjonen")
+})
+
 test_that("trainers are not in the participant list", {
   g <- fake_group()
   raw <- fake_spond_events()[[1]]
@@ -346,7 +359,7 @@ test_that("events not sent yet are marked, and only the next five are shown unti
     html <- view_html(output)
     expect_match(html, "sn-event-unsent")
     expect_match(html, "Ikke sendt ut · sendes tor. 8. okt.")      # Plantrening 1
-    expect_match(html, "3 får invitasjonen")
+    expect_match(html, "2 får invitasjonen")          # players only (M-me is a trainer)
     expect_match(html, "Plantrening 5")
     expect_false(grepl("Plantrening 6", html))
     expect_match(html, "2 flere som ikke er sendt ut")
