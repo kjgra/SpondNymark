@@ -113,18 +113,16 @@ maintenance_run <- function(con, by = "oppstart", force = FALSE, now = Sys.time(
 #' Start the maintenance shortly after a session starts, at most once an
 #' hour per R process (the database decides whether it is due)
 #'
-#' Runs a few seconds later with its own connection, so the start of the
+#' Runs a few seconds later (on the shared connection), so the start of the
 #' app is not delayed. Does nothing without `SPONDNYMARK_DB_URL`.
 #' @noRd
-maintenance_on_start <- function(connect = ds_connect, delay = 5, now = Sys.time,
+maintenance_on_start <- function(db = db_shared(), delay = 5, now = Sys.time,
                                  url = Sys.getenv("SPONDNYMARK_DB_URL")) {
   last <- .sn_maintenance$checked
   if (!nzchar(url) || (!is.null(last) && difftime(now(), last, units = "hours") < 1)) return(invisible(FALSE))
   .sn_maintenance$checked <- now()
   later::later(function() {
-    h <- db_handle(connect)
-    on.exit(h$close(), add = TRUE)
-    tryCatch(h$run(function(con) maintenance_run(con, "oppstart")),
+    tryCatch(db$run(function(con) maintenance_run(con, "oppstart")),
              error = function(e) message("Vedlikehold ved oppstart feilet: ", conditionMessage(e)))
   }, delay)
   invisible(TRUE)

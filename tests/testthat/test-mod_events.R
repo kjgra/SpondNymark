@@ -365,7 +365,7 @@ test_that("events not sent yet are marked, and only the next five are shown unti
     expect_match(html, "2 flere som ikke er sendt ut")
     expect_equal(sum(gregexpr("Trening Ulv", html)[[1]] > 0), 1)   # no duplicates from the two calls
     expect_true(isTRUE(calls[[2]]$include_scheduled))
-    expect_equal(calls[[2]]$max_start, fake_now() + 183 * 86400)
+    expect_equal(calls[[2]]$max_start, fake_now() + 62 * 86400)   # about two months ahead
     n <- length(calls)
     session$setInputs(later = "x")
     html <- view_html(output)
@@ -396,4 +396,33 @@ test_that("response icons: tick, question mark, cross, and nothing for unknown",
   expect_null(status_icon("noe annet"))
   chip <- as.character(member_chip("M-1", "Emma H.", status = "declined"))
   expect_match(chip, "sn-st-declined")
+})
+
+test_that("the two lists of upcoming events are fetched at the same time, and one at a time if that fails", {
+  seen <- list()
+  api <- fake_events_api()
+  api$events_many <- function(sess, queries) {
+    seen[[length(seen) + 1]] <<- queries
+    lapply(queries, function(q) fake_spond_events())
+  }
+  ctx <- reactiveVal(teams_context(fake_group()))
+  testServer(mod_events_server, args = list(context = ctx, user = reactive(fake_user(fake_spond_groups_two())),
+                                            spond = api, now = fake_now), {
+    expect_match(view_html(output), "Trening Ulv")
+    expect_length(seen, 1)
+    q <- seen[[1]]
+    expect_length(q, 2)
+    expect_equal(q[[1]]$group_id, "G2016")
+    expect_null(q[[1]]$include_scheduled)
+    expect_true(q[[2]]$include_scheduled)
+    expect_equal(q[[2]]$max_start, fake_now() + 62 * 86400)
+    expect_length(api$calls(), 0)                     # not one at a time
+  })
+  api2 <- fake_events_api()
+  api2$events_many <- function(sess, queries) spond_stop("Kall mot Spond feilet (HTTP 500).")
+  testServer(mod_events_server, args = list(context = ctx, user = reactive(fake_user(fake_spond_groups_two())),
+                                            spond = api2, now = fake_now), {
+    expect_match(view_html(output), "Trening Ulv")
+    expect_length(api2$calls(), 2)                    # fell back to one at a time
+  })
 })

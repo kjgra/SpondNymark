@@ -212,7 +212,7 @@ tab_switch <- function(ns, tab) {
 
 #' @noRd
 mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond = spond_api(),
-                              now = Sys.time, past_days = 30, unsent_shown = 5, unsent_horizon_days = 183,
+                              now = Sys.time, past_days = 30, unsent_shown = 5, unsent_horizon_days = 62,
                               rights = reactive(no_rights()), rights_now = NULL) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -259,16 +259,33 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
       t0 <- proc.time()[["elapsed"]]
       on.exit(timing_log("arrangementer for laget i alt", (proc.time()[["elapsed"]] - t0) * 1000), add = TRUE)
       # Events whose invitation is sent, as before, and events not sent yet
-      # (scheduled) up to about half a year ahead. Spond lists the latest first
+      # (scheduled) up to about two months ahead. Spond lists the latest first
       # and stops at `max`, so the horizon keeps far-off series from crowding
-      # out the next weeks. How many of them are shown is decided below.
-      res <- fetch(ctx, min_end = t, max_events = 100, subgroup_id = NULL)
-      if (!is.null(res$error)) {
-        res$events <- list()
-        return(res)
+      # out the next weeks (and keeps the answer small). How many of them are
+      # shown is decided below. The two lists are fetched at the same time.
+      q_sent <- list(group_id = ctx$group_id, min_end = t, max_events = 100)
+      q_unsent <- list(group_id = ctx$group_id, min_end = t, max_start = t + unsent_horizon_days * 86400,
+                       include_scheduled = TRUE, max_events = 300)
+      both <- if (!is.null(spond$events_many)) {
+        tryCatch(spond$events_many(user()$spond, list(q_sent, q_unsent)), error = function(e) {
+          if (!inherits(e, "spond_error")) message("Henting av arrangementer samtidig feilet: ", conditionMessage(e))
+          NULL
+        })
       }
-      unsent <- fetch(ctx, min_end = t, max_start = t + unsent_horizon_days * 86400,
-                      include_scheduled = TRUE, max_events = 300, subgroup_id = NULL)
+      if (!is.null(both)) {
+        res <- list(events = both[[1]], error = NULL)
+        unsent <- list(events = both[[2]], error = NULL)
+      } else {
+        # One at a time; also when fetching both at once failed, so a
+        # failing list of unsent events does not hide the others.
+        res <- fetch(ctx, min_end = t, max_events = 100, subgroup_id = NULL)
+        if (!is.null(res$error)) {
+          res$events <- list()
+          return(res)
+        }
+        unsent <- fetch(ctx, min_end = t, max_start = t + unsent_horizon_days * 86400,
+                        include_scheduled = TRUE, max_events = 300, subgroup_id = NULL)
+      }
       raw <- c(res$events, if (is.null(unsent$error)) unsent$events)
       ids <- vapply(raw, function(e) as.character(e$id %||% NA), character(1))
       res$events <- events_for_context(raw[!duplicated(ids)], NULL)

@@ -931,13 +931,9 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
       promises::then(ai_send_async(prep, ai_async), function(sent) {
         finish <- function(con) ai_learning_finish(con, access, actor, prep, sent)
         tryCatch(
-          if (isTRUE(session$isClosed())) {
-            h <- db_handle()
-            on.exit(h$close(), add = TRUE)
-            h$run(finish)
-          } else {
-            db$run(finish)
-          },
+          # The shared connection (db_shared()) outlives the session, so a
+          # paid answer is saved also if the browser has been closed.
+          db$run(finish),
           ai_error = function(e) list(error = conditionMessage(e)))
       })
     })

@@ -113,11 +113,33 @@ spond_get_json <- function(req) {
   resp <- req |>
     httr2::req_error(is_error = function(resp) FALSE) |>
     httr2::req_perform()
+  spond_read_json(req, resp, (proc.time()[["elapsed"]] - t0) * 1000)
+}
+
+#' Several GET requests at the same time, e.g. the two event lists for a group
+#' @return One parsed answer per request, in the same order. Stops (like
+#'   `spond_get_json()`) if one of them fails.
+#' @noRd
+spond_get_json_many <- function(reqs) {
+  t0 <- proc.time()[["elapsed"]]
+  reqs <- lapply(reqs, httr2::req_error, is_error = function(resp) FALSE)
+  resps <- httr2::req_perform_parallel(reqs, on_error = "continue", progress = FALSE)
+  ms <- (proc.time()[["elapsed"]] - t0) * 1000
+  lapply(seq_along(reqs), function(i) {
+    r <- resps[[i]]
+    if (inherits(r, "error")) spond_stop("Fikk ikke kontakt med Spond. Prøv igjen om litt.")
+    spond_read_json(reqs[[i]], r, ms, parallel = length(reqs))
+  })
+}
+
+# Check the status and parse the answer, and log the time (R/fct_timing.R).
+spond_read_json <- function(req, resp, ms, parallel = 1) {
   # The path only (e.g. "/core/v1/sponds/"), never the query or the token.
   path <- tryCatch(httr2::url_parse(req$url)$path, error = function(e) "?")
   bytes <- tryCatch(length(httr2::resp_body_raw(resp)), error = function(e) NA_integer_)
-  timing_log(paste("spond GET", path), (proc.time()[["elapsed"]] - t0) * 1000,
-             detail = paste(c(timing_size(bytes), paste("HTTP", httr2::resp_status(resp))), collapse = ", "))
+  timing_log(paste("spond GET", path), ms,
+             detail = paste(Filter(nzchar, c(timing_size(bytes), paste("HTTP", httr2::resp_status(resp)),
+                                             if (parallel > 1) paste(parallel, "samtidig"))), collapse = ", "))
   status <- httr2::resp_status(resp)
   if (status == 401) {
     # Own class, so the app can log the trainer out and ask for a new login.
@@ -167,7 +189,18 @@ spond_events_query <- function(group_id = NULL,
 #' Events ("sponds"), optionally for one group or subgroup and a time window
 #' @noRd
 spond_get_events <- function(session, ...) {
+  spond_get_json(spond_events_request(session, ...))
+}
+
+spond_events_request <- function(session, ...) {
   req <- spond_request(session, "sponds", "")
-  req <- httr2::req_url_query(req, !!!spond_events_query(...))
-  spond_get_json(req)
+  httr2::req_url_query(req, !!!spond_events_query(...))
+}
+
+#' Several event lists at the same time
+#' @param queries List of argument lists for `spond_events_query()`.
+#' @return One list of events per query.
+#' @noRd
+spond_get_events_many <- function(session, queries) {
+  spond_get_json_many(lapply(queries, function(q) do.call(spond_events_request, c(list(session), q))))
 }

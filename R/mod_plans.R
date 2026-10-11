@@ -779,8 +779,8 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
 
     # KI («Lag med KI») ------------------------------------------------------------------
     # The slow API call runs as an ExtendedTask. Logging and saving happen in
-    # the same promise chain, with a connection of its own if the session has
-    # been closed in the meantime, so a paid answer is never lost.
+    # the same promise chain, on the shared connection, so a paid answer is
+    # never lost even if the session has been closed in the meantime.
     ki_task <- ExtendedTask$new(function(prep, access, actor, event_id) {
       promises::then(ai_send_async(prep, ai_async), function(sent) {
         finish <- function(con) {
@@ -792,13 +792,9 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
         # Expected failures (the answer could not be used, and so on) come
         # back as a result with a message; only unexpected errors reject.
         res <- tryCatch(
-          if (isTRUE(session$isClosed())) {
-            h <- db_handle()
-            on.exit(h$close(), add = TRUE)
-            h$run(finish)
-          } else {
-            db$run(finish)
-          },
+          # The shared connection (db_shared()) outlives the session, so a
+          # paid answer is saved also if the browser has been closed.
+          db$run(finish),
           ai_error = function(e) list(error = conditionMessage(e)))
         c(res, list(event_id = event_id, kind = prep$kind))
       })

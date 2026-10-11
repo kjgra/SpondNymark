@@ -86,6 +86,6 @@ ds_sql_label <- function(sql) {
 
 # "12 kB" / "850 B".
 timing_size <- function(bytes) {
-  if (is.na(bytes)) return("")
+  if (length(bytes) != 1 || is.na(bytes) || bytes == 0) return("")
   if (bytes >= 1024) paste(round(bytes / 1024), "kB") else paste(bytes, "B")
 }
