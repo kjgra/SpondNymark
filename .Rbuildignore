@@ -15,3 +15,4 @@ $run_dev.*
 ^rsconnect$
 ^manifest\.json$
 ^R/_disable_autoload\.R$
+^LICENSE\.md$

@@ -11,7 +11,7 @@ Description: En Shiny-app for trenere og lagledere i Nymark. Appen leser lag,
     lage gruppeforslag med dra-og-slipp og godkjenne dem. Forslag, tagger og
     kommentarer lagres i en Postgres-database (Supabase). Bare Spond-ID-er
     lagres; navn og andre personopplysninger blir i Spond.
-License: file LICENSE
+License: MIT + file LICENSE
 Depends:
     R (>= 4.1.0)
 Imports:
