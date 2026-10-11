@@ -452,7 +452,7 @@ test_that("KI gets exercises from links on approved sites, fetched before the ca
   page <- '<html><head><meta property="og:title" content="3 mot 3"></head><body><nav>Meny</nav>
     <main><h1>3 mot 3</h1><h2>Organisering</h2><ul><li>Bane 20 x 25 m med to endesoner.</li></ul></main></body></html>'
   fetched <- character()
-  args <- c(ki_args(con, seen = seen), list(link_http = function(reqs) {
+  args <- c(ki_args(con, seen = seen), list(fetch_pages = function(reqs) {
     fetched <<- c(fetched, vapply(reqs, function(r) r$url, ""))
     lapply(reqs, function(r) httr2::response(200, url = r$url, headers = list(`content-type` = "text/html"),
                                              body = charToRaw(page)))
@@ -475,5 +475,20 @@ test_that("KI gets exercises from links on approved sites, fetched before the ca
     expect_match(msg_txt, "## Lenke 1: https://tiim.no/ovelse/3-mot-3\nTittel: 3 mot 3")
     expect_match(msg_txt, "- Bane 20 x 25 m med to endesoner.", fixed = TRUE)
     expect_false(grepl("Meny", msg_txt))
+  })
+})
+
+test_that("the default page fetcher is used when none is given (no recursive default)", {
+  con <- local_test_db()
+  add_bank(con)
+  args <- ki_args(con)
+  args$fetch_pages <- NULL
+  testServer(mod_plans_server, args = args, {
+    session$setInputs(ki = 1)
+    with_mocked_bindings(
+      link_http = function(reqs) lapply(reqs, function(r) simpleError("nett")),
+      session$setInputs(ki_theme = "", ki_minutes = 60, ki_wish = "", ki_model = "claude-haiku-5-5",
+                        ki_links = "https://tiim.no/ovelse/a", ki_go = 1))
+    expect_match(ki_msg(), "Fikk ikke hentet https://tiim.no/ovelse/a")
   })
 })

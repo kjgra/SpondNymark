@@ -26,7 +26,7 @@
 #' @param rights_now NULL (use `rights()`), or a function reading the rights
 #'   from the database now (`rights_now_fn()`); used before KI calls.
 #' @param ai_http,ai_async,ai_key The Claude API (tests pass fakes).
-#' @param link_http Fetches the pages behind exercise links (R/fct_links.R).
+#' @param fetch_pages Fetches the pages behind exercise links (`link_http()` in R/fct_links.R).
 #' @noRd
 mod_plans_event_ui <- function(id) {
   ns <- NS(id)
@@ -370,7 +370,7 @@ plan_editor_modal <- function(ns, s, choices, selected, minutes_hint = NULL) {
 #' @noRd
 mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_pdf = plan_pdf,
                              rights = reactive(no_rights()), rights_now = NULL, ai_http = ai_http_post, ai_async = ai_http_post_async,
-                             ai_key = function() Sys.getenv("ANTHROPIC_API_KEY"), link_http = link_http) {
+                             ai_key = function() Sys.getenv("ANTHROPIC_API_KEY"), fetch_pages = link_http) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     # Rights for an action: read again from the database when the app gives
@@ -912,7 +912,7 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
       # Exercises from links: checked and fetched now (a few seconds), so a
       # bad link is reported here, before KI is paid for.
       domains <- o$link_domains %||% link_domains_default
-      links <- tryCatch(link_fetch(link_parse(input$ki_links, domains), domains, http = link_http),
+      links <- tryCatch(link_fetch(link_parse(input$ki_links, domains), domains, http = fetch_pages),
                         error = function(e) e)
       if (inherits(links, "error")) {
         ki_msg(conditionMessage(links))
