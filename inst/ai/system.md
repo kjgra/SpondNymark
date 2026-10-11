@@ -27,7 +27,7 @@ Du lager treningsøkter i fotball for et barnelag i Nymark. Økta skrives ut som
 
 # Øvelsesbanken
 
-Katalogen viser lagets egne øvelser: kode, navn, kategori, temaer, antall spillere, minutter og en kort beskrivelse. Merket «kandidat» betyr at øvelsen er ny og ikke vurdert ennå.
+Katalogen viser lagets egne øvelser: kode, navn, kategori, temaer, antall spillere, minutter og en kort beskrivelse. Merket «kandidat» betyr at øvelsen er ny og ikke godkjent av trenerne ennå. «snitt 2,7/3 (4)» er trenernes vurdering etter treningene: 3 = bra, 2 = ok, 1 = dårlig, med antall vurderinger i parentes. Velg helst øvelser med høyt snitt.
 
 For hver øvelse i økta velger du `kilde`:
 
@@ -41,6 +41,10 @@ Regler:
 - Lag aldri en ny øvelse som bare skiller seg fra en bankøvelse i antall spillere, banestørrelse eller små regelendringer. Det er en justering.
 - Hold deg innenfor «maks nye øvelser» i bestillingen.
 - `kode` er små bokstaver, tall og bindestrek, maks 60 tegn, f.eks. `3-mot-1-to-ruter`. En ny eller justert øvelse får aldri en kode som finnes i katalogen.
+
+# Erfaringer fra laget
+
+Etter katalogen kan det komme en blokk «Erfaringer fra laget», laget fra trenernes evalueringer etter treningene. «Lærdommer» er det trenerne har lært om laget; følg dem når de passer til bestillingen. «Øvelser å unngå» skal ikke brukes, heller ikke som grunnlag for en justering, og kodene deres skal ikke gis til nye øvelser. Lag heller noe som unngår det stikkordene peker på (f.eks. kø eller for trange baner). Tidsplan, gruppestørrelser og tilpasning skal ta hensyn til kalibreringen av tid og oppmøte. Står det ingen erfaringer, finnes det ikke nok evalueringer ennå.
 
 # Justering av et opplegg
 

@@ -53,7 +53,7 @@ mod_groups_pending_ui <- function(id) uiOutput(NS(id, "pending_cards"))
 #' @noRd
 mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reactive(NULL),
                               events = reactive(list()), event_ids = NULL, open_event_input = NULL,
-                              now = Sys.time, poll_ms = 10000, heartbeat_ms = 30000, defer_ms = 400) {
+                              now = Sys.time, poll_ms = 30000, heartbeat_ms = 30000, defer_ms = 400) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     if (is.null(event_ids)) event_ids <- reactive(vapply(events(), function(e) e$id, ""))
@@ -73,6 +73,13 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
     editor_msg <- reactiveVal(NULL)
     pending_edit <- reactiveVal(NULL)
 
+    # FALSE while the browser tab is hidden; NULL (visible) until sn.js has
+    # said otherwise, and in tests.
+    page_visible <- function() {
+      root <- tryCatch(session$rootScope(), error = function(e) NULL)
+      if (is.null(root)) NULL else tryCatch(root$input$sn_visible, error = function(e) NULL)
+    }
+
     db_try <- function(f, what) {
       tryCatch(db$run(f), error = function(e) {
         message(what, " feilet: ", conditionMessage(e))
@@ -82,12 +89,15 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
 
     # Proposals and locks, reloaded every poll_ms. reactiveVal() only
     # invalidates when the value changes, so unchanged data redraws nothing.
+    # Not while the browser tab is in the background (input sn_visible from
+    # sn.js); coming back reloads at once.
     observe({
       ctx <- context()
       req(ctx)
       ids <- event_ids()
       refresh()
       invalidateLater(poll_ms)
+      if (isFALSE(page_visible())) return()
       u <- isolate(user())
       res <- db_try(function(con) {
         h <- ds_list_proposals(con, u$access, ctx$group_id, ids, ctx$subgroup_id)

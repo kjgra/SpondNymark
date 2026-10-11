@@ -1753,23 +1753,29 @@
     }
   },
   "files": {
+    ".here": {
+      "checksum": "d41d8cd98f00b204e9800998ecf8427e"
+    },
     ".Rbuildignore": {
-      "checksum": "17f847933966777e7397760158d3dc05"
+      "checksum": "66170cd58deb71880d73f38286d12c82"
     },
     "app.R": {
       "checksum": "83f7784fbb8bb2059f3b11bdd12dae4f"
     },
     "DESCRIPTION": {
-      "checksum": "eb5fe01271e20b8e456f8d7b5e5f1cac"
+      "checksum": "c27c85013b79e0b9ba466a2f5d835249"
+    },
+    "inst/ai/laerdommer.md": {
+      "checksum": "139b33486c8182d799a45aa1a5cc519f"
     },
     "inst/ai/system.md": {
-      "checksum": "6135ca1664cd99b50b229cb61a70e934"
+      "checksum": "71953890634e01ab477775592b7783c0"
     },
     "inst/app/www/apple-touch-icon.png": {
       "checksum": "f1e487de51821d7bbc18c371c3b7639e"
     },
     "inst/app/www/custom.css": {
-      "checksum": "14963b93944a22bc78131eb0ab1b4e6e"
+      "checksum": "056d0465930e9dc3ce1c019c109a134c"
     },
     "inst/app/www/favicon.ico": {
       "checksum": "a5b73ffecee6a01c0a08ff0b176901cf"
@@ -1834,6 +1840,15 @@
     "inst/db/migrations/010_rls_schema_migrations.sql": {
       "checksum": "d305a59a4f37f6ea0b37a112fa333e99"
     },
+    "inst/db/migrations/011_evaluering_t3e.sql": {
+      "checksum": "3719ff0b5298be2851d03e6ca84cfe16"
+    },
+    "inst/db/migrations/012_pameldte_t3e.sql": {
+      "checksum": "6971da8fb68fba030c46b96bb077eaa5"
+    },
+    "inst/db/migrations/013_vedlikehold_t4.sql": {
+      "checksum": "efa859859017ab0ff0ba516216e914dc"
+    },
     "inst/db/migrations/README.md": {
       "checksum": "23f0960e67c885e20237e26a50df997a"
     },
@@ -1873,6 +1888,12 @@
     "LICENSE": {
       "checksum": "b53a045e830453e91697eb22a19fcc70"
     },
+    "LICENSE.md": {
+      "checksum": "63398f9906206a94b0fc003d0d3dda05"
+    },
+    "man/run_app.Rd": {
+      "checksum": "eb32a8dff09564aea287fdd742e2140d"
+    },
     "NAMESPACE": {
       "checksum": "9096f7f5795633f990d3fe1352f8f9fc"
     },
@@ -1883,19 +1904,19 @@
       "checksum": "0f79d97837ff91c50f065824b39a6fbc"
     },
     "R/app_server.R": {
-      "checksum": "0ffcd456358284aeeacc321af7555e72"
+      "checksum": "3c190aa28a6fc4a83682d726928a87df"
     },
     "R/app_ui.R": {
       "checksum": "3c0cbf727fbf4557c3c81aa56750908e"
     },
     "R/data_store.R": {
-      "checksum": "e1528de626bfd59cda7d1a7535f594df"
+      "checksum": "3a3e99582b93b38bf862986b571a1540"
     },
     "R/fct_access.R": {
       "checksum": "0f3f42aaf2b05546a5608ea9529bd4f7"
     },
     "R/fct_ai.R": {
-      "checksum": "23a794bc009f80fe75640229edf78968"
+      "checksum": "0f20562ac7d9fa39005898f4ab66054b"
     },
     "R/fct_allowlist.R": {
       "checksum": "c90f30bc85278989bfe0bb819d88522f"
@@ -1912,8 +1933,14 @@
     "R/fct_events.R": {
       "checksum": "affdc679f7ac32590b423f843ef7f90a"
     },
+    "R/fct_feedback.R": {
+      "checksum": "baf744af0dd2e8e2fa5320529fd953e1"
+    },
     "R/fct_groups.R": {
       "checksum": "dcb11fe68fa18fdae39970385b6e8031"
+    },
+    "R/fct_maintenance.R": {
+      "checksum": "71ae38408ba308e8bdc89734454bafb7"
     },
     "R/fct_members.R": {
       "checksum": "0a394e241b6b33a57234f336253f17b3"
@@ -1930,26 +1957,29 @@
     "R/fct_tags.R": {
       "checksum": "aeba7c4467066c8e89f152fa511c1a1e"
     },
+    "R/fct_timing.R": {
+      "checksum": "88469883d2ae17f5a981919b04619ca7"
+    },
     "R/fct_training.R": {
-      "checksum": "a4d98d36f18096f20f2e1fdbd8c5cfee"
+      "checksum": "6227d11e9d69be008c553410b5b200b5"
     },
     "R/mod_admin.R": {
-      "checksum": "1191c5250c4ce2cd9a7f768c5417b6ac"
+      "checksum": "eb7bba2c15c842106c178211b1949ded"
     },
     "R/mod_events.R": {
-      "checksum": "55c11ec215ab165f3a8521e878abf60b"
+      "checksum": "be216cdd8cea0d2f5ebd33e4bb01aa24"
     },
     "R/mod_groups.R": {
       "checksum": "112e416327b0d1a1411bded5865cb9ab"
     },
     "R/mod_login.R": {
-      "checksum": "78c2e10e9239c23c4ac4ad007def9310"
+      "checksum": "2dd496401f8605d15ad684989fbd58d8"
     },
     "R/mod_participants.R": {
       "checksum": "06b75ab187e08dc4c2700355a8bbad38"
     },
     "R/mod_plans.R": {
-      "checksum": "98c1d96e5d73a9fa8acf6295042cebb4"
+      "checksum": "f8e0d6992286e42732820fc36dd7cc6f"
     },
     "R/mod_tags.R": {
       "checksum": "2c34c841f8da1bab1ebdc18038a73f27"
@@ -1961,7 +1991,7 @@
       "checksum": "87b5e16fefaf5166b9375f7dfdc71e73"
     },
     "R/spond_client.R": {
-      "checksum": "0a93c0dd390ba1bf3da16d1002e08d07"
+      "checksum": "58c5929bb8081643f5c8cf1f2c288dac"
     }
   },
   "users": null

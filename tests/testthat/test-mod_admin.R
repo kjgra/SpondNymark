@@ -108,12 +108,19 @@ test_that("exercises: new, edit, delete with confirmation", {
     list_html <- as.character(output$ex_body$html)
     expect_match(list_html, "Pasning og mottak")
     expect_match(list_html, "minst 5 spillere")
+    expect_match(list_html, "Ikke vurdert ennå")
+    expect_false(grepl("sn-ex-status-", list_html))   # active: no badge
+    expect_equal(ex$status, "active")
 
     id <- as.character(ex$id)
     session$setInputs(ex_edit = id)
-    expect_match(as.character(output$ex_body$html), "value=\"Rondo 4 mot 1\"")
-    session$setInputs(ex_name = "Rondo med to touch", ex_save = 3)
+    form <- as.character(output$ex_body$html)
+    expect_match(form, "value=\"Rondo 4 mot 1\"")
+    expect_match(form, "<option value=\"active\" selected>Aktiv</option>", fixed = TRUE)
+    session$setInputs(ex_name = "Rondo med to touch", ex_status = "candidate", ex_save = 3)
     expect_equal(ds_get_exercise(con, acc, ex$id)$name, "Rondo med to touch")
+    expect_equal(ds_get_exercise(con, acc, ex$id)$status, "candidate")
+    expect_match(as.character(output$ex_body$html), "sn-ex-status-candidate\">Kandidat<", fixed = TRUE)
 
     session$setInputs(ex_edit = "999999")          # unknown id: ignored
     expect_null(editing())
@@ -341,4 +348,103 @@ test_that("the drawing preview works only for admins with the panel open", {
     session$setInputs(ex_new = 1, ex_drawing = drawing_example_json(), ex_preview = 1)
     expect_null(preview())
   }))
+})
+
+test_that("lærdommer: written by hand or updated with KI in the background", {
+  con <- local_test_db()
+  acc <- fake_user(fake_spond_groups_two())$access
+  p <- plan_validate(jsonlite::read_json(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"),
+                                         simplifyVector = FALSE))
+  seen <- new.env()
+  args <- c(admin_args(con), list(
+    ai_async = function(path, body) {
+      seen$body <- body
+      promises::promise_resolve(fake_answer("- Poeng fungerer.", usage = list(input_tokens = 2000, output_tokens = 300)))
+    },
+    ai_key = function() "sk-test"))
+  testServer(mod_admin_server, args = args, {
+    session$setInputs(open = 1, tab = "learnings")
+    expect_match(as.character(output$learn_body$html), "Ingen lærdommer ennå")
+    btn <- as.character(output$learn_buttons$html)
+    expect_match(btn, "Ingen nye evalueringer")
+    expect_match(btn, "<button[^>]*disabled[^>]*learn_ai")              # nothing to sum up
+
+    session$setInputs(learn_text = "- Noah Sand trenger ballen", learn_save = 1)
+    expect_equal(msg()$type, "error")
+    expect_match(msg()$text, "Noah Sand")
+    session$setInputs(learn_text = "- Konkurranse med poeng", learn_save = 2)
+    expect_equal(msg()$text, "Lærdommene er lagret.")
+    expect_match(as.character(output$learn_body$html), "skrevet manuelt av Kjetil G.")
+
+    pl <- ds_save_plan(con, acc, "G2016", "E-ulv", p, "P-me")
+    ds_save_feedback(con, acc, pl$id, "P-me", feedback_validate(list(list(exercise_no = 1, rating = "3")), p))
+    refresh(refresh() + 1)
+    session$flushReact()
+    btn <- as.character(output$learn_buttons$html)
+    expect_match(btn, "1 ny evaluering")
+    expect_false(grepl("<button[^>]*disabled[^>]*learn_ai", btn))
+    session$setInputs(learn_ai = 1)
+    for (i in 1:100) {
+      later::run_now(0.01)
+      session$flushReact()
+      if (!identical(isolate(learn_task$status()), "running")) break
+    }
+    expect_equal(msg()$type, "ok")
+    expect_match(msg()$text, "oppdatert fra 1 evaluering")
+    expect_match(seen$body$messages[[1]]$content, "# Lærdommer nå\n\n- Konkurranse med poeng", fixed = TRUE)
+    body <- as.character(output$learn_body$html)
+    expect_match(body, "oppdatert med KI av Kjetil G.")
+    expect_match(body, "- Poeng fungerer.", fixed = TRUE)
+    expect_match(as.character(output$learn_history$html), "Tidligere versjoner \\(1\\)")
+    expect_match(as.character(output$learn_history$html), "skrevet manuelt")
+  })
+})
+
+test_that("vedlikehold og arkiv: only the superadmin; download first, then confirm", {
+  con <- local_test_db()
+  acc <- fake_user(fake_spond_groups_two())$access
+  p <- plan_validate(jsonlite::read_json(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"),
+                                         simplifyVector = FALSE))
+  fake_pdf <- function(plan, path, ...) writeBin(charToRaw("%PDF-1.7 test"), path)
+  testServer(mod_admin_server, args = c(admin_args(con), list(make_pdf = fake_pdf)), {
+    session$setInputs(open = 1, tab = "maintenance")
+    expect_false(grepl("sn-admin-dot", as.character(output$bar$html)))
+    expect_match(as.character(output$maint_body$html), "har ikke kjørt ennå")
+    expect_match(as.character(output$archive_body$html), "Ingen opplegg er eldre enn 12 måneder")
+    session$setInputs(maint_run = 1)
+    expect_equal(msg()$type, "ok")
+    expect_match(msg()$text, "Vedlikeholdet er kjørt. Ingen mellomversjoner")
+    expect_match(as.character(output$maint_body$html), "av Kjetil G.")
+
+    # A training from last year is waiting
+    ds_save_plan(con, acc, "G2016", "E-gammel", p, "P-me")
+    DBI::dbExecute(con, "UPDATE training_plans SET created_at = now() - interval '400 days'")
+    refresh(refresh() + 1)
+    session$flushReact()
+    expect_match(as.character(output$bar$html), "sn-admin-dot")
+    html <- as.character(output$archive_body$html)
+    expect_match(html, "Arkiv klart: </strong>\\s*1 trening med 1 versjon")
+    expect_match(html, "<button[^>]*disabled[^>]*archive_confirm")
+    session$setInputs(archive_confirm = 1)                  # not downloaded: nothing happens
+    expect_equal(nrow(ds_archive_pending(con, acc)), 1)
+
+    zf <- output$archive_zip
+    expect_true(file.exists(zf))
+    expect_true(any(grepl("data.json$", utils::unzip(zf, list = TRUE)$Name)))
+    expect_match(msg()$text, "Arkivet er laget med 1 trening")
+    session$flushReact()
+    expect_false(grepl("<button[^>]*disabled[^>]*archive_confirm", as.character(output$archive_body$html)))
+    session$setInputs(archive_confirm = 2)
+    expect_equal(msg()$text, "1 trening (1 versjoner) er slettet etter arkivering.")
+    expect_equal(nrow(ds_archive_pending(con, acc)), 0)
+    html <- as.character(output$archive_body$html)
+    expect_match(html, "Tidligere arkiv")
+    expect_match(html, "bekreftet av Kjetil G.")
+    expect_false(grepl("sn-admin-dot", as.character(output$bar$html)))
+  })
+  # Others cannot run it
+  testServer(mod_admin_server, args = admin_args(con, superadmin = "P-other"), {
+    session$setInputs(maint_run = 1)
+    expect_equal(ds_maintenance_state(con, acc)$run_by, "P-me")
+  })
 })

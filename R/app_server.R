@@ -5,8 +5,15 @@
 #' @import shiny
 #' @noRd
 app_server <- function(input, output, session) {
-  # One database connection per session, opened when first needed.
-  db <- db_handle()
+  # Timing in the log (R/fct_timing.R): a short tag per session, and how
+  # long the R process has run (a few seconds = the app started from cold).
+  session$userData$sn_tag <- tolower(substr(ds_random_password(8), 1, 5))
+  timing_note(sprintf("ny økt; R-prosessen har kjørt i %s s", round(timing_process_age())))
+  # One database connection for the whole R process, opened when first
+  # needed and shared by the sessions (R/fct_db.R).
+  db <- db_shared()
+  # Clean-up (plan kap. 7) a few seconds after start, at most once a day.
+  maintenance_on_start(db = db)
 
   # Only trainers with app access (and admins) may log in; see R/fct_allowlist.R.
   user <- mod_login_server("login", allow = function(ident, profile_id) login_check(db, profile_id))

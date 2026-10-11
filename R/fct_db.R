@@ -1,4 +1,4 @@
-#' One database connection per Shiny session
+#' A database connection that is opened when first needed
 #'
 #' Connects on first use (so the login page works even if the database is
 #' slow), and reconnects once if the connection has been dropped, e.g. by the
@@ -40,4 +40,22 @@ db_handle <- function(connect = ds_connect) {
     })
   }
   list(run = run, close = close)
+}
+
+# The connection shared by all sessions in this R process (see db_shared()).
+.sn_db <- new.env(parent = emptyenv())
+
+#' One database connection per R process, shared by all Shiny sessions
+#'
+#' Opening a connection to Supabase takes about a second, so the sessions
+#' share one instead of opening their own. R runs one thing at a time, so
+#' two sessions never use it at the same moment, and a transaction
+#' (`ds_transaction()`) always finishes before anything else runs. The
+#' sessions get the same `run()`, but their `close()` does nothing; the
+#' connection stays open for the next session, and is reopened by `run()` if
+#' Supabase has dropped it.
+#' @noRd
+db_shared <- function(connect = ds_connect) {
+  if (is.null(.sn_db$handle)) .sn_db$handle <- db_handle(connect)
+  list(run = .sn_db$handle$run, close = function() invisible(NULL))
 }

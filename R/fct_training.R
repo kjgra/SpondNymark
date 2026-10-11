@@ -23,6 +23,11 @@ exercise_categories <- c(
   annet = "Annet"
 )
 
+# Status of an exercise in the bank (migration 005). KI exercises start as
+# candidates and become active on the first 👍 with «Bruke igjen: Ja» (T3e-2)
+# or when an admin says so. Archived ones are not offered to KI.
+exercise_statuses <- c(active = "Aktiv", candidate = "Kandidat", archived = "Arkivert")
+
 month_names_nb <- c("Januar", "Februar", "Mars", "April", "Mai", "Juni", "Juli",
                     "August", "September", "Oktober", "November", "Desember")
 
@@ -170,6 +175,9 @@ exercise_validate <- function(ex) {
     stop("Lenken må starte med https://.", call. = FALSE)
   }
   out$drawing <- exercise_drawing_json(ex$drawing)
+  # "" keeps the status (new exercises are active).
+  out$status <- txt1(ex$status)
+  if (nzchar(out$status) && !out$status %in% names(exercise_statuses)) stop("Ugyldig status.", call. = FALSE)
   out
 }
 

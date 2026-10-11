@@ -4,7 +4,9 @@ test_that("migrations create the tables and are only applied once", {
   expect_setequal(tables, c("schema_migrations", "member_tags", "group_proposals", "group_proposal_labels",
                             "group_proposal_members", "proposal_history", "proposal_comments", "edit_locks",
                             "season_themes", "team_settings", "exercises", "training_plans",
-                            "app_roles", "app_role_log", "ai_usage", "ai_settings", "training_plan_comments"))
+                            "app_roles", "app_role_log", "ai_usage", "ai_settings", "training_plan_comments",
+                            "exercise_feedback", "team_learnings", "maintenance", "archive_log", "ai_usage_monthly"))
+  expect_setequal(setdiff(tables, "schema_migrations"), ds_app_tables)
   expect_length(ds_migrate(con, dir = test_migrations_dir()), 0)
 })
 
@@ -615,4 +617,128 @@ test_that("the data layer itself stops non-admins and sensitive words", {
   pid <- ds_save_proposal(con, acc, "P1", "G1", "Forslag", "A")
   expect_error(ds_add_comment(con, acc, pid, "P1", "Hun er syk i dag"), "sensitive")
   expect_type(ds_add_comment(con, acc, pid, "P1", "Fint"), "integer")
+})
+
+test_that("evaluations: saved per trainer and version, replaced on edit, only in the own group", {
+  con <- local_test_db(); acc <- test_access()
+  p <- plan_validate(jsonlite::read_json(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"),
+                                         simplifyVector = FALSE))
+  pl <- ds_save_plan(con, acc, "G1", "E1", p, "P1")
+  fb <- feedback_validate(list(
+    list(exercise_no = 1, rating = "3", tags = c("goy", "ko"), actual_minutes = "17", body = "Bra", use_again = "yes"),
+    list(exercise_no = NA, rating = "2", actual_players = "18")), p)
+  ds_save_feedback(con, acc, pl$id, "P1", fb)
+  ds_save_feedback(con, acc, pl$id, "P2", fb[1, ])
+  rows <- ds_list_feedback(con, acc, "G1", "E1")
+  expect_equal(nrow(rows), 3)
+  expect_equal(rows$tags[[which(rows$author == "P1" & !is.na(rows$exercise_no))]], c("goy", "ko"))
+  expect_equal(rows$exercise_code[!is.na(rows$exercise_no)][1], p$ovelser[[1]]$kode)
+  # Editing replaces the trainer's own rows (the session row is gone now)
+  fb2 <- feedback_validate(list(list(exercise_no = 2, rating = "1", use_again = "no")), p)
+  ds_save_feedback(con, acc, pl$id, "P1", fb2)
+  rows <- ds_list_feedback(con, acc, "G1", "E1")
+  expect_equal(sort(rows$exercise_no[rows$author == "P1"]), 2L)
+  expect_equal(nrow(rows[rows$author == "P2", ]), 1)
+  expect_equal(rows$tags[[which(rows$author == "P1")]], character())
+  # Other groups: no access
+  other <- data.frame(id = "G9", name = "Annet", roles = "Trener", n_subgroups = 0L)
+  expect_error(ds_list_feedback(con, other, "G1", "E1"), "tilgang")
+  expect_error(ds_save_feedback(con, other, pl$id, "P9", fb), "tilgang")
+})
+
+test_that("the bank gets statistics per code, and a candidate becomes active on 👍 with Ja", {
+  con <- local_test_db(); acc <- test_access()
+  p <- plan_validate(jsonlite::read_json(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"),
+                                         simplifyVector = FALSE))
+  e1 <- p$ovelser[[1]]; e2 <- p$ovelser[[2]]
+  ds_save_plan_exercise(con, acc, "G1", e1, "P1", source = "ai", status = "candidate")
+  ds_save_plan_exercise(con, acc, "G1", e2, "P1", source = "ai", status = "candidate")
+  bank <- ds_list_exercises(con, acc, "G1")
+  expect_equal(bank$fb_n, c(0L, 0L))
+  expect_true(all(is.na(bank$fb_mean)))
+  expect_length(bank$fb_tags[[1]], 0)
+
+  pl <- ds_save_plan(con, acc, "G1", "E1", p, "P1")
+  # 👌 with Ja, and 👍 with «Med endringer»: still candidates
+  fb <- feedback_validate(list(list(exercise_no = 1, rating = "2", use_again = "yes", tags = c("goy", "ko")),
+                               list(exercise_no = 2, rating = "3", use_again = "changes", actual_minutes = "20")), p)
+  res <- ds_save_feedback(con, acc, pl$id, "P1", fb)
+  expect_equal(res$activated, character())
+  bank <- ds_list_exercises(con, acc, "G1")
+  expect_equal(bank$status, c("candidate", "candidate"))
+  # P2: 👍 with Ja on exercise 1 makes it active
+  fb2 <- feedback_validate(list(list(exercise_no = 1, rating = "3", use_again = "yes", tags = "goy"),
+                                list(exercise_no = NA, rating = "3")), p)
+  res <- ds_save_feedback(con, acc, pl$id, "P2", fb2)
+  expect_equal(res$activated, e1$kode)
+  bank <- ds_list_exercises(con, acc, "G1")
+  r1 <- bank[bank$code == e1$kode, ]; r2 <- bank[bank$code == e2$kode, ]
+  expect_equal(r1$status, "active")
+  expect_equal(r1$updated_by, "P2")
+  expect_equal(c(r1$fb_n, r1$fb_good, r1$fb_ok, r1$fb_yes, r1$fb_sessions), c(2L, 1L, 1L, 2L, 1L))
+  expect_equal(r1$fb_mean, 2.5)
+  expect_equal(r1$fb_tags[[1]], c(goy = 2L, ko = 1L))
+  expect_equal(r2$fb_minutes, 20)
+  expect_false(is.na(r2$fb_last))
+  # Saving again does not activate anything new
+  expect_equal(ds_save_feedback(con, acc, pl$id, "P2", fb2)$activated, character())
+  # The admin can still change the status; "" keeps it
+  id1 <- as.integer(r1$id)
+  ex <- c(as.list(r1[, c("name", "category")]), status = "archived")
+  ds_save_exercise(con, acc, "G1", ex, "P1", id = id1, rights = test_admin())
+  expect_equal(ds_get_exercise(con, acc, id1)$status, "archived")
+  ds_save_exercise(con, acc, "G1", c(ex[1:2], status = ""), "P1", id = id1, rights = test_admin())
+  expect_equal(ds_get_exercise(con, acc, id1)$status, "archived")
+  new <- ds_save_exercise(con, acc, "G1", list(name = "Ny", category = "annet"), "P1", rights = test_admin())
+  expect_equal(ds_get_exercise(con, acc, new)$status, "active")
+  expect_error(ds_save_exercise(con, acc, "G1", list(name = "X", category = "annet", status = "slettet"), "P1",
+                                rights = test_admin()), "Ugyldig status")
+  # Evaluations in other groups do not count
+  DBI::dbExecute(con, paste0("UPDATE exercise_feedback SET spond_group_id = 'G2' WHERE author = 'P1'"))
+  bank <- ds_list_exercises(con, acc, "G1")
+  expect_equal(bank$fb_n[bank$code == e1$kode], 1L)
+})
+
+test_that("the team's experience: time and attendance per session, keywords, and only the own group", {
+  con <- local_test_db(); acc <- test_access()
+  p <- plan_validate(jsonlite::read_json(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"),
+                                         simplifyVector = FALSE))
+  planned <- p$tidsplan$stasjoner$minutter
+  empty <- ds_team_experience(con, acc, "G1")
+  expect_equal(empty$n_eval, 0L)
+  expect_true(is.na(empty$time_diff))
+  expect_length(empty$tags, 0)
+
+  for (k in 1:3) {
+    pl <- ds_save_plan(con, acc, "G1", paste0("E", k), p, "P1")
+    fb <- feedback_validate(list(list(exercise_no = 1, rating = "3", tags = c("ko", "goy"),
+                                      actual_minutes = as.character(planned + 2)),
+                                 list(exercise_no = 2, rating = "2", tags = "ko", actual_minutes = as.character(planned + 4)),
+                                 list(exercise_no = NA, actual_players = as.character(16 + k))), p)
+    ds_save_feedback(con, acc, pl$id, "P1", fb, registered = 20L)
+    # A second trainer on the same session counts once in the attendance
+    ds_save_feedback(con, acc, pl$id, "P2", feedback_validate(list(list(exercise_no = NA, actual_players = "18")), p),
+                     registered = 20L)
+  }
+  row <- DBI::dbGetQuery(con, "SELECT registered_players FROM exercise_feedback WHERE exercise_no IS NULL LIMIT 1")
+  expect_equal(row$registered_players, 20L)
+  expect_true(all(is.na(DBI::dbGetQuery(con, "SELECT registered_players FROM exercise_feedback
+                                              WHERE exercise_no IS NOT NULL")$registered_players)))
+  e <- ds_team_experience(con, acc, "G1")
+  expect_equal(e$n_eval, 6L)
+  expect_equal(c(e$time_n, e$time_sessions), c(6L, 3L))
+  expect_equal(e$time_diff, 3)
+  expect_equal(e$att_sessions, 3L)
+  expect_equal(e$att_ratio, mean(c((17 + 18) / 2, (18 + 18) / 2, (19 + 18) / 2) / 20))
+  expect_equal(e$tags, c(ko = 6L, goy = 3L))
+  # The block for the prompt
+  txt <- ai_experience_text(e, ds_list_exercises(con, acc, "G1"))
+  expect_match(txt, "3,0 min lenger enn planlagt", fixed = TRUE)
+  expect_match(txt, "«mye venting/kø» (6 av 6 vurderinger)", fixed = TRUE)
+  # Old evaluations and other groups do not count; no access to other groups
+  expect_equal(ds_team_experience(con, acc, "G1", since = Sys.time() + 60)$n_eval, 0L)
+  DBI::dbExecute(con, "UPDATE exercise_feedback SET spond_group_id = 'G2' WHERE spond_event_id = 'E1'")
+  expect_equal(ds_team_experience(con, acc, "G1")$time_sessions, 2L)
+  other <- data.frame(id = "G9", name = "Annet", roles = "Trener", n_subgroups = 0L)
+  expect_error(ds_team_experience(con, other, "G1"), "tilgang")
 })

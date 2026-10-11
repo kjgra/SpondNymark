@@ -4,6 +4,14 @@
     if (window.Shiny && Shiny.setInputValue) Shiny.setInputValue(id, value, { priority: 'event' });
   }
 
+  // Whether the page is visible (input "sn_visible"), so the server can skip
+  // its regular checks while the tab is in the background.
+  function sendVisible() {
+    if (window.Shiny && Shiny.setInputValue) Shiny.setInputValue('sn_visible', !document.hidden);
+  }
+  document.addEventListener('visibilitychange', sendVisible);
+  $(document).on('shiny:connected', sendVisible);
+
   // <button data-sn-input="ns-id" data-sn-value="...">: send the value to that input.
   $(document).on('click', '[data-sn-input]', function (e) {
     e.preventDefault();

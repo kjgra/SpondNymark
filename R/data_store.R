@@ -37,7 +37,7 @@ ds_connect <- function(url = Sys.getenv("SPONDNYMARK_DB_URL")) {
   }
   # RPostgres does not read connection strings (it passes `dbname` on as a
   # plain database name), so the URL is split into separate arguments.
-  do.call(DBI::dbConnect, c(list(RPostgres::Postgres()), ds_connect_args(url)))
+  timed("db tilkobling", do.call(DBI::dbConnect, c(list(RPostgres::Postgres()), ds_connect_args(url))))
 }
 
 #' Split a postgresql:// connection string into dbConnect() arguments
@@ -122,6 +122,8 @@ ds_interpolate <- function(con, sql, params) {
 ds_fast <- function(con) inherits(con, "PqConnection")
 
 ds_query <- function(con, sql, params = list()) {
+  t0 <- proc.time()[["elapsed"]]
+  on.exit(timing_log(ds_sql_label(sql), (proc.time()[["elapsed"]] - t0) * 1000, always = FALSE), add = TRUE)
   if (!length(params)) return(DBI::dbGetQuery(con, sql))
   if (ds_fast(con)) {
     res <- withCallingHandlers(
@@ -138,6 +140,8 @@ ds_query <- function(con, sql, params = list()) {
 }
 
 ds_exec <- function(con, sql, params = list()) {
+  t0 <- proc.time()[["elapsed"]]
+  on.exit(timing_log(ds_sql_label(sql), (proc.time()[["elapsed"]] - t0) * 1000, always = FALSE), add = TRUE)
   if (!length(params)) return(DBI::dbExecute(con, sql))
   if (ds_fast(con)) return(DBI::dbExecute(con, ds_interpolate(con, sql, params), immediate = TRUE))
   DBI::dbExecute(con, sql, params = unname(params))
@@ -672,13 +676,51 @@ ds_exercise_group <- function(con, access, exercise_id) {
   row$spond_group_id
 }
 
-#' All exercises in a main group, sorted by category and name
+# Evaluations per exercise code in a group (T3e-2): only rows for an
+# exercise, not for the whole session. Tags as "key:count" joined by the
+# unit separator, most used first.
+ds_exercise_stats_sql <- "
+  LEFT JOIN (
+    SELECT exercise_code, count(*)::integer AS fb_n, count(DISTINCT spond_event_id)::integer AS fb_sessions,
+           avg(rating)::float8 AS fb_mean,
+           count(*) FILTER (WHERE rating = 3)::integer AS fb_good,
+           count(*) FILTER (WHERE rating = 2)::integer AS fb_ok,
+           count(*) FILTER (WHERE rating = 1)::integer AS fb_bad,
+           count(*) FILTER (WHERE use_again = 'yes')::integer AS fb_yes,
+           count(*) FILTER (WHERE use_again = 'changes')::integer AS fb_changes,
+           count(*) FILTER (WHERE use_again = 'no')::integer AS fb_no,
+           avg(actual_minutes)::float8 AS fb_minutes, max(updated_at) AS fb_last
+      FROM exercise_feedback
+     WHERE spond_group_id = $1 AND exercise_no IS NOT NULL AND exercise_code IS NOT NULL
+     GROUP BY exercise_code) s ON s.exercise_code = e.code
+  LEFT JOIN (
+    SELECT exercise_code, string_agg(tag || ':' || n, chr(31) ORDER BY n DESC, tag) AS fb_tags
+      FROM (SELECT exercise_code, tag, count(*) AS n
+              FROM exercise_feedback, unnest(tags) AS tag
+             WHERE spond_group_id = $1 AND exercise_no IS NOT NULL AND exercise_code IS NOT NULL
+             GROUP BY exercise_code, tag) t0
+     GROUP BY exercise_code) t ON t.exercise_code = e.code"
+
+#' All exercises in a main group, sorted by category and name, with the
+#' trainers' evaluations summed up per code
 #' @return data.frame; `themes` is a list column of character vectors.
+#'   fb_n (evaluations), fb_sessions, fb_good/fb_ok/fb_bad, fb_yes/fb_changes/
+#'   fb_no are 0 when there are none; fb_mean, fb_minutes and fb_last are NA.
+#'   `fb_tags` is a list column of named counts (keys of `feedback_tags`).
 #' @noRd
 ds_list_exercises <- function(con, access, group_id) {
   assert_group_access(access, group_id)
-  rows <- ds_query(con, paste(ds_exercise_select, "WHERE spond_group_id = $1 ORDER BY category, lower(name), id"),
-                   list(group_id))
+  counts <- c("fb_n", "fb_sessions", "fb_good", "fb_ok", "fb_bad", "fb_yes", "fb_changes", "fb_no")
+  rows <- ds_query(con, paste0("
+    SELECT e.*, ", paste0("coalesce(s.", counts, ", 0) AS ", counts, collapse = ", "), ",
+           s.fb_mean, s.fb_minutes, s.fb_last, coalesce(t.fb_tags, '') AS fb_tags
+      FROM (", ds_exercise_select, " WHERE spond_group_id = $1) e", ds_exercise_stats_sql, "
+     ORDER BY e.category, lower(e.name), e.id"), list(group_id))
+  rows$fb_tags <- lapply(rows$fb_tags, function(x) {
+    if (is.na(x) || !nzchar(x)) return(stats::setNames(integer(), character()))
+    p <- strsplit(strsplit(x, "\x1f", fixed = TRUE)[[1]], ":", fixed = TRUE)
+    stats::setNames(as.integer(vapply(p, `[`, "", 2)), vapply(p, `[`, "", 1))
+  })
   ds_exercise_rows(rows)
 }
 
@@ -703,18 +745,18 @@ ds_save_exercise <- function(con, access, group_id, ex, actor, id = NULL, rights
   v <- exercise_validate(ex)
   fields <- list(v$name, v$category, ds_text_array(v$themes), v$min_players, v$max_players, v$duration_minutes,
                  v$area, v$organisation, v$execution, v$learning_points, v$questions, v$easier, v$harder,
-                 v$nff_url, actor, v$drawing)
+                 v$nff_url, actor, v$drawing, v$status)
   if (is.null(id)) {
     taken <- ds_query(con, "SELECT code FROM exercises WHERE spond_group_id = $1", list(group_id))$code
     code <- exercise_code(v$name, taken)
     res <- ds_query(con, "
       INSERT INTO exercises (spond_group_id, code, name, category, themes, min_players, max_players,
                              duration_minutes, area, organisation, execution, learning_points, questions,
-                             easier, harder, nff_url, created_by, updated_by, drawing)
+                             easier, harder, nff_url, created_by, updated_by, drawing, status)
       VALUES ($1, $2, $3, $4, $5::text[], NULLIF($6, '')::integer, NULLIF($7, '')::integer,
               NULLIF($8, '')::integer, NULLIF($9, ''), NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''),
               NULLIF($13, ''), NULLIF($14, ''), NULLIF($15, ''), NULLIF($16, ''), $17, $17,
-              NULLIF($18, '')::jsonb)
+              NULLIF($18, '')::jsonb, coalesce(NULLIF($19, ''), 'active'))
       RETURNING id", c(list(group_id, code), fields))
     return(as.integer(res$id))
   }
@@ -728,7 +770,7 @@ ds_save_exercise <- function(con, access, group_id, ex, actor, id = NULL, rights
            area = NULLIF($9, ''), organisation = NULLIF($10, ''), execution = NULLIF($11, ''),
            learning_points = NULLIF($12, ''), questions = NULLIF($13, ''), easier = NULLIF($14, ''),
            harder = NULLIF($15, ''), nff_url = NULLIF($16, ''), drawing = NULLIF($18, '')::jsonb,
-           updated_by = $17, updated_at = now()
+           status = coalesce(NULLIF($19, ''), status), updated_by = $17, updated_at = now()
      WHERE id = $1 AND spond_group_id = $2", c(list(as.integer(id), group_id), fields))
   as.integer(id)
 }
@@ -1068,6 +1110,196 @@ ds_mark_comments_used <- function(con, access, group_id, comment_ids, plan_id) {
     list(group_id, paste0("{", paste(as.integer(comment_ids), collapse = ","), "}"), as.integer(plan_id)))
 }
 
+# Evaluations (migration 011) ------------------------------------------------------
+
+#' All evaluations of the plans for one event
+#' @return data.frame(id, plan_id, exercise_no, exercise_code, rating, tags
+#'   (list of character vectors), actual_minutes, actual_players, body,
+#'   use_again, author, updated_at). body and use_again are "" when empty.
+#' @noRd
+ds_list_feedback <- function(con, access, group_id, event_id) {
+  assert_group_access(access, group_id)
+  rows <- ds_query(con, "
+    SELECT id, plan_id, exercise_no, coalesce(exercise_code, '') AS exercise_code, rating,
+           array_to_string(tags, chr(31)) AS tags, actual_minutes, actual_players,
+           coalesce(body, '') AS body, coalesce(use_again, '') AS use_again, author, updated_at
+      FROM exercise_feedback
+     WHERE spond_group_id = $1 AND spond_event_id = $2
+     ORDER BY plan_id, exercise_no NULLS FIRST, updated_at, id",
+    list(group_id, event_id))
+  rows$tags <- lapply(rows$tags, function(x) {
+    if (is.na(x) || !nzchar(x)) character() else strsplit(x, "\x1f", fixed = TRUE)[[1]]
+  })
+  rows
+}
+
+#' Save one trainer's evaluation of a plan version
+#'
+#' Replaces the trainer's earlier evaluation of the same version (rows not
+#' sent are removed), in one transaction. Candidates in the bank that get
+#' 👍 with «Bruke igjen: Ja» become active in the same transaction.
+#' @param fb data.frame from `feedback_validate()`.
+#' @param registered Players signed up in Spond (not trainers), stored on
+#'   the row for the whole session; NA if unknown.
+#' @return list(n = rows saved, activated = codes that became active),
+#'   invisibly.
+#' @noRd
+ds_save_feedback <- function(con, access, plan_id, actor, fb, registered = NA_integer_) {
+  pl <- ds_get_plan(con, access, plan_id)
+  if (!is.data.frame(fb) || nrow(fb) == 0) ds_user_stop("Vurder minst én øvelse eller hele økta.")
+  int_arr <- function(x) paste0("{", paste(ifelse(is.na(x), "NULL", as.integer(x)), collapse = ","), "}")
+  tags <- vapply(fb$tags, function(t) paste(t, collapse = "\x1f"), "")
+  registered <- suppressWarnings(as.integer(registered[1]))
+  registered <- if (length(registered) && !is.na(registered) && registered >= 0 && registered <= 200) {
+    as.character(registered)
+  } else ""
+  activated <- ds_transaction(con, {
+    ds_exec(con, "DELETE FROM exercise_feedback WHERE plan_id = $1 AND author = $2", list(as.integer(plan_id), actor))
+    ds_exec(con, "
+      INSERT INTO exercise_feedback (spond_group_id, spond_event_id, plan_id, exercise_no, exercise_code, rating, tags,
+                                     actual_minutes, actual_players, body, use_again, author, registered_players)
+      SELECT $1, $2, $3, x.no, NULLIF(x.code, ''), x.rating,
+             CASE WHEN x.tags = '' THEN '{}'::text[] ELSE string_to_array(x.tags, chr(31)) END,
+             x.minutes, x.players, NULLIF(x.body, ''), NULLIF(x.again, ''), $4,
+             CASE WHEN x.no IS NULL THEN NULLIF($13, '')::integer END
+        FROM unnest($5::integer[], $6::text[], $7::integer[], $8::text[], $9::integer[], $10::integer[],
+                    $11::text[], $12::text[]) AS x(no, code, rating, tags, minutes, players, body, again)",
+      list(pl$group_id, pl$event_id, as.integer(plan_id), actor,
+           int_arr(fb$exercise_no), ds_text_array(fb$exercise_code), int_arr(fb$rating), ds_text_array(tags),
+           int_arr(fb$actual_minutes), int_arr(fb$actual_players), ds_text_array(fb$body),
+           ds_text_array(fb$use_again), registered))
+    # A candidate becomes active on the first 👍 with «Bruke igjen: Ja» (kap. 14).
+    good <- unique(fb$exercise_code[!is.na(fb$exercise_no) & fb$rating %in% 3L & fb$use_again %in% "yes" &
+                                      nzchar(fb$exercise_code)])
+    if (length(good)) {
+      ds_query(con, "
+        UPDATE exercises SET status = 'active', updated_by = $3, updated_at = now()
+         WHERE spond_group_id = $1 AND code = ANY($2::text[]) AND status = 'candidate'
+        RETURNING code", list(pl$group_id, ds_text_array(good), actor))$code
+    } else character()
+  })
+  invisible(list(n = nrow(fb), activated = activated))
+}
+
+#' What the trainers' evaluations say about the team, for the prompt
+#' («Erfaringer fra laget», T3e-3). Only counts, no text and no names.
+#'
+#' @param since Only evaluations saved after this time.
+#' @return list(n_eval (evaluations of exercises), time_n, time_sessions,
+#'   time_diff (mean actual minus planned minutes per exercise), att_sessions,
+#'   att_ratio (mean of came / signed up per session), tags (named counts,
+#'   most first)). Means are NA when there is nothing to count.
+#' @noRd
+ds_team_experience <- function(con, access, group_id, since = Sys.time() - 365 * 86400) {
+  assert_group_access(access, group_id)
+  row <- ds_query(con, "
+    WITH f AS (SELECT * FROM exercise_feedback WHERE spond_group_id = $1 AND created_at > $2::timestamptz)
+    SELECT (SELECT count(*) FROM f WHERE exercise_no IS NOT NULL)::integer AS n_eval,
+           t.time_n, t.time_sessions, t.time_diff, a.att_sessions, a.att_ratio,
+           (SELECT coalesce(string_agg(tag || ':' || n, chr(31) ORDER BY n DESC, tag), '')
+              FROM (SELECT tag, count(*) AS n FROM f, unnest(f.tags) AS tag
+                     WHERE f.exercise_no IS NOT NULL GROUP BY tag) g) AS tags
+      FROM (SELECT count(*)::integer AS time_n, count(DISTINCT f.spond_event_id)::integer AS time_sessions,
+                   avg(f.actual_minutes - (p.plan->'tidsplan'->'stasjoner'->>'minutter')::integer)::float8 AS time_diff
+              FROM f JOIN training_plans p ON p.id = f.plan_id
+             WHERE f.exercise_no IS NOT NULL AND f.actual_minutes IS NOT NULL
+               AND jsonb_typeof(p.plan->'tidsplan'->'stasjoner'->'minutter') = 'number') t,
+           (SELECT count(*)::integer AS att_sessions, avg(r)::float8 AS att_ratio
+              FROM (SELECT spond_event_id, avg(actual_players::float8 / registered_players) AS r
+                      FROM f WHERE exercise_no IS NULL AND actual_players IS NOT NULL AND registered_players > 0
+                     GROUP BY spond_event_id) e) a",
+    list(group_id, format(as.POSIXct(since), "%Y-%m-%d %H:%M:%S%z")))
+  tags <- if (is.na(row$tags) || !nzchar(row$tags)) stats::setNames(integer(), character()) else {
+    p <- strsplit(strsplit(row$tags, "\x1f", fixed = TRUE)[[1]], ":", fixed = TRUE)
+    stats::setNames(as.integer(vapply(p, `[`, "", 2)), vapply(p, `[`, "", 1))
+  }
+  list(n_eval = row$n_eval, time_n = row$time_n, time_sessions = row$time_sessions, time_diff = row$time_diff,
+       att_sessions = row$att_sessions, att_ratio = row$att_ratio, tags = tags)
+}
+
+# Lærdommer (team_learnings, migration 011; T3e-4) ----------------------------------
+
+#' The team's learnings: the newest versions, and how many evaluations have
+#' been saved or changed since KI last summed them up
+#' @return list(versions = data.frame(id, body, source, created_by,
+#'   created_at), newest first, at most `n`; n_new; since (time of the last
+#'   KI version, NA if none)).
+#' @noRd
+ds_learning_state <- function(con, access, group_id, n = 6) {
+  assert_group_access(access, group_id)
+  v <- ds_query(con, "
+    SELECT id, body, source, created_by, created_at FROM team_learnings
+     WHERE spond_group_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2::integer",
+    list(group_id, as.character(as.integer(n))))
+  since <- ds_query(con, "
+    SELECT max(created_at) AS since FROM team_learnings WHERE spond_group_id = $1 AND source = 'ai'",
+    list(group_id))$since
+  n_new <- ds_query(con, "
+    SELECT count(*)::integer AS n FROM exercise_feedback
+     WHERE spond_group_id = $1 AND ($2 = '' OR updated_at > NULLIF($2, '')::timestamptz)",
+    list(group_id, if (is.na(since)) "" else format(since, "%Y-%m-%d %H:%M:%OS6%z")))$n
+  list(versions = v, n_new = n_new, since = since)
+}
+
+#' The newest version of the team's learnings, or "" (for the prompt)
+#' @noRd
+ds_latest_learning <- function(con, access, group_id) {
+  assert_group_access(access, group_id)
+  b <- ds_query(con, "SELECT body FROM team_learnings WHERE spond_group_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1",
+                list(group_id))$body
+  if (length(b)) b[1] else ""
+}
+
+#' Save a new version of the team's learnings (the newest one applies)
+#' @param rights The user's rights, read just before: only admins.
+#' @param body Checked with `learning_validate()` by the caller.
+#' @return The id.
+#' @noRd
+ds_save_learning <- function(con, access, group_id, body, source, actor, rights) {
+  assert_group_access(access, group_id)
+  assert_admin(rights)
+  if (!source %in% c("manual", "ai")) stop("Ugyldig kilde.", call. = FALSE)
+  body <- txt1(body)
+  if (!nzchar(body) || nchar(body) > learning_max_chars) ds_user_stop("Lærdommene må ha mellom 1 og ", learning_max_chars, " tegn.")
+  if (text_is_sensitive(body)) ds_user_stop("Lærdommene skal ikke inneholde helseopplysninger eller andre sensitive opplysninger.")
+  as.integer(ds_query(con, "
+    INSERT INTO team_learnings (spond_group_id, body, source, created_by) VALUES ($1, $2, $3, $4) RETURNING id",
+    list(group_id, body, source, actor))$id)
+}
+
+#' Evaluations saved or changed after `since`, with the exercise name, the
+#' planned minutes and the theme from the plan, for KI to sum up. No authors.
+#' @return data.frame(spond_event_id, exercise_no, exercise_name, theme,
+#'   planned_minutes, rating, tags (list), actual_minutes, actual_players,
+#'   registered_players, body, use_again, created_at), oldest first, at most
+#'   `max` rows (the newest).
+#' @noRd
+ds_feedback_since <- function(con, access, group_id, since, max = 150) {
+  assert_group_access(access, group_id)
+  rows <- ds_query(con, "
+    SELECT * FROM (
+      SELECT f.spond_event_id, f.exercise_no,
+             coalesce(p.plan->'ovelser'->(f.exercise_no - 1)->>'navn', '') AS exercise_name,
+             CASE jsonb_typeof(p.plan->'tema')
+               WHEN 'string' THEN p.plan->>'tema'
+               WHEN 'array' THEN array_to_string(ARRAY(SELECT jsonb_array_elements_text(p.plan->'tema')), ', ')
+               ELSE '' END AS theme,
+             CASE WHEN jsonb_typeof(p.plan->'tidsplan'->'stasjoner'->'minutter') = 'number'
+                  THEN (p.plan->'tidsplan'->'stasjoner'->>'minutter')::integer END AS planned_minutes,
+             f.rating, array_to_string(f.tags, chr(31)) AS tags, f.actual_minutes, f.actual_players,
+             f.registered_players, coalesce(f.body, '') AS body, coalesce(f.use_again, '') AS use_again,
+             f.created_at, f.updated_at, f.id
+        FROM exercise_feedback f JOIN training_plans p ON p.id = f.plan_id
+       WHERE f.spond_group_id = $1 AND f.updated_at > $2::timestamptz
+       ORDER BY f.updated_at DESC, f.id DESC LIMIT $3::integer) x
+     ORDER BY created_at, spond_event_id, exercise_no NULLS FIRST, id",
+    list(group_id, format(as.POSIXct(since), "%Y-%m-%d %H:%M:%OS6%z"), as.character(as.integer(max))))
+  rows$tags <- lapply(rows$tags, function(x) {
+    if (is.na(x) || !nzchar(x)) character() else strsplit(x, "\x1f", fixed = TRUE)[[1]]
+  })
+  rows
+}
+
 # Rights (app_roles, migration 004) ------------------------------------------------
 
 #' The extra rights of one profile (0 or 1 row)
@@ -1122,7 +1354,8 @@ ds_app_tables <- c("member_tags", "group_proposals", "group_proposal_labels", "g
                    "proposal_history", "proposal_comments", "edit_locks",
                    "season_themes", "team_settings", "exercises", "training_plans",
                    "app_roles", "app_role_log", "ai_usage", "ai_settings",
-                   "training_plan_comments")
+                   "training_plan_comments", "exercise_feedback", "team_learnings",
+                   "maintenance", "archive_log", "ai_usage_monthly")
 
 #' A random password of letters and digits (cryptographically secure)
 #'

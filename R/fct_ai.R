@@ -237,15 +237,18 @@ ai_system_text <- function() {
 
 #' The bank as a short catalogue for the prompt (kap. 15.1)
 #'
-#' Archived exercises are left out. Exercises with the month's theme come
-#' first; then active before candidates, then by category and name. At most
-#' `max` lines.
+#' Archived exercises are left out, and so are exercises the trainers have
+#' rated poorly (`exercise_avoid()`; they are listed in
+#' `ai_experience_text()`). Exercises with the month's theme come first;
+#' then active before candidates, then by category and name. At most `max`
+#' lines. Evaluated exercises get «snitt 2,7/3 (n)».
 #' @noRd
 ai_catalogue <- function(bank, theme = "", max = 30) {
   if (is.null(bank) || nrow(bank) == 0) return("# Øvelsesbanken\n\nBanken er tom.")
   if (!"status" %in% names(bank)) bank$status <- "active"
   if (!"based_on" %in% names(bank)) bank$based_on <- ""
   bank <- bank[bank$status != "archived", , drop = FALSE]
+  bank <- bank[!exercise_avoid(bank), , drop = FALSE]
   if (nrow(bank) == 0) return("# Øvelsesbanken\n\nBanken er tom.")
   hit <- vapply(bank$themes, function(t) nzchar(theme) && tolower(theme) %in% tolower(t), logical(1))
   ord <- order(!hit, bank$status != "active", match(bank$category, names(exercise_categories)), tolower(bank$name))
@@ -267,11 +270,82 @@ ai_catalogue <- function(bank, theme = "", max = 30) {
                if (!is.na(r$duration_minutes)) paste(r$duration_minutes, "min"),
                if (nzchar(txt1(r$based_on))) paste("variant av", r$based_on),
                if (r$status == "candidate") "kandidat",
+               if (isTRUE(r$fb_n > 0)) paste0("snitt ", feedback_mean_text(r$fb_mean), "/3 (", r$fb_n, ")"),
                if (nzchar(desc)) paste("kort:", desc))
     paste("-", paste(parts[nzchar(parts)], collapse = " | "))
   }, character(1))
   paste0("# Øvelsesbanken\n\nkode | navn | kategori | tema | spillere | minutter | merknader | kort beskrivelse\n\n",
          paste(lines, collapse = "\n"))
+}
+
+# Thresholds for «Erfaringer fra laget»: too few evaluations say little.
+ai_experience_min <- list(sessions = 3, evaluations = 5, tag_count = 2, tag_share = 0.2, minutes = 1,
+                          attendance = 0.05)
+
+#' «Erfaringer fra laget» for the prompt (plan kap. 14.3), without KI
+#'
+#' The team's learnings (`team_learnings`, T3e-4), exercises to avoid (from
+#' the bank statistics, with the most common keywords), keywords the trainers
+#' often tick, and calibration of time and attendance. Apart from the
+#' learnings (checked for names and sensitive words when saved), only counts
+#' and fixed keywords, never free text or names. Lines with too little data
+#' behind them are left out.
+#' @param exp `ds_team_experience()`, or NULL.
+#' @param bank `ds_list_exercises()`, for the exercises to avoid.
+#' @param learnings The newest learnings (`ds_latest_learning()`).
+#' @return Markdown, or "" when there is nothing to say.
+#' @noRd
+ai_experience_text <- function(exp, bank = NULL, learnings = "") {
+  m <- ai_experience_min
+  num <- function(x, d = 1) formatC(x, format = "f", digits = d, decimal.mark = ",")
+  out <- character()
+  if (nzchar(txt1(learnings))) out <- c(out, paste0("## Lærdommer\n\n", txt1(learnings)))
+  # Exercises to avoid
+  if (!is.null(bank) && nrow(bank)) {
+    if (!"status" %in% names(bank)) bank$status <- "active"
+    bad <- bank[exercise_avoid(bank) & bank$status != "archived", , drop = FALSE]
+    if (nrow(bad)) {
+      rows <- vapply(seq_len(nrow(bad)), function(i) {
+        b <- bad[i, , drop = FALSE]
+        tags <- b$fb_tags[[1]]
+        tags <- utils::head(tags[names(tags) %in% names(feedback_tags)], 3)
+        paste0("- ", b$code, " (", b$name, "): snitt ", feedback_mean_text(b$fb_mean), "/3, ",
+               "«Bruke igjen: Nei» ", b$fb_no, " av ", b$fb_n,
+               if (length(tags)) paste0("; ", paste0(feedback_tags[names(tags)], " (", tags, ")", collapse = ", ")))
+      }, "")
+      out <- c(out, paste0("## Øvelser å unngå\n\nTrenerne har vurdert disse som dårlige. De er tatt ut av katalogen. ",
+                           "Ikke bruk dem, og ikke gi nye øvelser disse kodene. Unngå det som gjorde dem dårlige.\n\n",
+                           paste(rows, collapse = "\n")))
+    }
+  }
+  lines <- character()
+  if (!is.null(exp)) {
+    # Keywords the trainers often tick
+    if (isTRUE(exp$n_eval >= m$evaluations) && length(exp$tags)) {
+      t <- exp$tags[names(exp$tags) %in% names(feedback_tags) & exp$tags >= m$tag_count &
+                      exp$tags / exp$n_eval >= m$tag_share]
+      t <- utils::head(t, 4)
+      if (length(t)) {
+        lines <- c(lines, paste0("- Stikkord trenerne ofte krysser av for: ",
+                                 paste0("«", feedback_tags[names(t)], "» (", t, " av ", exp$n_eval, " vurderinger)",
+                                        collapse = ", "), "."))
+      }
+    }
+    if (isTRUE(exp$time_sessions >= m$sessions) && isTRUE(abs(exp$time_diff) >= m$minutes)) {
+      lines <- c(lines, paste0("- Øvelsene tar i snitt ", num(abs(exp$time_diff)), " min ",
+                               if (exp$time_diff > 0) "lenger" else "kortere", " enn planlagt (", exp$time_n,
+                               " vurderinger fra ", exp$time_sessions, " økter). Ta hensyn til det i tidsplanen."))
+    }
+    if (isTRUE(exp$att_sessions >= m$sessions) && isTRUE(abs(1 - exp$att_ratio) >= m$attendance)) {
+      pct <- round(abs(1 - exp$att_ratio) * 100)
+      lines <- c(lines, paste0("- Faktisk oppmøte er i snitt ", pct, " % ",
+                               if (exp$att_ratio < 1) "lavere" else "høyere", " enn antall påmeldte (",
+                               exp$att_sessions, " økter). Planlegg gruppene og tilpasningen etter det."))
+    }
+  }
+  if (length(lines)) out <- c(out, paste0("## Fra evalueringene\n\n", paste(lines, collapse = "\n")))
+  if (!length(out)) return("")
+  paste0("# Erfaringer fra laget\n\n", paste(out, collapse = "\n\n"))
 }
 
 #' The order (bestilling) for one event, without names
@@ -557,11 +631,15 @@ ai_prepare <- function(con, access, rights, group_id, ctx, kind = NULL, now = Sy
   budget <- ai_budget(ds_ai_spend(con, access, group_id, ai_month_start(now)), s)
   if (!budget$ok) ai_stop(budget$message)
   bank <- ds_list_exercises(con, access, group_id)
+  experience <- ai_experience_text(ds_team_experience(con, access, group_id, since = now - 365 * 86400), bank,
+                                   ds_latest_learning(con, access, group_id))
   ctx$max_new <- s$max_new_exercises
   if (!is.null(base_plan)) ctx$base_codes <- vapply(base_plan$ovelser, function(e) txt1(e$kode), "")
   order <- tryCatch(if (is.null(base_plan)) ai_order_text(ctx) else ai_revision_text(base_plan, ctx),
                     error = function(e) ai_stop(conditionMessage(e)))
-  body <- ai_request_body(model, ai_catalogue(bank, ctx$theme %||% ""), order)
+  catalogue <- ai_catalogue(bank, ctx$theme %||% "")
+  if (nzchar(experience)) catalogue <- paste0(catalogue, "\n\n", experience)
+  body <- ai_request_body(model, catalogue, order)
   list(group_id = group_id, kind = kind, model = model, settings = s, budget = budget, bank = bank,
        ctx = ctx, body = body)
 }
@@ -635,6 +713,117 @@ ai_finish <- function(con, access, actor, prep, sent, event_id) {
                         model = prep$model, cost_usd = cost)
   ds_ai_usage_set_plan(con, access, prep$group_id, usage_id, saved$id)
   list(id = saved$id, version = saved$version, warnings = plan$warnings, cost_usd = cost, usage_id = usage_id)
+}
+
+# Lærdommer with KI (T3e-4) ---------------------------------------------------------
+# Only when an admin presses «Oppdater med KI». A short, cheap call: the old
+# text and the evaluations since the last KI version give a new text, which
+# is saved as a new version. No authors or names are sent.
+
+ai_learning_model <- "claude-haiku-5-5"
+ai_learning_max_tokens <- 1500L
+
+ai_learning_system_text <- function() {
+  paste(readLines(app_sys("ai", "laerdommer.md"), encoding = "UTF-8"), collapse = "\n")
+}
+
+#' The message to KI: the learnings now and the new evaluations, per session
+#'
+#' Free text that mentions a member or has sensitive words is left out
+#' (it was checked when saved, but the member list may have changed).
+#' @param rows `ds_feedback_since()`.
+#' @noRd
+ai_learning_order <- function(rows, old = "", names = character()) {
+  words <- c(`3` = "bra", `2` = "ok", `1` = "dårlig")
+  again <- c(yes = "ja", changes = "med endringer", no = "nei")
+  safe <- function(x) {
+    x <- gsub("\\s+", " ", txt1(x))
+    if (!nzchar(x) || text_is_sensitive(x) || !is.null(names_problem(x, names))) "" else paste0(" «", x, "»")
+  }
+  line <- function(r) {
+    what <- if (is.na(r$exercise_no)) "Hele økta" else paste0("Øvelse ", r$exercise_no,
+                                                              if (nzchar(r$exercise_name)) paste0(", ", r$exercise_name))
+    tags <- r$tags[[1]]
+    tags <- unname(feedback_tags[tags[tags %in% names(feedback_tags)]])
+    parts <- c(if (!is.na(r$rating)) words[[as.character(r$rating)]],
+               if (length(tags)) paste(tags, collapse = ", "),
+               if (!is.na(r$actual_minutes)) paste0(r$actual_minutes, " min",
+                                                     if (!is.na(r$planned_minutes)) paste0(" (plan ", r$planned_minutes, ")")),
+               if (nzchar(r$use_again)) paste("bruke igjen:", again[[r$use_again]]),
+               if (!is.na(r$actual_players)) paste0(r$actual_players, " spillere kom",
+                                                     if (!is.na(r$registered_players)) paste0(" av ", r$registered_players,
+                                                                                               " påmeldte")))
+    paste0("- ", what, ": ", paste(parts, collapse = "; "), safe(r$body))
+  }
+  events <- unique(rows$spond_event_id)
+  blocks <- vapply(seq_along(events), function(k) {
+    ev <- rows[rows$spond_event_id == events[k], , drop = FALSE]
+    head <- paste0("## Økt ", k, ", evaluert ", feedback_date_text(min(ev$created_at)),
+                   if (nzchar(ev$theme[1])) paste0(", tema: ", ev$theme[1]))
+    paste(c(head, vapply(seq_len(nrow(ev)), function(i) line(ev[i, , drop = FALSE]), "")), collapse = "\n")
+  }, "")
+  paste0("# Lærdommer nå\n\n", if (nzchar(txt1(old))) txt1(old) else "Ingen ennå.",
+         "\n\n# Nye evalueringer (", nrow(rows), " fra ", length(events), " økter)\n\n",
+         paste(blocks, collapse = "\n\n"),
+         "\n\nSkriv de oppdaterte lærdommene.")
+}
+
+#' The learnings from a KI answer: without code fences, checked
+#' @noRd
+learning_from_answer <- function(text, names = character()) {
+  text <- gsub("^\\s*```[a-z]*\\s*|\\s*```\\s*$", "", txt1(text))
+  learning_validate(text, names)
+}
+
+#' Step 1 for the learnings: rights, budget and the request
+#' @param base The text in the panel (may be edited but not saved); NULL
+#'   uses the newest saved version.
+#' @param names Member names (`member_names()`), never sent.
+#' @noRd
+ai_learning_prepare <- function(con, access, rights, group_id, base = NULL, names = character(), now = Sys.time(),
+                                key = Sys.getenv("ANTHROPIC_API_KEY")) {
+  if (!isTRUE(rights$admin)) ai_stop("Bare administratorer kan oppdatere lærdommene.")
+  if (!isTRUE(rights$ai)) ai_stop("Du har ikke tilgang til KI. Spør en administrator.")
+  if (!nzchar(key)) ai_stop("KI er ikke satt opp (ANTHROPIC_API_KEY mangler).")
+  s <- ds_get_ai_settings(con)
+  budget <- ai_budget(ds_ai_spend(con, access, group_id, ai_month_start(now)), s)
+  if (!budget$ok) ai_stop(budget$message)
+  state <- ds_learning_state(con, access, group_id, n = 1)
+  old <- if (!is.null(base)) base else if (nrow(state$versions)) state$versions$body[1] else ""
+  old <- tryCatch(learning_validate(old, names, allow_empty = TRUE), error = function(e) ai_stop(conditionMessage(e)))
+  since <- if (is.na(state$since)) now - 365 * 86400 else state$since
+  rows <- ds_feedback_since(con, access, group_id, since)
+  if (!nrow(rows)) ai_stop("Ingen nye evalueringer siden lærdommene sist ble oppdatert med KI.")
+  body <- list(model = ai_learning_model, max_tokens = ai_learning_max_tokens,
+               system = list(list(type = "text", text = ai_learning_system_text())),
+               messages = list(list(role = "user", content = ai_learning_order(rows, old, names))))
+  list(group_id = group_id, kind = "learning", model = ai_learning_model, settings = s, budget = budget,
+       body = body, rights = rights, names = names, n_rows = nrow(rows))
+}
+
+#' Step 3 for the learnings: log the call, check the text and save it as a
+#' new version
+#' @return list(id, cost_usd, n_rows).
+#' @noRd
+ai_learning_finish <- function(con, access, actor, prep, sent) {
+  r <- ai_read_response(sent$res)
+  text <- NULL
+  err <- r$error_code
+  msg <- r$message
+  if (r$ok) {
+    text <- tryCatch(learning_from_answer(r$text, prep$names), error = function(e) {
+      err <<- "ugyldig_svar"
+      msg <<- paste("KI-svaret kunne ikke brukes:", conditionMessage(e))
+      NULL
+    })
+  }
+  cost <- ai_cost(r$usage, prep$model)
+  ds_log_ai_usage(con, access, prep$group_id, actor, u = c(r$usage, list(
+    kind = "learning", model = prep$model, cost_usd = cost, duration_ms = sent$duration_ms,
+    status = if (is.null(text)) "error" else "ok", error_code = err)))
+  if (is.null(text)) ai_stop(msg)
+  id <- ds_save_learning(con, access, prep$group_id, text, "ai", actor, prep$rights)
+  list(id = id, cost_usd = cost, n_rows = prep$n_rows)
 }
 
 # Overview for the admin panel (T3d) ------------------------------------------------

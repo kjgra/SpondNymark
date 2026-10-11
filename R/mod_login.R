@@ -38,7 +38,7 @@ mod_login_bar_ui <- function(id) {
 
 spond_api <- function() {
   list(login = spond_login, profile = spond_get_profile, groups = spond_get_groups,
-       events = spond_get_events)
+       events = spond_get_events, events_many = spond_get_events_many)
 }
 
 login_form <- function(ns) {
@@ -189,10 +189,10 @@ mod_login_server <- function(id, spond = spond_api(), role_names = access_role_n
       }
       error_msg(NULL)
 
-      result <- tryCatch({
+      result <- timed("innlogging i alt (Spond og lagdata)", tryCatch({
         sess <- spond$login(ident$value, password)
         list(spond = sess, data = spond_session_data(spond$groups(sess), spond$profile(sess), role_names))
-      }, error = function(e) e)
+      }, error = function(e) e))
       rm(password)
 
       if (inherits(result, "error")) {
