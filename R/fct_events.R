@@ -33,9 +33,34 @@ ids_of <- function(x) {
   as.character(unlist(lapply(x, function(v) if (is.list(v)) v$id else v)))
 }
 
+# An organiser's (arrangør's) answer in Spond, as a status key in the app.
+owner_response_status <- c(accepted = "accepted", declined = "declined", unanswered = "unanswered",
+                           waitinglist = "waiting", unconfirmed = "unconfirmed")
+
+#' The organisers (Spond: «arrangører», field `owners`) of an event
+#'
+#' Spond lists the trainers who run an event as its owners, with their own
+#' answer. They need not be recipients of the event (e.g. a trainer outside
+#' the subgroup). Only id, name (shown in the app, never stored) and answer
+#' are kept.
+#' @return data.frame(profile_id, first_name, last_name, status); status is
+#'   NA when the answer is missing or unknown.
+#' @noRd
+event_owners <- function(x) {
+  x <- Filter(is.list, x %||% list())
+  chr <- function(f) vapply(x, function(o) as.character(o[[f]] %||% NA_character_)[1], character(1))
+  resp <- tolower(chr("response"))
+  out <- data.frame(profile_id = chr("id"), first_name = chr("firstName"), last_name = chr("lastName"),
+                    status = unname(owner_response_status[resp]), stringsAsFactors = FALSE)
+  out <- out[!is.na(out$profile_id) & !duplicated(out$profile_id), , drop = FALSE]
+  rownames(out) <- NULL
+  out
+}
+
 #' Keep only what the app needs from one raw event
 #' @return list(id, heading, start, end, cancelled, match, subgroup_ids,
-#'   invite_time, not_sent, responses = data.frame(member_id, status)).
+#'   invite_time, not_sent, responses = data.frame(member_id, status),
+#'   owners = `event_owners()`).
 #'   `not_sent`: the invitation has not been sent yet. Spond then gives the
 #'   planned send time in `inviteTime` (only on events not sent; see the spike
 #'   report, part 7).
@@ -61,7 +86,8 @@ event_minimal <- function(e) {
     subgroup_ids = unique(ids_of(rec$group$subGroups %||% rec$subGroups)),
     invite_time = spond_parse_time(e$inviteTime),
     not_sent = !is.na(spond_parse_time(e$inviteTime)),
-    responses = responses
+    responses = responses,
+    owners = event_owners(e$owners)
   )
 }
 
@@ -96,8 +122,8 @@ event_sent_to <- function(event, group) {
 #' context. Members who are no longer in the group are shown as "Tidligere
 #' medlem".
 #' @return data.frame: member_id, display_name, status, label, known (still
-#'   a member of the group), kind (see `spond_member_kinds()`); sorted by
-#'   status order, then name.
+#'   a member of the group), kind (see `spond_member_kinds()`; organisers of
+#'   the event are "coach" too); sorted by status order, then name.
 #' @noRd
 event_participants <- function(event, group) {
   st <- event_statuses()
@@ -107,10 +133,54 @@ event_participants <- function(event, group) {
   r$known <- !is.na(r$display_name)
   r$display_name[!r$known] <- "Tidligere medlem"
   r$kind <- if (is.null(members$kind)) rep("player", nrow(r)) else members$kind[match(r$member_id, members$id)]
+  r$kind[r$member_id %in% event_owner_member_ids(event, members)] <- "coach"
   r$label <- st$label[match(r$status, st$status)]
   r <- r[order(match(r$status, st$status), tolower(r$display_name)), , drop = FALSE]
   rownames(r) <- NULL
   r
+}
+
+# Member ids of the organisers who are members of the group (matched on the
+# profile id; the member id is also accepted, in case Spond sends that).
+event_owner_member_ids <- function(event, members) {
+  own <- event$owners$profile_id %||% character()
+  if (!length(own) || !nrow(members)) return(character())
+  pid <- if (is.null(members$profile_id)) rep(NA_character_, nrow(members)) else members$profile_id
+  members$id[(!is.na(pid) & pid %in% own) | members$id %in% own]
+}
+
+#' The trainers on an event: its organisers (arrangører), and recipients with
+#' a trainer role in the group
+#'
+#' An organiser's own answer in Spond counts; without one, the answer as a
+#' recipient. Organisers who are not members of the group are named from the
+#' event (shown only, never stored).
+#' @return data.frame(display_name, status), sorted by name.
+#' @noRd
+event_coaches <- function(event, group) {
+  members <- members_in_context(group, NULL)
+  p <- event_participants(event, group)
+  p <- p[!is.na(p$kind) & p$kind == "coach", c("member_id", "display_name", "status"), drop = FALSE]
+  own <- event$owners
+  if (!is.null(own) && nrow(own)) {
+    pid <- if (is.null(members$profile_id)) rep(NA_character_, nrow(members)) else members$profile_id
+    for (i in seq_len(nrow(own))) {
+      k <- which((!is.na(pid) & pid == own$profile_id[i]) | members$id == own$profile_id[i])[1]
+      mid <- if (is.na(k)) paste0("owner:", own$profile_id[i]) else members$id[k]
+      status <- own$status[i]
+      if (mid %in% p$member_id) {
+        if (!is.na(status)) p$status[p$member_id == mid] <- status
+      } else {
+        name <- if (!is.na(k)) members$display_name[k] else short_name(own$first_name[i], own$last_name[i])
+        if (is.na(name) || !nzchar(trimws(name))) name <- "Arrangør"
+        p <- rbind(p, data.frame(member_id = mid, display_name = name,
+                                 status = if (is.na(status)) "unanswered" else status, stringsAsFactors = FALSE))
+      }
+    }
+  }
+  p <- p[order(tolower(p$display_name)), c("display_name", "status"), drop = FALSE]
+  rownames(p) <- NULL
+  p
 }
 
 #' Counts per status, in display order, only statuses that occur

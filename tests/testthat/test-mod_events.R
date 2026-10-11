@@ -272,10 +272,57 @@ test_that("trainers are not placed in event groups, but shown on the event page"
   line <- as.character(event_coaches_line(ev, g))
   expect_match(line, "Trenere:")
   expect_match(line, "Kjetil G.")
-  expect_match(line, "fordeles ikke")
+  expect_false(grepl("fordeles ikke", line))
   expect_null(event_coaches_line(event_minimal(fake_spond_events()[[1]]), g))
   ev$responses$status[ev$responses$member_id == "M-me"] <- "declined"
   expect_null(event_coaches_line(ev, g))
+  ev$responses$status[ev$responses$member_id == "M-me"] <- "unanswered"
+  expect_null(event_coaches_line(ev, g))                  # only trainers who are coming
+})
+
+test_that("organisers (arrangører) are the event's trainers, with their own answer", {
+  g <- fake_group()
+  raw <- fake_spond_events()[[1]]
+  raw$owners <- list(list(id = "P-me", response = "accepted"),                         # Kjetil, not a recipient
+                     list(id = "P-ext", firstName = "Kari", lastName = "Trener", response = "ACCEPTED"),
+                     list(id = "P-no", firstName = "Per", lastName = "Nei", response = "declined"),
+                     list(id = "P-q", firstName = "Ola", lastName = "Venter"),           # no answer
+                     list(id = "P-me", response = "accepted"),                         # duplicate
+                     "rubbish")
+  ev <- event_minimal(raw)
+  expect_equal(ev$owners$profile_id, c("P-me", "P-ext", "P-no", "P-q"))
+  expect_equal(ev$owners$status, c("accepted", "accepted", "declined", NA))
+  expect_equal(nrow(event_owners(NULL)), 0)
+
+  co <- event_coaches(ev, g)
+  expect_setequal(co$display_name, c("Kjetil G.", "Kari T.", "Per N.", "Ola V."))
+  line <- as.character(event_coaches_line(ev, g))
+  expect_match(line, "Kari T., Kjetil G.")
+  expect_false(grepl("Per N.|Ola V.", line))
+
+  # An organiser who is also a recipient: the organiser answer counts, and
+  # they are a trainer, so not in the participant list or the groups.
+  ev$responses <- rbind(ev$responses, data.frame(member_id = "M-me", status = "unanswered"))
+  p <- event_participants(ev, g)
+  expect_equal(p$kind[p$member_id == "M-me"], "coach")
+  expect_equal(event_coaches(ev, g)$status[event_coaches(ev, g)$display_name == "Kjetil G."], "accepted")
+  d <- list(event = ev, labels = "A", assignments = character())
+  expect_false("M-me" %in% draft_members(d, g, members_in_context(g))$member_id)
+  # Answer only as organiser missing: the answer as recipient counts.
+  ev$owners$status[1] <- NA
+  expect_null(event_coaches_line(within(ev, owners <- owners[1, ]), g))
+})
+
+test_that("trainers are not in the participant list", {
+  g <- fake_group()
+  raw <- fake_spond_events()[[1]]
+  raw$responses$acceptedIds <- list("M-1", "M-3", "M-me")
+  testServer(mod_participants_server, args = list(event = reactive(event_minimal(raw)), group = reactive(g)), {
+    expect_false("M-me" %in% participants()$member_id)
+    expect_true(all(c("M-1", "M-3") %in% participants()$member_id))
+    expect_false(grepl("Kjetil", as.character(output$list$html)))
+    expect_match(as.character(output$list$html), "<strong>2</strong>\\s+kommer")
+  })
 })
 
 test_that("events not sent yet are marked, and only the next five are shown until 'Vis flere'", {

@@ -155,16 +155,16 @@ member_sections <- function(m, tagger = NULL) {
   )
 }
 
-# "Trenere: Kari T., Per O. (fordeles ikke)" on the event page: trainers who
-# got the event and have not said no. NULL when there are none.
+# "Trenere: Kari T., Per O." on the event page: the trainers who are coming
+# (organisers and recipients with a trainer role, see event_coaches()).
+# NULL when there are none.
 event_coaches_line <- function(event, group) {
-  p <- event_participants(event, group)
-  p <- p[!is.na(p$kind) & p$kind == "coach" & p$status != "declined", , drop = FALSE]
+  p <- event_coaches(event, group)
+  p <- p[p$status == "accepted", , drop = FALSE]
   if (nrow(p) == 0) return(NULL)
   div(class = "sn-event-coaches",
       span(class = "sn-event-coaches-label", "Trenere:"), " ",
-      paste(p$display_name[order(tolower(p$display_name))], collapse = ", "),
-      span(class = "sn-hint", " (fordeles ikke)"))
+      paste(p$display_name, collapse = ", "))
 }
 
 # Classes shared by the event row and the event page header.
