@@ -1753,8 +1753,11 @@
     }
   },
   "files": {
+    ".here": {
+      "checksum": "d41d8cd98f00b204e9800998ecf8427e"
+    },
     ".Rbuildignore": {
-      "checksum": "17f847933966777e7397760158d3dc05"
+      "checksum": "66170cd58deb71880d73f38286d12c82"
     },
     "app.R": {
       "checksum": "83f7784fbb8bb2059f3b11bdd12dae4f"
@@ -1769,7 +1772,7 @@
       "checksum": "f1e487de51821d7bbc18c371c3b7639e"
     },
     "inst/app/www/custom.css": {
-      "checksum": "14963b93944a22bc78131eb0ab1b4e6e"
+      "checksum": "e1a7762e7f0d0dda86e17bf67746a110"
     },
     "inst/app/www/favicon.ico": {
       "checksum": "a5b73ffecee6a01c0a08ff0b176901cf"
@@ -1834,6 +1837,9 @@
     "inst/db/migrations/010_rls_schema_migrations.sql": {
       "checksum": "d305a59a4f37f6ea0b37a112fa333e99"
     },
+    "inst/db/migrations/011_evaluering_t3e.sql": {
+      "checksum": "3719ff0b5298be2851d03e6ca84cfe16"
+    },
     "inst/db/migrations/README.md": {
       "checksum": "23f0960e67c885e20237e26a50df997a"
     },
@@ -1873,6 +1879,12 @@
     "LICENSE": {
       "checksum": "b53a045e830453e91697eb22a19fcc70"
     },
+    "LICENSE.md": {
+      "checksum": "63398f9906206a94b0fc003d0d3dda05"
+    },
+    "man/run_app.Rd": {
+      "checksum": "eb32a8dff09564aea287fdd742e2140d"
+    },
     "NAMESPACE": {
       "checksum": "9096f7f5795633f990d3fe1352f8f9fc"
     },
@@ -1889,7 +1901,7 @@
       "checksum": "3c0cbf727fbf4557c3c81aa56750908e"
     },
     "R/data_store.R": {
-      "checksum": "e1528de626bfd59cda7d1a7535f594df"
+      "checksum": "b7e555c3af3d623a3d8c342bad33f73f"
     },
     "R/fct_access.R": {
       "checksum": "0f3f42aaf2b05546a5608ea9529bd4f7"
@@ -1911,6 +1923,9 @@
     },
     "R/fct_events.R": {
       "checksum": "affdc679f7ac32590b423f843ef7f90a"
+    },
+    "R/fct_feedback.R": {
+      "checksum": "3a2ff58824510041b082090038a5821b"
     },
     "R/fct_groups.R": {
       "checksum": "dcb11fe68fa18fdae39970385b6e8031"
@@ -1949,7 +1964,7 @@
       "checksum": "06b75ab187e08dc4c2700355a8bbad38"
     },
     "R/mod_plans.R": {
-      "checksum": "98c1d96e5d73a9fa8acf6295042cebb4"
+      "checksum": "160d25175d92c73178de07f4e290d5d1"
     },
     "R/mod_tags.R": {
       "checksum": "2c34c841f8da1bab1ebdc18038a73f27"
@@ -1962,6 +1977,9 @@
     },
     "R/spond_client.R": {
       "checksum": "0a93c0dd390ba1bf3da16d1002e08d07"
+    },
+    "t3e1.bundle": {
+      "checksum": "02a9bee3fa4e1c35fb94acd3bbf9f316"
     }
   },
   "users": null
