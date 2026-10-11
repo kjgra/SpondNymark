@@ -1,5 +1,10 @@
 # Nymark – Gruppeorganisering
 
+> **Uoffisiell.** Dette er et frivillig verktøy laget for trenere i Nymark.
+> Det er ikke laget, godkjent eller støttet av Spond AS, og har ingen
+> tilknytning til Spond. «Spond» er et varemerke som tilhører Spond AS.
+> Appen bruker Sponds uoffisielle API, som kan endres uten varsel.
+
 R-pakken, miljøvariablene (`SPONDNYMARK_*`) og databasebrukeren
 (`spondnymark_app`) heter fortsatt SpondNymark internt. Brukerne ser bare
 navnet over.
@@ -100,4 +105,7 @@ Se `inst/db/migrations/README.md`.
 
 Arbeidsplanen ligger i Claude-prosjektet (`claude/arbeidsplan-mvp.md`).
 
-Alle rettigheter forbeholdt, se `LICENSE`.
+## Lisens
+
+MIT, se `LICENSE.md`. Skriftene i `inst/app/www/fonts/` og `inst/typst/fonts/`
+(Barlow) har sin egen lisens, SIL Open Font License (`OFL.txt` i samme mappe).
