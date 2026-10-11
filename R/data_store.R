@@ -940,12 +940,15 @@ ds_save_plan_exercise <- function(con, access, group_id, exercise, actor, themes
 ds_get_ai_settings <- function(con) {
   row <- ds_query(con, "
     SELECT model, group_limit_nok::float8 AS group_limit_nok, total_limit_usd::float8 AS total_limit_usd,
-           max_new_exercises, usd_nok::float8 AS usd_nok, updated_by, updated_at
+           max_new_exercises, usd_nok::float8 AS usd_nok, array_to_string(link_domains, ',') AS link_domains,
+           updated_by, updated_at
       FROM ai_settings WHERE id")
   out <- ai_settings_default()
   if (nrow(row)) {
-    for (f in names(out)) out[[f]] <- row[[f]][1]
+    for (f in setdiff(names(out), "link_domains")) out[[f]] <- row[[f]][1]
     out$max_new_exercises <- as.integer(out$max_new_exercises)
+    d <- txt1(row$link_domains[1])
+    out$link_domains <- if (nzchar(d)) strsplit(d, ",", fixed = TRUE)[[1]] else character()
   }
   out
 }
@@ -956,12 +959,15 @@ ds_save_ai_settings <- function(con, rights, actor, s) {
   if (!isTRUE(rights$superadmin)) stop("Bare superadmin kan endre KI-innstillingene.", call. = FALSE)
   v <- ai_settings_validate(s)
   ds_exec(con, "
-    INSERT INTO ai_settings (id, model, group_limit_nok, total_limit_usd, max_new_exercises, usd_nok, updated_by)
-    VALUES (true, $1, $2, $3, $4, $5, $6)
+    INSERT INTO ai_settings (id, model, group_limit_nok, total_limit_usd, max_new_exercises, usd_nok, updated_by,
+                             link_domains)
+    VALUES (true, $1, $2, $3, $4, $5, $6, $7::text[])
     ON CONFLICT (id) DO UPDATE SET model = EXCLUDED.model, group_limit_nok = EXCLUDED.group_limit_nok,
            total_limit_usd = EXCLUDED.total_limit_usd, max_new_exercises = EXCLUDED.max_new_exercises,
-           usd_nok = EXCLUDED.usd_nok, updated_by = EXCLUDED.updated_by, updated_at = now()",
-    list(v$model, v$group_limit_nok, v$total_limit_usd, v$max_new_exercises, v$usd_nok, actor))
+           usd_nok = EXCLUDED.usd_nok, link_domains = EXCLUDED.link_domains,
+           updated_by = EXCLUDED.updated_by, updated_at = now()",
+    list(v$model, v$group_limit_nok, v$total_limit_usd, v$max_new_exercises, v$usd_nok, actor,
+         ds_text_array(v$link_domains)))
   invisible(TRUE)
 }
 

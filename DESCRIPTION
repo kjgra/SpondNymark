@@ -31,7 +31,8 @@ Imports:
     RPostgres,
     shiny (>= 1.8.1),
     stats,
-    utils
+    utils,
+    xml2
 Encoding: UTF-8
 Suggests: 
     askpass,

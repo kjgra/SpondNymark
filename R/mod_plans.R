@@ -26,6 +26,7 @@
 #' @param rights_now NULL (use `rights()`), or a function reading the rights
 #'   from the database now (`rights_now_fn()`); used before KI calls.
 #' @param ai_http,ai_async,ai_key The Claude API (tests pass fakes).
+#' @param link_http Fetches the pages behind exercise links (R/fct_links.R).
 #' @noRd
 mod_plans_event_ui <- function(id) {
   ns <- NS(id)
@@ -94,6 +95,14 @@ ki_modal <- function(ns, o) {
           textAreaInput(ns("ki_wish"), "Ønsker og utfordringer (valgfritt)", rows = 4, width = "100%",
                         placeholder = "F.eks.: Vi kommer ikke hjem bak ballen i forsvar. Mer avslutning på mål.")
         },
+        htmltools::tagAppendAttributes(
+          textAreaInput(ns("ki_links"), "Lenker til øvelser du vil ha med (valgfritt)", rows = 2, width = "100%",
+                        placeholder = "https://tiim.no/ovelse/\u2026 (én per linje, maks 3)"),
+          spellcheck = "false", .cssSelector = "textarea"),
+        p(class = "sn-hint", "Appen henter øvelsene fra ",
+          paste(o$link_domains %||% link_domains_default, collapse = ", "),
+          ". KI tilpasser dem til økta, skriver dem med egne ord og tegner dem selv; lenken følger med til",
+          " opplegget, PDF-en og banken."),
         p(class = "sn-hint", "Ikke skriv navn eller helseopplysninger.",
           if (nzchar(o$facts)) paste0(" KI får bare antall: ", o$facts, "."),
           if (!is.null(o$max_new)) paste0(" KI lager maks ", o$max_new, if (o$max_new == 1) " ny øvelse" else " nye øvelser",
@@ -361,7 +370,7 @@ plan_editor_modal <- function(ns, s, choices, selected, minutes_hint = NULL) {
 #' @noRd
 mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_pdf = plan_pdf,
                              rights = reactive(no_rights()), rights_now = NULL, ai_http = ai_http_post, ai_async = ai_http_post_async,
-                             ai_key = function() Sys.getenv("ANTHROPIC_API_KEY")) {
+                             ai_key = function() Sys.getenv("ANTHROPIC_API_KEY"), link_http = link_http) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     # Rights for an action: read again from the database when the app gives
@@ -870,7 +879,8 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
                    label = paste0(where, ": ", com$body, " (", vapply(com$author, plan_author_name, "", group = context()$group), ")"))
       }
       o <- list(ctx = ctx, model = pre$prep$model, est = est, budget = pre$prep$budget, facts = facts, base = base,
-                comments = ki_com, max_new = pre$prep$settings$max_new_exercises)
+                comments = ki_com, max_new = pre$prep$settings$max_new_exercises,
+                link_domains = pre$prep$settings$link_domains)
       ki_open(o)
       ki_msg(NULL)
       msg(NULL)
@@ -899,6 +909,16 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
       if (is.null(o$base)) ctx$theme <- txt1(input$ki_theme)
       ctx$minutes <- as.integer(minutes)
       ctx$wish <- input$ki_wish %||% ""
+      # Exercises from links: checked and fetched now (a few seconds), so a
+      # bad link is reported here, before KI is paid for.
+      domains <- o$link_domains %||% link_domains_default
+      links <- tryCatch(link_fetch(link_parse(input$ki_links, domains), domains, http = link_http),
+                        error = function(e) e)
+      if (inherits(links, "error")) {
+        ki_msg(conditionMessage(links))
+        return()
+      }
+      ctx$links <- links
       ids <- integer()
       if (!is.null(o$comments)) {
         ids <- intersect(o$comments$id, suppressWarnings(as.integer(input$ki_comments %||% character())))

@@ -57,6 +57,31 @@ test_that("settings are checked", {
   expect_error(ai_settings_validate(modifyList(base, list(model = "x"))), "Ukjent modell")
   expect_error(ai_settings_validate(modifyList(base, list(max_new_exercises = 1.5))), "helt tall")
   expect_error(ai_settings_validate(modifyList(base, list(group_limit_nok = -1))), "Grensen per lag")
+  expect_equal(ok$link_domains, c("tiim.no", "fotball.no"))      # default
+  expect_equal(ai_settings_validate(modifyList(base, list(link_domains = "tiim.no, nff.no")))$link_domains,
+               c("tiim.no", "nff.no"))
+  expect_error(ai_settings_validate(modifyList(base, list(link_domains = "ikke gyldig"))), "Ugyldig nettsted")
+})
+
+test_that("exercises from links keep their link, made-up links are dropped, and they are not counted as new", {
+  link <- "https://tiim.no/ovelse/3-mot-3"
+  txt <- example_text(function(a) {
+    a$ovelser[[1]]$lenke <- link
+    a$ovelser[[2]]$lenke <- "https://tiim.no/ovelse/funnet-pa"           # not given by the trainer
+    a
+  })
+  ctx <- list(theme = "Samhandling", links = list(list(url = link, title = "3 mot 3", text = "x")))
+  r <- ai_plan_from_answer(txt, test_bank()[0, ], ctx, max_new = 2)
+  expect_equal(r$plan$ovelser[[1]]$nff_url, link)
+  expect_equal(r$plan$ovelser[[2]]$nff_url, "")
+  expect_false(any(grepl("nye øvelser", r$warnings)))                   # 3 new, but one is from a link
+  r2 <- ai_plan_from_answer(example_text(), test_bank()[0, ], ctx, max_new = 3)
+  expect_match(r2$warnings, paste0("Øvelsen fra ", link, " kom ikke med"), fixed = TRUE, all = FALSE)
+  # When adjusting, a link already in the plan is kept
+  r3 <- ai_plan_from_answer(txt, test_bank()[0, ], list(base_links = "https://tiim.no/ovelse/funnet-pa"))
+  expect_equal(r3$plan$ovelser[[2]]$nff_url, "https://tiim.no/ovelse/funnet-pa")
+  expect_true("lenke" %in% names(ai_plan_schema()$properties$ovelser$items$properties))
+  expect_true("lenke" %in% unlist(ai_plan_schema()$properties$ovelser$items$required))
 })
 
 # Prompt ------------------------------------------------------------------------------------
@@ -296,6 +321,9 @@ test_that("KI settings have defaults and only the superadmin may change them", {
   expect_equal(got$model, "claude-sonnet-5-5")
   expect_equal(got$group_limit_nok, 50)
   expect_identical(got$max_new_exercises, 2L)
+  expect_equal(got$link_domains, c("tiim.no", "fotball.no"))
+  ds_save_ai_settings(con, list(superadmin = TRUE), "P1", modifyList(s, list(link_domains = "tiim.no, nff.no")))
+  expect_equal(ds_get_ai_settings(con)$link_domains, c("tiim.no", "nff.no"))
   expect_equal(DBI::dbGetQuery(con, "SELECT count(*)::integer AS n FROM ai_settings")$n, 1L)
 })
 
@@ -407,6 +435,13 @@ test_that("the adjustment order has the plan, the facts and the wish, and needs 
   expect_error(ai_revision_text(ref, modifyList(ctx, list(wish = ""))), "hva som skal endres")
   expect_error(ai_revision_text(ref, modifyList(ctx, list(wish = "Per er skadet"))), "sensitive")
   expect_match(ai_system_text(), "# Justering av et opplegg", fixed = TRUE)
+  expect_match(ai_system_text(), "# Øvelser fra lenker", fixed = TRUE)
+  # A link alone is enough, and comes once (not in the facts)
+  links <- list(list(url = "https://tiim.no/ovelse/a", title = "A", text = "Tekst om øvelsen"))
+  o2 <- ai_revision_text(ref, modifyList(ctx, list(wish = "", links = links)))
+  expect_equal(lengths(regmatches(o2, gregexpr("# Øvelser fra lenker", o2, fixed = TRUE))), 1)
+  expect_match(o2, "Juster opplegget.$")
+  expect_equal(ai_answer_from_plan(ref)$ovelser[[1]]$lenke, txt1(ref$ovelser[[1]]$nff_url))
 })
 
 # Overview (T3d) ---------------------------------------------------------------------------

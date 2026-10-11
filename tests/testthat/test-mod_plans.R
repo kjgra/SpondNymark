@@ -444,3 +444,36 @@ test_that("after the training, trainers evaluate the plan, and the results are s
   reg <- DBI::dbGetQuery(con, "SELECT registered_players FROM exercise_feedback WHERE exercise_no IS NULL")
   expect_false(is.na(reg$registered_players))
 })
+
+test_that("KI gets exercises from links on approved sites, fetched before the call", {
+  con <- local_test_db()
+  add_bank(con)
+  seen <- new.env()
+  page <- '<html><head><meta property="og:title" content="3 mot 3"></head><body><nav>Meny</nav>
+    <main><h1>3 mot 3</h1><h2>Organisering</h2><ul><li>Bane 20 x 25 m med to endesoner.</li></ul></main></body></html>'
+  fetched <- character()
+  args <- c(ki_args(con, seen = seen), list(link_http = function(reqs) {
+    fetched <<- c(fetched, vapply(reqs, function(r) r$url, ""))
+    lapply(reqs, function(r) httr2::response(200, url = r$url, headers = list(`content-type` = "text/html"),
+                                             body = charToRaw(page)))
+  }))
+  testServer(mod_plans_server, args = args, {
+    session$setInputs(ki = 1)
+    o <- ki_open()
+    expect_equal(o$link_domains, c("tiim.no", "fotball.no"))
+    html <- as.character(ki_modal(session$ns, o))
+    expect_match(html, "Lenker til øvelser du vil ha med")
+    expect_match(html, "Appen henter øvelsene fra\\s+tiim.no, fotball.no")
+    session$setInputs(ki_theme = "Samhandling", ki_minutes = 60, ki_wish = "", ki_model = "claude-haiku-5-5",
+                      ki_links = "https://eksempel.no/ovelse", ki_go = 1)
+    expect_match(ki_msg(), "bare hente øvelser fra tiim.no, fotball.no")
+    expect_length(fetched, 0)                                       # never fetched
+    session$setInputs(ki_links = "https://tiim.no/ovelse/3-mot-3", ki_go = 2)
+    expect_equal(fetched, "https://tiim.no/ovelse/3-mot-3")
+    ki_wait(session, ki_task)
+    msg_txt <- seen$body$messages[[1]]$content
+    expect_match(msg_txt, "## Lenke 1: https://tiim.no/ovelse/3-mot-3\nTittel: 3 mot 3")
+    expect_match(msg_txt, "- Bane 20 x 25 m med to endesoner.", fixed = TRUE)
+    expect_false(grepl("Meny", msg_txt))
+  })
+})

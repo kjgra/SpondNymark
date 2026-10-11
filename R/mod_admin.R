@@ -288,7 +288,7 @@ exercise_form <- function(ns, e, theme_choices) {
     div(class = "sn-admin-grid",
         area("ex_easier", "Enklere", e$easier, rows = 2),
         area("ex_harder", "Vanskeligere", e$harder, rows = 2)),
-    textInput(ns("ex_nff_url"), "Lenke til øvelsen hos NFF (valgfri)", value = e$nff_url %||% "",
+    textInput(ns("ex_nff_url"), "Lenke til øvelsen, f.eks. på tiim.no (valgfri)", value = e$nff_url %||% "",
               placeholder = "https://", width = "100%"),
     p(class = "sn-hint", "Beskriv øvelsen med egne ord. Ikke kopier tekst eller tegninger fra NFF."),
     div(class = "sn-ex-drawing",
@@ -514,7 +514,10 @@ ai_settings_ui <- function(ns, s, editable, group) {
         num("ai_group_limit", "Grense per lag per måned (kr)", s$group_limit_nok, 5),
         num("ai_total_limit", "Grense for hele appen per måned ($)", s$total_limit_usd, 1)),
     div(class = "sn-admin-grid",
-        num("ai_usd_nok", "Kroner per dollar", s$usd_nok, 0.1)),
+        num("ai_usd_nok", "Kroner per dollar", s$usd_nok, 0.1),
+        lock(textInput(ns("ai_link_domains"), "Nettsteder KI kan hente øvelser fra",
+                       value = paste(s$link_domains %||% link_domains_default, collapse = ", "), width = "100%",
+                       placeholder = "tiim.no, fotball.no"))),
     p(class = "sn-hint",
       if (!editable) "Bare superadmin kan endre grensene og modellen. ",
       "Grensen hos Anthropic settes i tillegg i konsollen der; hold appens grense under den.",
@@ -719,7 +722,8 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
       r <- rights_now()
       me <- user()$profile$id
       s <- list(model = input$ai_model, group_limit_nok = input$ai_group_limit, total_limit_usd = input$ai_total_limit,
-                max_new_exercises = input$ai_max_new, usd_nok = input$ai_usd_nok)
+                max_new_exercises = input$ai_max_new, usd_nok = input$ai_usd_nok,
+                link_domains = input$ai_link_domains %||% link_domains_default)
       save("ai", function() {
         if (!isTRUE(r$superadmin)) stop("Bare superadmin kan endre grensene og modellen.", call. = FALSE)
         ai_settings_validate(s)

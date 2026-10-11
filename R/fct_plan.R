@@ -268,6 +268,7 @@ plan_pdf <- function(p, path, footer = NULL, info = character(), groups = list()
     p$ovelser[[i]]$tegning <- NULL
   }
   plan_legend_png(file.path(dir, "tegnforklaring.png"))
+  for (i in seq_along(p$ovelser)) p$ovelser[[i]]$kilde_tekst <- plan_source_text(p$ovelser[[i]]$nff_url)
 
   sched <- plan_schedule(p, groups)
   data <- c(p, list(
@@ -295,6 +296,21 @@ plan_pdf <- function(p, path, footer = NULL, info = character(), groups = list()
   invisible(structure(path, problems = problems))
 }
 
+
+#' Who to credit for an exercise with a link, shown above the link in the PDF
+#'
+#' «Inspirert av øvelsen på tiim.no (Norges Fotballforbund)» for NFF's
+#' sites, otherwise «Inspirert av øvelsen på <nettsted>».
+#' @noRd
+plan_source_text <- function(url) {
+  url <- txt1(url)
+  if (!nzchar(url)) return("")
+  host <- tolower(tryCatch(httr2::url_parse(url)$hostname, error = function(e) "") %||% "")
+  host <- sub("^www\\.", "", host)
+  if (!nzchar(host)) return("Inspirert av øvelsen på:")
+  nff <- host %in% c("tiim.no", "fotball.no") || endsWith(host, ".fotball.no")
+  paste0("Inspirert av øvelsen på ", host, if (nff) " (Norges Fotballforbund)", ":")
+}
 
 # Plans and the exercise bank ------------------------------------------------------
 

@@ -53,7 +53,7 @@ ai_wish_max <- 1000L
 #' @noRd
 ai_settings_default <- function() {
   list(model = "claude-haiku-5-5", group_limit_nok = 30, total_limit_usd = 8, max_new_exercises = 2L,
-       usd_nok = 10, updated_by = "", updated_at = as.POSIXct(NA))
+       usd_nok = 10, link_domains = link_domains_default, updated_by = "", updated_at = as.POSIXct(NA))
 }
 
 ai_settings_validate <- function(s) {
@@ -70,7 +70,8 @@ ai_settings_validate <- function(s) {
        group_limit_nok = num(s$group_limit_nok, "Grensen per lag", 0, 10000),
        total_limit_usd = num(s$total_limit_usd, "Grensen totalt", 0, 1000),
        max_new_exercises = as.integer(n),
-       usd_nok = num(s$usd_nok, "Dollarkursen", 1, 100))
+       usd_nok = num(s$usd_nok, "Dollarkursen", 1, 100),
+       link_domains = link_domains_validate(s$link_domains %||% link_domains_default))
 }
 
 # Money ------------------------------------------------------------------------------
@@ -141,7 +142,7 @@ ai_plan_schema <- function() {
     kode = str, basert_pa = str, naermeste_kode = str, hvorfor_ny = str,
     navn = str, kategori = list(type = "string", enum = as.list(names(exercise_categories))),
     fokus = str, organisering = strs, gjennomforing = strs, tilpasning = strs, laeringsmomenter = strs,
-    sporsmal = strs, enklere = str, vanskeligere = str, tegning_json = str
+    sporsmal = strs, enklere = str, vanskeligere = str, tegning_json = str, lenke = str
   ))
   obj(list(
     tittel = str, undertittel = str, fokus_forsvar = str, fokus_angrep = str,
@@ -193,7 +194,8 @@ ai_answer_from_plan <- function(p) {
            hvorfor_ny = e$hvorfor_ny, navn = e$navn, kategori = cat_key(e$kategori), fokus = e$fokus,
            organisering = e$organisering, gjennomforing = e$gjennomforing, tilpasning = e$tilpasning,
            laeringsmomenter = e$laeringsmomenter, sporsmal = e$sporsmal, enklere = e$enklere,
-           vanskeligere = e$vanskeligere, tegning_json = if (is.null(e$tegning)) "" else drawing_json(e$tegning))
+           vanskeligere = e$vanskeligere, tegning_json = if (is.null(e$tegning)) "" else drawing_json(e$tegning),
+           lenke = txt1(e$nff_url))
     })
   )
 }
@@ -208,8 +210,11 @@ ai_revision_text <- function(base, ctx) {
   wish <- txt1(ctx$wish)
   comments <- vapply(ctx$comments %||% character(), txt1, "")
   comments <- comments[nzchar(comments)]
-  if (!nzchar(wish) && !length(comments)) stop("Skriv hva som skal endres, eller velg en kommentar.", call. = FALSE)
-  facts <- ai_order_text(modifyList(ctx, list(wish = "", theme = "", theme_description = "", comments = NULL)))
+  if (!nzchar(wish) && !length(comments) && !length(ctx$links)) {
+    stop("Skriv hva som skal endres, velg en kommentar eller legg inn en lenke.", call. = FALSE)
+  }
+  facts <- ai_order_text(modifyList(ctx, list(wish = "", theme = "", theme_description = "", comments = NULL,
+                                              links = NULL)))
   facts <- sub("^# Bestilling", "# Fakta nå", sub("\n\nLag treningsøkta.", "", facts, fixed = TRUE))
   if (nchar(wish) > ai_wish_max) stop("Ønskene kan ha maks ", ai_wish_max, " tegn.", call. = FALSE)
   if (text_is_sensitive(c(wish, comments))) {
@@ -221,6 +226,7 @@ ai_revision_text <- function(base, ctx) {
          "\n\n", facts,
          if (length(comments)) paste0("\n\n# Kommentarer fra trenerne\n\n", paste0("- ", comments, collapse = "\n")),
          if (nzchar(wish)) paste0("\n\n# Endringsønske\n\n", wish),
+         ai_links_text(ctx$links),
          "\n\nJuster opplegget.")
 }
 
@@ -386,7 +392,7 @@ ai_order_text <- function(ctx) {
            line("Grupper i godkjent gruppeforslag", groups),
            line("Maks nye øvelser", ctx$max_new %||% ai_settings_default()$max_new_exercises),
            line("Ønsker fra treneren", wish))
-  paste(c(out, "", "Lag treningsøkta."), collapse = "\n")
+  paste0(paste(out, collapse = "\n"), ai_links_text(ctx$links), "\n\nLag treningsøkta.")
 }
 
 #' The request body for the Messages API
@@ -512,6 +518,7 @@ ai_plan_from_answer <- function(answer, bank, ctx = list(), max_new = 2L) {
   warn <- character()
   codes <- bank$code %||% character()
   used <- character()
+  allowed_links <- setdiff(c(vapply(ctx$links %||% list(), function(l) txt1(l$url), ""), ctx$base_links %||% character()), "")
   ex <- list()
   for (i in seq_along(a$ovelser %||% list())) {
     e <- a$ovelser[[i]]
@@ -568,7 +575,9 @@ ai_plan_from_answer <- function(answer, bank, ctx = list(), max_new = 2L) {
       organisering = ai_clips(e$organisering), gjennomforing = ai_clips(e$gjennomforing),
       tilpasning = ai_clips(e$tilpasning, 4), laeringsmomenter = ai_clips(e$laeringsmomenter),
       sporsmal = ai_clips(e$sporsmal, 6),
-      enklere = ai_clip(e$enklere, 400), vanskeligere = ai_clip(e$vanskeligere, 400), nff_url = "",
+      enklere = ai_clip(e$enklere, 400), vanskeligere = ai_clip(e$vanskeligere, 400),
+      # Only links the trainer gave (now or in the plan adjusted), never one KI made up.
+      nff_url = if (txt1(e$lenke) %in% allowed_links) txt1(e$lenke) else "",
       kilde = kilde, basert_pa = base,
       naermeste_kode = if (kilde == "ny" && nearest %in% codes) nearest else "",
       hvorfor_ny = if (kilde == "ny") ai_clip(e$hvorfor_ny, 300) else "",
@@ -577,7 +586,12 @@ ai_plan_from_answer <- function(answer, bank, ctx = list(), max_new = 2L) {
   ex <- utils::head(ex, 6)
   if (!length(ex)) stop("Svaret hadde ingen øvelser som kunne brukes.", call. = FALSE)
   # New exercises; when adjusting, the ones already in the plan do not count.
-  n_new <- sum(vapply(ex, function(x) x$kilde == "ny" && !x$kode %in% (ctx$base_codes %||% character()), logical(1)))
+  # Exercises from the trainer's links do not count either.
+  link_urls <- vapply(ctx$links %||% list(), function(l) txt1(l$url), "")
+  n_new <- sum(vapply(ex, function(x) x$kilde == "ny" && !x$kode %in% (ctx$base_codes %||% character()) &&
+                        !x$nff_url %in% link_urls, logical(1)))
+  missing <- setdiff(link_urls, vapply(ex, function(x) x$nff_url, ""))
+  if (length(missing)) warn <- c(warn, paste0("Øvelsen fra ", missing, " kom ikke med i opplegget."))
   if (n_new > max_new) warn <- c(warn, paste0("KI-en laget ", n_new, " nye øvelser (grensen er ", max_new, ")."))
   int <- function(x, default) {
     v <- suppressWarnings(as.integer(x %||% default))
@@ -634,7 +648,10 @@ ai_prepare <- function(con, access, rights, group_id, ctx, kind = NULL, now = Sy
   experience <- ai_experience_text(ds_team_experience(con, access, group_id, since = now - 365 * 86400), bank,
                                    ds_latest_learning(con, access, group_id))
   ctx$max_new <- s$max_new_exercises
-  if (!is.null(base_plan)) ctx$base_codes <- vapply(base_plan$ovelser, function(e) txt1(e$kode), "")
+  if (!is.null(base_plan)) {
+    ctx$base_codes <- vapply(base_plan$ovelser, function(e) txt1(e$kode), "")
+    ctx$base_links <- vapply(base_plan$ovelser, function(e) txt1(e$nff_url), "")
+  }
   order <- tryCatch(if (is.null(base_plan)) ai_order_text(ctx) else ai_revision_text(base_plan, ctx),
                     error = function(e) ai_stop(conditionMessage(e)))
   catalogue <- ai_catalogue(bank, ctx$theme %||% "")

@@ -149,8 +149,8 @@
         if ex.vanskeligere != "" { par[*Vanskeligere:* #rich(ex.vanskeligere)] }
       }
       #if ex.nff_url != "" {
-        sub[Hos NFF]
-        text(size: 9pt)[#link(ex.nff_url)[#ex.nff_url]]
+        sub[Kilde]
+        text(size: 9pt)[#ex.at("kilde_tekst", default: "") #link(ex.nff_url)[#ex.nff_url]]
       }
     ])
 }
