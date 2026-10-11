@@ -680,8 +680,9 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
       is_coach <- !is.na(el$kind) & el$kind == "coach"
       kids <- if (is.null(links)) character() else links$child_id[links$parent_id %in% el$member_id]
       notes <- parent_notes(d$assignments, links, function(ids) el$display_name[match(ids, el$member_id)])
-      # Trainers sort first in every column ("0 ..."), players after ("1 ...");
-      # the browser keeps that order when it moves a card.
+      # Trainers sort first in the groups ("0 ...", players "1 ...") and last
+      # in the pool of members not yet placed; the browser keeps that order
+      # when it moves a card (moveCard() in sn.js).
       card <- function(i) {
         id <- el$member_id[i]
         warn <- if (id %in% names(notes)) notes[[id]] else NULL
@@ -701,7 +702,9 @@ mod_groups_server <- function(id, context, user, db, tagger = NULL, event = reac
       }
       column <- function(label, title, ids, pool = FALSE) {
         idx <- which(el$member_id %in% ids)
-        idx <- idx[order(!is_coach[idx])]   # stable: trainers first, then by name
+        # Stable: by name within trainers and players; trainers first in a
+        # group, last in the pool.
+        idx <- idx[order(if (pool) is_coach[idx] else !is_coach[idx])]
         div(class = paste("sn-col", if (pool) "sn-col-pool"), `data-group` = label,
             div(class = "sn-col-head",
                 if (pool) span(class = "sn-col-title", title)

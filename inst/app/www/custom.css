@@ -251,8 +251,12 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-hint-tap { display: none; }
 .sn-editor-actions { display: flex; gap: 8px; margin-top: 12px; }
 .sn-board { position: relative; }
+/* While the group editor is open, the page gets wider on a PC, so the
+   pool and four groups fit side by side without scrolling. Columns share
+   the width (at least 170 px; below that the row scrolls). */
+.sn-wrap:has(.sn-board) { max-width: 1240px; }
 .sn-board-cols { display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 10px; align-items: flex-start; }
-.sn-col { flex: 0 0 200px; width: 200px; background: var(--sn-white); border: 0; box-shadow: var(--sn-shadow);
+.sn-col { flex: 1 1 0; min-width: 170px; max-width: 280px; background: var(--sn-white); border: 0; box-shadow: var(--sn-shadow);
   border-radius: 16px; display: flex; flex-direction: column; max-height: 65vh; }
 .sn-col-pool { background: var(--sn-ground-2); }
 .sn-col-head { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--bs-border-color);
@@ -274,7 +278,7 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
   border: 1px dashed var(--bs-border-color); border-radius: 8px; }
 .sn-col-body.is-empty .sn-col-empty { display: block; }
 .sn-col.dragover { outline: 2px dashed var(--sn-black); outline-offset: -2px; background: var(--sn-yellow-soft); }
-.sn-col-add { padding: 10px; gap: 8px; background: transparent; border-style: dashed; }
+.sn-col-add { flex: 0 0 140px; min-width: 140px; padding: 10px; gap: 8px; background: transparent; border-style: dashed; }
 .sn-mcard { background: var(--sn-white); border: 1px solid var(--sn-line); border-radius: 12px; padding: 7px 10px; cursor: grab;
   user-select: none; display: flex; flex-direction: column; gap: 3px; }
 .sn-mcard:focus-visible { outline: 2px solid var(--sn-black); }
@@ -295,7 +299,7 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
   .sn-hint-drag { display: none; }
   .sn-hint-tap { display: inline; }
   .sn-board-cols { flex-direction: column; overflow: visible; align-items: stretch; }
-  .sn-col { width: 100%; flex: none; max-height: none; }
+  .sn-col { width: 100%; flex: none; max-height: none; max-width: none; }
   .sn-col-body { flex-direction: column; }
   .sn-mcard { min-height: 44px; justify-content: center; cursor: pointer; }
   .sn-col-head { font-size: .9rem; }

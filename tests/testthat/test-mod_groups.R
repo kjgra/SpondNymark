@@ -291,3 +291,23 @@ test_that("edit locks do not store the Shiny session token", {
     expect_false(grepl(session$token, session_key, fixed = TRUE))
   })
 })
+
+test_that("trainers are last among the members not yet placed, and first in a group", {
+  con <- local_test_db()
+  testServer(mod_groups_server, args = groups_args(con), {
+    session$setInputs(new = "draft")                            # gruppeutkast: trainers are placed too
+    order_in <- function(html, ids) {
+      pos <- vapply(ids, function(id) regexpr(paste0("data-member=\"", id, "\""), html)[1], 0)
+      ids[order(pos)]
+    }
+    board <- html_of(output$board)
+    pool <- sub("data-group=\"Gruppe A\".*$", "", board)
+    expect_equal(tail(order_in(pool, c("M-me", "M-1", "M-2", "M-3")), 1), "M-me")
+    session$setInputs(move = list(member = "M-1", group = "Gruppe A"))
+    session$setInputs(move = list(member = "M-me", group = "Gruppe A"))
+    session$setInputs(add_group = "Gruppe B")                   # redraws the board
+    board <- html_of(output$board)
+    grp <- sub("^.*data-group=\"Gruppe A\"", "", board)
+    expect_equal(order_in(grp, c("M-me", "M-1")), c("M-me", "M-1"))
+  })
+})

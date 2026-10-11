@@ -112,11 +112,18 @@
     var board = card.closest('.sn-board');
     var body = col.querySelector('.sn-col-body');
     if (!board || !body || card.parentNode === body) return;
-    // Keep each column sorted by name.
-    var key = card.getAttribute('data-sort') || '';
+    // Keep each column sorted: trainers first in the groups, last in the
+    // pool of members not yet placed (data-sort is "0 name" for trainers,
+    // "1 name" for players).
+    var pool = col.classList.contains('sn-col-pool');
+    var sortKey = function (c) {
+      var k = c.getAttribute('data-sort') || '';
+      return pool && k.charAt(0) === '0' ? '2' + k.slice(1) : k;
+    };
+    var key = sortKey(card);
     var before = null;
     body.querySelectorAll('.sn-mcard').forEach(function (c) {
-      if (!before && (c.getAttribute('data-sort') || '') > key) before = c;
+      if (!before && sortKey(c) > key) before = c;
     });
     if (before) body.insertBefore(card, before);
     else body.insertBefore(card, body.querySelector('.sn-col-empty'));
