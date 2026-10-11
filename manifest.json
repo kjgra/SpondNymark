@@ -1760,7 +1760,7 @@
       "checksum": "83f7784fbb8bb2059f3b11bdd12dae4f"
     },
     "DESCRIPTION": {
-      "checksum": "072b692702db0d58c2d0ac5af0aa563b"
+      "checksum": "eb5fe01271e20b8e456f8d7b5e5f1cac"
     },
     "inst/ai/system.md": {
       "checksum": "6135ca1664cd99b50b229cb61a70e934"
@@ -1769,7 +1769,7 @@
       "checksum": "f1e487de51821d7bbc18c371c3b7639e"
     },
     "inst/app/www/custom.css": {
-      "checksum": "9ab4ee2df9b235029625dede28c351ef"
+      "checksum": "14963b93944a22bc78131eb0ab1b4e6e"
     },
     "inst/app/www/favicon.ico": {
       "checksum": "a5b73ffecee6a01c0a08ff0b176901cf"
@@ -1802,34 +1802,34 @@
       "checksum": "6deb6906edb5ff6baac2bce971994836"
     },
     "inst/app/www/sn.js": {
-      "checksum": "e8dd92612328b37e80361f2450ed9e5c"
+      "checksum": "cef4416f6f11d0cbfd94e4732bb6e425"
     },
     "inst/db/migrations/001_init.sql": {
       "checksum": "d3fd32653c816d3ef29f774a239f5f9b"
     },
     "inst/db/migrations/002_treningsopplegg_t1.sql": {
-      "checksum": "71e0ca7e60ac114766c695825f9aee02"
+      "checksum": "f9fe2087d850c3c5674738e502e9e8bc"
     },
     "inst/db/migrations/003_treningsopplegg_t2.sql": {
-      "checksum": "e9fd23f3d3cd4e7e85f96f5186955b7b"
+      "checksum": "f53f5c4118e93e0489e5a13fda1f4dec"
     },
     "inst/db/migrations/004_tilganger_t2b.sql": {
-      "checksum": "cf040850f1bad70f1d965d5ab4bd54e7"
+      "checksum": "c0d339b74be11b901c83cbd73b0f5f22"
     },
     "inst/db/migrations/005_ki_t3a.sql": {
-      "checksum": "21ac1173b1947068d1b263d0b4e5b219"
+      "checksum": "ce9984494037651cf56be159c3af72b1"
     },
     "inst/db/migrations/006_innlogging.sql": {
-      "checksum": "938e082bbfe78dc10e168f811ebfbd9d"
+      "checksum": "55513d1a80d68abd9e312fb8c7bca5b4"
     },
     "inst/db/migrations/007_kommentarer_t3c.sql": {
-      "checksum": "a5183279b893f78241faf8025e9429f5"
+      "checksum": "f7f8007e7f15557a7be2aa9137734838"
     },
     "inst/db/migrations/008_godkjenning_t3c.sql": {
-      "checksum": "53b4a069b53ddde7555ed68a7e8faaf7"
+      "checksum": "fd5a4be56819f622a89fb44c7a3ed8f1"
     },
     "inst/db/migrations/009_apptilgang.sql": {
-      "checksum": "7035b6f11e0039d8aa8b5db5efa8f246"
+      "checksum": "f1f63aeb3815cdba08a2437cab609197"
     },
     "inst/db/migrations/010_rls_schema_migrations.sql": {
       "checksum": "d305a59a4f37f6ea0b37a112fa333e99"
@@ -1841,10 +1841,10 @@
       "checksum": "03161b39ad27a6ea9e6fcd5aed3da21c"
     },
     "inst/extdata/referanse-okt.json": {
-      "checksum": "6945ee8708337e7f5c9aa62bf8f384b3"
+      "checksum": "10b7ef251594729a542d5c5134a8cb8c"
     },
     "inst/golem-config.yml": {
-      "checksum": "2be972b76a51591a802e75bd38018489"
+      "checksum": "4ad4ace539e7f8927cc9f5812e277821"
     },
     "inst/typst/fonts/Barlow-Bold.ttf": {
       "checksum": "6cbe034ff9c2bbad5a1e57a27a400a5d"
@@ -1865,13 +1865,13 @@
       "checksum": "a53b6eaca2419b9b7b63a91c100eda0c"
     },
     "inst/typst/fonts/OFL.txt": {
-      "checksum": "46cbde1f44ff31807ec209f1b72acad2"
+      "checksum": "3aaf0dc0636aab3e49b731c28f2a680e"
     },
     "inst/typst/opplegg.typ": {
-      "checksum": "502cd5564a15c870de7f7b40829910f6"
+      "checksum": "27b47a0512d54a4d238e29b0c403f930"
     },
     "LICENSE": {
-      "checksum": "e3ad0d9dd33d2ed6b893fd1efb346b26"
+      "checksum": "b53a045e830453e91697eb22a19fcc70"
     },
     "NAMESPACE": {
       "checksum": "9096f7f5795633f990d3fe1352f8f9fc"
@@ -1907,28 +1907,28 @@
       "checksum": "eabf3f023667de404e22106b5a65c0d0"
     },
     "R/fct_env.R": {
-      "checksum": "f5f5808207abf35ab7d86a3dc375a1ba"
+      "checksum": "b0353bf82b4983f27935ddde3f074026"
     },
     "R/fct_events.R": {
-      "checksum": "091b4b6334c73b7a3417b0d54662a02c"
+      "checksum": "affdc679f7ac32590b423f843ef7f90a"
     },
     "R/fct_groups.R": {
-      "checksum": "43401c75dc49b6e27281f01e408850fd"
+      "checksum": "dcb11fe68fa18fdae39970385b6e8031"
     },
     "R/fct_members.R": {
       "checksum": "0a394e241b6b33a57234f336253f17b3"
     },
     "R/fct_plan.R": {
-      "checksum": "a67476cc131f0351c823c39c5c3f6ae7"
+      "checksum": "bb0fd1cce0654dd47f4404bc39cc0554"
     },
     "R/fct_roles.R": {
       "checksum": "84718127ed6ed96b0630195f5c05556d"
     },
     "R/fct_spond_data.R": {
-      "checksum": "c1439f8552b7e90ecb42e10706eeac0d"
+      "checksum": "712f9bbeb9e9e2b41cc9755309a789e9"
     },
     "R/fct_tags.R": {
-      "checksum": "10d897b7d87f34028c5db2ed1465db63"
+      "checksum": "aeba7c4467066c8e89f152fa511c1a1e"
     },
     "R/fct_training.R": {
       "checksum": "a4d98d36f18096f20f2e1fdbd8c5cfee"
@@ -1937,22 +1937,22 @@
       "checksum": "1191c5250c4ce2cd9a7f768c5417b6ac"
     },
     "R/mod_events.R": {
-      "checksum": "891bc63bcb0b4c805f3a45f4eef6ec78"
+      "checksum": "55c11ec215ab165f3a8521e878abf60b"
     },
     "R/mod_groups.R": {
-      "checksum": "616230a17e35b5d984119fca15757c41"
+      "checksum": "112e416327b0d1a1411bded5865cb9ab"
     },
     "R/mod_login.R": {
       "checksum": "78c2e10e9239c23c4ac4ad007def9310"
     },
     "R/mod_participants.R": {
-      "checksum": "12abc7b138c9d91b16944f795618838b"
+      "checksum": "06b75ab187e08dc4c2700355a8bbad38"
     },
     "R/mod_plans.R": {
       "checksum": "98c1d96e5d73a9fa8acf6295042cebb4"
     },
     "R/mod_tags.R": {
-      "checksum": "991352776c7534175dadfb9615077aff"
+      "checksum": "2c34c841f8da1bab1ebdc18038a73f27"
     },
     "R/mod_teams.R": {
       "checksum": "72a9132deb5f56bb75be085eebee6bb6"
@@ -1961,7 +1961,7 @@
       "checksum": "87b5e16fefaf5166b9375f7dfdc71e73"
     },
     "R/spond_client.R": {
-      "checksum": "437a0cd46db9df685f004e3ccd673ced"
+      "checksum": "0a93c0dd390ba1bf3da16d1002e08d07"
     }
   },
   "users": null
