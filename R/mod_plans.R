@@ -29,7 +29,8 @@
 #' @noRd
 mod_plans_event_ui <- function(id) {
   ns <- NS(id)
-  div(class = "sn-plan", uiOutput(ns("section")), uiOutput(ns("comments")), uiOutput(ns("comment_form")))
+  div(class = "sn-plan", uiOutput(ns("section")), uiOutput(ns("evaluation")), uiOutput(ns("comments")),
+      uiOutput(ns("comment_form")))
 }
 
 # "Kjetil G." for a profile id, or "en trener" if it is not in the group.
@@ -195,6 +196,100 @@ plan_summary_ui <- function(p) {
               if (is.null(e$tegning)) span(class = "sn-hint", " · uten tegning"))
     }))
   )
+}
+
+# Evaluation (T3e, kap. 14) ------------------------------------------------------------
+
+# The evaluation dialog: one block per exercise and one for the whole session,
+# filled in with the trainer's earlier evaluation (`mine`, rows from
+# ds_list_feedback() for this plan and author) or the planned values.
+feedback_modal <- function(ns, cur, mine, n_players) {
+  p <- cur$plan
+  planned <- p$tidsplan$stasjoner$minutter
+  row_of <- function(k) {
+    r <- if (is.na(k)) mine[is.na(mine$exercise_no), , drop = FALSE] else mine[!is.na(mine$exercise_no) & mine$exercise_no == k, , drop = FALSE]
+    if (nrow(r)) r[1, , drop = FALSE] else NULL
+  }
+  rating <- function(id, r) {
+    radioButtons(ns(id), "Hvordan fungerte den?", inline = TRUE,
+                 choices = stats::setNames(names(feedback_ratings), unname(feedback_ratings)),
+                 selected = if (is.null(r)) character(0) else as.character(r$rating))
+  }
+  block <- function(k) {
+    e <- p$ovelser[[k]]
+    r <- row_of(k)
+    div(class = "sn-fb-block",
+        h4(class = "sn-plan-subtitle", paste0("\u00d8velse ", k, ": ", e$navn)),
+        rating(paste0("fb_rating_", k), r),
+        div(class = "sn-fb-tags",
+            checkboxGroupInput(ns(paste0("fb_tags_", k)), "Stikkord (valgfritt)", inline = TRUE,
+                               choices = stats::setNames(names(feedback_tags), unname(feedback_tags)),
+                               selected = if (is.null(r)) character() else r$tags[[1]])),
+        div(class = "sn-admin-grid",
+            numericInput(ns(paste0("fb_min_", k)), "Faktisk tid (min)", min = 0, max = 240, width = "100%",
+                         value = if (!is.null(r) && !is.na(r$actual_minutes)) r$actual_minutes else planned),
+            radioButtons(ns(paste0("fb_again_", k)), "Bruke igjen?", inline = TRUE,
+                         choices = stats::setNames(names(feedback_use_again), unname(feedback_use_again)),
+                         selected = if (is.null(r) || !nzchar(r$use_again)) character(0) else r$use_again)),
+        textAreaInput(ns(paste0("fb_body_", k)), "Hva gikk bra, hva bør endres? (valgfritt)", rows = 2, width = "100%",
+                      value = if (is.null(r)) "" else r$body),
+        p(class = "sn-hint sn-fb-count", paste("Maks", feedback_body_max, "tegn.")))
+  }
+  r0 <- row_of(NA)
+  m <- modalDialog(
+    title = paste0("Evaluer \u00f8kta (versjon ", cur$version, ")"), size = "l", easyClose = FALSE,
+    footer = tagList(uiOutput(ns("fb_msg")), actionButton(ns("fb_save"), "Lagre evalueringen", class = "btn-primary"),
+                     modalButton("Avbryt")),
+    div(class = "sn-admin-pane",
+        p(class = "sn-hint", "Tar under ett minutt. Vurder \u00f8velsene dere rakk; resten er valgfritt. ",
+          "Ikke skriv navn eller helseopplysninger."),
+        lapply(seq_along(p$ovelser), block),
+        div(class = "sn-fb-block",
+            h4(class = "sn-plan-subtitle", "Hele \u00f8kta"),
+            radioButtons(ns("fb_rating_0"), "Traff \u00f8kta temaet? (valgfritt)", inline = TRUE,
+                         choices = stats::setNames(names(feedback_ratings), unname(feedback_ratings)),
+                         selected = if (is.null(r0)) character(0) else as.character(r0$rating)),
+            numericInput(ns("fb_players"), "Antall spillere som kom", min = 0, max = 200, width = "100%",
+                         value = if (!is.null(r0) && !is.na(r0$actual_players)) r0$actual_players else n_players),
+            textAreaInput(ns("fb_body_0"), "Kommentar til hele \u00f8kta (valgfritt)", rows = 2, width = "100%",
+                          value = if (is.null(r0)) "" else r0$body)))
+  )
+  htmltools::tagQuery(m)$find(".modal-dialog")$addClass("modal-fullscreen-sm-down sn-admin-modal")$allTags()
+}
+
+# The evaluations of the evaluated version, summed up.
+feedback_summary_ui <- function(sm, group) {
+  if (!length(sm$authors)) return(NULL)
+  n <- length(sm$authors)
+  label_tags <- function(t) if (length(t)) paste(paste0(feedback_tags[names(t)], ifelse(t > 1, paste0(" (", t, ")"), "")),
+                                                 collapse = ", ")
+  texts <- function(tx) {
+    if (!nrow(tx)) return(NULL)
+    tags$ul(class = "sn-fb-texts", lapply(seq_len(nrow(tx)), function(i) {
+      tags$li(strong(plan_author_name(tx$author[i], group), .noWS = "after"), paste0(": ", tx$body[i]))
+    }))
+  }
+  div(class = "sn-plan-eval",
+      h4(class = "sn-plan-subtitle", paste0("Evaluering \u00b7 ", n, if (n == 1) " trener" else " trenere")),
+      if (sm$session$n) {
+        div(class = "sn-fb-row",
+            strong("Hele \u00f8kta: "),
+            paste(c(if (length(sm$session$ratings)) feedback_ratings_text(sm$session$ratings),
+                    if (!is.na(sm$session$players)) paste(sm$session$players, "spillere kom")), collapse = " \u00b7 "),
+            texts(sm$session$texts))
+      },
+      lapply(sm$exercises, function(x) {
+        if (!x$n) return(NULL)
+        div(class = "sn-fb-row",
+            strong(paste0("\u00d8velse ", x$no, " (", x$name, "): ")), feedback_ratings_text(x$ratings),
+            if (length(x$tags)) span(class = "sn-hint", paste0(" \u00b7 ", label_tags(x$tags))),
+            if (!is.na(x$minutes)) span(class = "sn-hint", paste0(" \u00b7 ", round(x$minutes), " min (plan ", x$planned, ")")),
+            if (length(x$use_again)) {
+              span(class = "sn-hint", paste0(" \u00b7 bruke igjen: ",
+                                              paste(tolower(feedback_use_again[names(x$use_again)]), x$use_again, collapse = ", ")))
+            },
+            texts(x$texts))
+      }))
 }
 
 # Choices for the exercise picker: the bank, plus exercises kept from the
@@ -382,6 +477,92 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
     # The section is drawn inside the event card, which Shiny may think is
     # hidden at first; draw it anyway.
     outputOptions(output, "section", suspendWhenHidden = FALSE)
+
+    # Evaluation (T3e, kap. 14) --------------------------------------------------------
+    # After the training, every trainer in the group may evaluate the version
+    # that was used: the approved one, otherwise the newest.
+    fb_plan <- reactive({
+      id <- feedback_plan_id(versions())
+      if (is.null(id)) return(NULL)
+      cur <- current()
+      if (!is.null(cur) && identical(as.integer(cur$id), as.integer(id))) return(cur)
+      acc <- isolate(user())$access
+      read(function(con) ds_get_plan(con, acc, id))
+    })
+    feedback <- reactive({
+      req(applies())
+      refresh()
+      if (upcoming()) return(NULL)
+      ev <- event()
+      gid <- context()$group_id
+      acc <- isolate(user())$access
+      read(function(con) ds_list_feedback(con, acc, gid, ev$id))
+    })
+    fb_rows <- function(pl, fb) if (is.null(fb)) fb else fb[fb$plan_id == pl$id, , drop = FALSE]
+
+    output$evaluation <- renderUI({
+      if (!applies() || upcoming()) return(NULL)
+      pl <- fb_plan()
+      fb <- feedback()
+      if (is.null(pl) || is.null(fb)) return(NULL)
+      fb <- fb_rows(pl, fb)
+      me <- isolate(user())$profile$id
+      cur <- current()
+      div(class = "sn-plan-eval-wrap",
+          feedback_summary_ui(feedback_summary(fb, pl$plan), context()$group),
+          div(class = "sn-plan-actions",
+              actionButton(ns("fb_open"), if (me %in% fb$author) "Endre evalueringen din" else "Evaluer \u00f8kta",
+                           class = "btn-sm btn-primary"),
+              if (!is.null(cur) && !identical(as.integer(cur$id), as.integer(pl$id))) {
+                span(class = "sn-hint", paste0("Evalueringen gjelder versjon ", pl$version,
+                                               if (identical(pl$status, "approved")) " (godkjent)" else " (nyeste)", "."))
+              }))
+    })
+    outputOptions(output, "evaluation", suspendWhenHidden = FALSE)
+
+    fb_msg <- reactiveVal(NULL)
+    output$fb_msg <- renderUI({
+      m <- fb_msg()
+      if (is.null(m)) NULL else div(class = "alert alert-danger sn-alert sn-plan-edmsg", role = "alert", m)
+    })
+
+    observeEvent(input$fb_open, {
+      if (!applies() || upcoming()) return()
+      pl <- fb_plan()
+      if (is.null(pl)) return()
+      fb <- fb_rows(pl, feedback())
+      me <- user()$profile$id
+      mine <- if (is.null(fb)) fb else fb[fb$author == me, , drop = FALSE]
+      fb_msg(NULL)
+      showModal(feedback_modal(ns, pl, mine, players_coming()))
+    })
+
+    observeEvent(input$fb_save, {
+      if (!applies() || upcoming()) return()
+      pl <- fb_plan()
+      if (is.null(pl)) return()
+      rows <- c(lapply(seq_along(pl$plan$ovelser), function(k) {
+        list(exercise_no = k, rating = input[[paste0("fb_rating_", k)]], tags = input[[paste0("fb_tags_", k)]],
+             actual_minutes = input[[paste0("fb_min_", k)]], body = input[[paste0("fb_body_", k)]],
+             use_again = input[[paste0("fb_again_", k)]])
+      }), list(list(exercise_no = NA, rating = input$fb_rating_0, actual_players = input$fb_players,
+                    body = input$fb_body_0)))
+      fb <- tryCatch(feedback_validate(rows, pl$plan, member_names(context()$group$members)), error = function(e) e)
+      if (inherits(fb, "error")) {
+        fb_msg(conditionMessage(fb))
+        return()
+      }
+      u <- user()
+      res <- tryCatch(db$run(function(con) ds_save_feedback(con, u$access, pl$id, u$profile$id, fb)), error = function(e) e)
+      if (inherits(res, "error")) {
+        fb_msg(comment_error_text(res, "Lagring av evaluering"))
+        return()
+      }
+      fb_msg(NULL)
+      removeModal()
+      msg(list(type = "ok", text = "Evalueringen er lagret. Takk!"))
+      refresh(refresh() + 1)
+    })
 
     # Comments (kap. 13) --------------------------------------------------------------
     # Every trainer in the group may comment on a plan, on the whole session

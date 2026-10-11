@@ -1068,6 +1068,58 @@ ds_mark_comments_used <- function(con, access, group_id, comment_ids, plan_id) {
     list(group_id, paste0("{", paste(as.integer(comment_ids), collapse = ","), "}"), as.integer(plan_id)))
 }
 
+# Evaluations (migration 011) ------------------------------------------------------
+
+#' All evaluations of the plans for one event
+#' @return data.frame(id, plan_id, exercise_no, exercise_code, rating, tags
+#'   (list of character vectors), actual_minutes, actual_players, body,
+#'   use_again, author, updated_at). body and use_again are "" when empty.
+#' @noRd
+ds_list_feedback <- function(con, access, group_id, event_id) {
+  assert_group_access(access, group_id)
+  rows <- ds_query(con, "
+    SELECT id, plan_id, exercise_no, coalesce(exercise_code, '') AS exercise_code, rating,
+           array_to_string(tags, chr(31)) AS tags, actual_minutes, actual_players,
+           coalesce(body, '') AS body, coalesce(use_again, '') AS use_again, author, updated_at
+      FROM exercise_feedback
+     WHERE spond_group_id = $1 AND spond_event_id = $2
+     ORDER BY plan_id, exercise_no NULLS FIRST, updated_at, id",
+    list(group_id, event_id))
+  rows$tags <- lapply(rows$tags, function(x) {
+    if (is.na(x) || !nzchar(x)) character() else strsplit(x, "\x1f", fixed = TRUE)[[1]]
+  })
+  rows
+}
+
+#' Save one trainer's evaluation of a plan version
+#'
+#' Replaces the trainer's earlier evaluation of the same version (rows not
+#' sent are removed), in one transaction.
+#' @param fb data.frame from `feedback_validate()`.
+#' @noRd
+ds_save_feedback <- function(con, access, plan_id, actor, fb) {
+  pl <- ds_get_plan(con, access, plan_id)
+  if (!is.data.frame(fb) || nrow(fb) == 0) ds_user_stop("Vurder minst én øvelse eller hele økta.")
+  int_arr <- function(x) paste0("{", paste(ifelse(is.na(x), "NULL", as.integer(x)), collapse = ","), "}")
+  tags <- vapply(fb$tags, function(t) paste(t, collapse = "\x1f"), "")
+  ds_transaction(con, {
+    ds_exec(con, "DELETE FROM exercise_feedback WHERE plan_id = $1 AND author = $2", list(as.integer(plan_id), actor))
+    ds_exec(con, "
+      INSERT INTO exercise_feedback (spond_group_id, spond_event_id, plan_id, exercise_no, exercise_code, rating, tags,
+                                     actual_minutes, actual_players, body, use_again, author)
+      SELECT $1, $2, $3, x.no, NULLIF(x.code, ''), x.rating,
+             CASE WHEN x.tags = '' THEN '{}'::text[] ELSE string_to_array(x.tags, chr(31)) END,
+             x.minutes, x.players, NULLIF(x.body, ''), NULLIF(x.again, ''), $4
+        FROM unnest($5::integer[], $6::text[], $7::integer[], $8::text[], $9::integer[], $10::integer[],
+                    $11::text[], $12::text[]) AS x(no, code, rating, tags, minutes, players, body, again)",
+      list(pl$group_id, pl$event_id, as.integer(plan_id), actor,
+           int_arr(fb$exercise_no), ds_text_array(fb$exercise_code), int_arr(fb$rating), ds_text_array(tags),
+           int_arr(fb$actual_minutes), int_arr(fb$actual_players), ds_text_array(fb$body),
+           ds_text_array(fb$use_again)))
+  })
+  invisible(nrow(fb))
+}
+
 # Rights (app_roles, migration 004) ------------------------------------------------
 
 #' The extra rights of one profile (0 or 1 row)
@@ -1122,7 +1174,7 @@ ds_app_tables <- c("member_tags", "group_proposals", "group_proposal_labels", "g
                    "proposal_history", "proposal_comments", "edit_locks",
                    "season_themes", "team_settings", "exercises", "training_plans",
                    "app_roles", "app_role_log", "ai_usage", "ai_settings",
-                   "training_plan_comments")
+                   "training_plan_comments", "exercise_feedback", "team_learnings")
 
 #' A random password of letters and digits (cryptographically secure)
 #'

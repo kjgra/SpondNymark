@@ -403,3 +403,39 @@ test_that("a plan made only from the bank is approved at once", {
     expect_equal(msg()$text, "Versjon 1 er godkjent.")
   })
 })
+
+test_that("after the training, trainers evaluate the plan, and the results are summed up", {
+  con <- local_test_db()
+  add_bank(con)
+  later <- function() as.POSIXct("2026-10-20 12:00", tz = "UTC")
+  p <- plan_from_exercises(ds_list_exercises(con, plan_acc(), "G2016"), plan_settings_default())
+  v1 <- ds_save_plan(con, plan_acc(), "G2016", "E-ulv", p, "P-me")
+  ds_save_plan(con, plan_acc(), "G2016", "E-ulv", p, "P-me")                 # version 2 is the newest
+  ds_approve_plan(con, plan_acc(), v1$id, "P-me")                           # but version 1 was approved
+  # Before the training: no evaluation
+  testServer(mod_plans_server, args = plan_args(con), {
+    expect_null(output$evaluation)
+  })
+  testServer(mod_plans_server, args = plan_args(con, now = later), {
+    html <- as.character(output$evaluation$html)
+    expect_match(html, "Evaluer økta")
+    session$setInputs(fb_open = 1)
+    session$setInputs(fb_rating_1 = "3", fb_tags_1 = c("goy", "ko"), fb_min_1 = 18, fb_body_1 = "Noah var best",
+                      fb_again_1 = "yes", fb_rating_2 = NULL, fb_rating_0 = "2", fb_players = 14, fb_body_0 = "", fb_save = 1)
+    expect_match(fb_msg(), "Skriv uten navn")                                # a player's name
+    session$setInputs(fb_body_1 = "God flyt", fb_save = 2)
+    expect_null(fb_msg())
+    expect_equal(msg()$type, "ok")
+    html <- as.character(output$evaluation$html)
+    expect_match(html, "Evaluering · 1 trener")
+    expect_match(html, "Øvelse 1 \\(Rondo 4 mot 1\\)")
+    expect_match(html, "mye venting/kø, gøy|gøy, mye venting/kø")
+    expect_match(html, "18 min \\(plan")
+    expect_match(html, "14 spillere kom")
+    expect_match(html, "Kjetil G.</strong>: God flyt")
+    expect_match(html, "Endre evalueringen din")
+  })
+  rows <- ds_list_feedback(con, plan_acc(), "G2016", "E-ulv")
+  expect_equal(unique(rows$plan_id), v1$id)                                  # the approved version
+  expect_equal(sort(rows$exercise_no, na.last = FALSE), c(NA, 1L))
+})

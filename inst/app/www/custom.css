@@ -452,6 +452,23 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-plan-busy { display: flex; gap: .5rem; align-items: center; margin: .5rem 0; color: var(--sn-grey); }
 .sn-plan-notes { margin: .4rem 0 0; padding-left: 1.2rem; }
 .sn-plan-empty .btn + .btn { margin-left: .4rem; }
+/* Evaluation of a session (T3e) */
+.sn-plan-eval-wrap { margin-top: .75rem; display: flex; flex-direction: column; gap: 8px; }
+.sn-plan-eval { background: var(--sn-white); border: 1px solid var(--sn-line); border-radius: .75rem; padding: 10px 12px; }
+.sn-fb-row { padding: 6px 0; border-top: 1px solid var(--sn-line); font-size: .9rem; }
+.sn-fb-row:first-of-type { border-top: 0; }
+.sn-fb-texts { margin: 4px 0 0; padding-left: 1.1rem; font-size: .85rem; }
+.sn-fb-block { border-top: 1px solid var(--sn-line); padding-top: 10px; margin-top: 10px; }
+.sn-fb-block .shiny-options-group .checkbox-inline,
+.sn-fb-block .shiny-options-group .radio-inline { margin-right: 10px; }
+.sn-fb-count { margin-top: -8px; }
+/* Keywords as pills: the checkbox stays (keyboard, screen readers) but is hidden. */
+.sn-fb-tags .shiny-options-group { display: flex; flex-wrap: wrap; gap: 6px; }
+.sn-fb-tags .shiny-options-group .checkbox-inline { position: relative; margin: 0; padding: 4px 12px; border: 1px solid var(--sn-line);
+  border-radius: 999px; background: var(--sn-white); font-size: .85rem; cursor: pointer; }
+.sn-fb-tags .checkbox-inline input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.sn-fb-tags .checkbox-inline:has(input:checked) { background: var(--sn-yellow); border-color: var(--sn-black); font-weight: 600; }
+.sn-fb-tags .checkbox-inline:has(input:focus-visible) { outline: 2px solid var(--sn-black); outline-offset: 1px; }
 .sn-plan-comments { margin-top: .75rem; }
 .sn-plan-subtitle { font-size: .95rem; font-weight: 700; margin: 0 0 .25rem; }
 .sn-plan-comment-add { margin-top: .5rem; }

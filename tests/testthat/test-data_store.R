@@ -4,7 +4,8 @@ test_that("migrations create the tables and are only applied once", {
   expect_setequal(tables, c("schema_migrations", "member_tags", "group_proposals", "group_proposal_labels",
                             "group_proposal_members", "proposal_history", "proposal_comments", "edit_locks",
                             "season_themes", "team_settings", "exercises", "training_plans",
-                            "app_roles", "app_role_log", "ai_usage", "ai_settings", "training_plan_comments"))
+                            "app_roles", "app_role_log", "ai_usage", "ai_settings", "training_plan_comments",
+                            "exercise_feedback", "team_learnings"))
   expect_length(ds_migrate(con, dir = test_migrations_dir()), 0)
 })
 
@@ -615,4 +616,31 @@ test_that("the data layer itself stops non-admins and sensitive words", {
   pid <- ds_save_proposal(con, acc, "P1", "G1", "Forslag", "A")
   expect_error(ds_add_comment(con, acc, pid, "P1", "Hun er syk i dag"), "sensitive")
   expect_type(ds_add_comment(con, acc, pid, "P1", "Fint"), "integer")
+})
+
+test_that("evaluations: saved per trainer and version, replaced on edit, only in the own group", {
+  con <- local_test_db(); acc <- test_access()
+  p <- plan_validate(jsonlite::read_json(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"),
+                                         simplifyVector = FALSE))
+  pl <- ds_save_plan(con, acc, "G1", "E1", p, "P1")
+  fb <- feedback_validate(list(
+    list(exercise_no = 1, rating = "3", tags = c("goy", "ko"), actual_minutes = "17", body = "Bra", use_again = "yes"),
+    list(exercise_no = NA, rating = "2", actual_players = "18")), p)
+  ds_save_feedback(con, acc, pl$id, "P1", fb)
+  ds_save_feedback(con, acc, pl$id, "P2", fb[1, ])
+  rows <- ds_list_feedback(con, acc, "G1", "E1")
+  expect_equal(nrow(rows), 3)
+  expect_equal(rows$tags[[which(rows$author == "P1" & !is.na(rows$exercise_no))]], c("goy", "ko"))
+  expect_equal(rows$exercise_code[!is.na(rows$exercise_no)][1], p$ovelser[[1]]$kode)
+  # Editing replaces the trainer's own rows (the session row is gone now)
+  fb2 <- feedback_validate(list(list(exercise_no = 2, rating = "1", use_again = "no")), p)
+  ds_save_feedback(con, acc, pl$id, "P1", fb2)
+  rows <- ds_list_feedback(con, acc, "G1", "E1")
+  expect_equal(sort(rows$exercise_no[rows$author == "P1"]), 2L)
+  expect_equal(nrow(rows[rows$author == "P2", ]), 1)
+  expect_equal(rows$tags[[which(rows$author == "P1")]], character())
+  # Other groups: no access
+  other <- data.frame(id = "G9", name = "Annet", roles = "Trener", n_subgroups = 0L)
+  expect_error(ds_list_feedback(con, other, "G1", "E1"), "tilgang")
+  expect_error(ds_save_feedback(con, other, pl$id, "P9", fb), "tilgang")
 })
