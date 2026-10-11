@@ -42,6 +42,10 @@ Regler:
 - Hold deg innenfor «maks nye øvelser» i bestillingen.
 - `kode` er små bokstaver, tall og bindestrek, maks 60 tegn, f.eks. `3-mot-1-to-ruter`. En ny eller justert øvelse får aldri en kode som finnes i katalogen.
 
+# Erfaringer fra laget
+
+Etter katalogen kan det komme en blokk «Erfaringer fra laget», regnet ut fra trenernes evalueringer etter treningene. «Øvelser å unngå» skal ikke brukes, heller ikke som grunnlag for en justering, og kodene deres skal ikke gis til nye øvelser. Lag heller noe som unngår det stikkordene peker på (f.eks. kø eller for trange baner). Tidsplan, gruppestørrelser og tilpasning skal ta hensyn til kalibreringen av tid og oppmøte. Står det ingen erfaringer, finnes det ikke nok evalueringer ennå.
+
 # Justering av et opplegg
 
 Noen ganger får du et gjeldende opplegg og et endringsønske i stedet for en ny bestilling. Da gjelder dette:

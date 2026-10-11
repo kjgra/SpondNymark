@@ -238,24 +238,18 @@ ai_system_text <- function() {
 #' The bank as a short catalogue for the prompt (kap. 15.1)
 #'
 #' Archived exercises are left out, and so are exercises the trainers have
-#' rated poorly (`exercise_avoid()`); their codes are listed so KI does not
-#' reuse them. Exercises with the month's theme come first; then active
-#' before candidates, then by category and name. At most `max` lines.
-#' Evaluated exercises get «snitt 2,7/3 (n)».
+#' rated poorly (`exercise_avoid()`; they are listed in
+#' `ai_experience_text()`). Exercises with the month's theme come first;
+#' then active before candidates, then by category and name. At most `max`
+#' lines. Evaluated exercises get «snitt 2,7/3 (n)».
 #' @noRd
 ai_catalogue <- function(bank, theme = "", max = 30) {
   if (is.null(bank) || nrow(bank) == 0) return("# Øvelsesbanken\n\nBanken er tom.")
   if (!"status" %in% names(bank)) bank$status <- "active"
   if (!"based_on" %in% names(bank)) bank$based_on <- ""
   bank <- bank[bank$status != "archived", , drop = FALSE]
-  avoid <- exercise_avoid(bank)
-  avoided <- bank$code[avoid]
-  bank <- bank[!avoid, , drop = FALSE]
-  avoid_line <- if (length(avoided)) {
-    paste0("\n\nØvelser trenerne har vurdert som dårlige er tatt ut av katalogen. Ikke bruk dem, ",
-           "og ikke gi nye øvelser disse kodene: ", paste(avoided, collapse = ", "), ".")
-  } else ""
-  if (nrow(bank) == 0) return(paste0("# Øvelsesbanken\n\nBanken er tom.", avoid_line))
+  bank <- bank[!exercise_avoid(bank), , drop = FALSE]
+  if (nrow(bank) == 0) return("# Øvelsesbanken\n\nBanken er tom.")
   hit <- vapply(bank$themes, function(t) nzchar(theme) && tolower(theme) %in% tolower(t), logical(1))
   ord <- order(!hit, bank$status != "active", match(bank$category, names(exercise_categories)), tolower(bank$name))
   bank <- bank[utils::head(ord, max), , drop = FALSE]
@@ -281,7 +275,73 @@ ai_catalogue <- function(bank, theme = "", max = 30) {
     paste("-", paste(parts[nzchar(parts)], collapse = " | "))
   }, character(1))
   paste0("# Øvelsesbanken\n\nkode | navn | kategori | tema | spillere | minutter | merknader | kort beskrivelse\n\n",
-         paste(lines, collapse = "\n"), avoid_line)
+         paste(lines, collapse = "\n"))
+}
+
+# Thresholds for «Erfaringer fra laget»: too few evaluations say little.
+ai_experience_min <- list(sessions = 3, evaluations = 5, tag_count = 2, tag_share = 0.2, minutes = 1,
+                          attendance = 0.05)
+
+#' «Erfaringer fra laget» for the prompt (plan kap. 14.3), without KI
+#'
+#' Exercises to avoid (from the bank statistics, with the most common
+#' keywords), keywords the trainers often tick, and calibration of time and
+#' attendance. Only counts and fixed keywords, never free text or names.
+#' Lines with too little data behind them are left out.
+#' @param exp `ds_team_experience()`, or NULL.
+#' @param bank `ds_list_exercises()`, for the exercises to avoid.
+#' @return Markdown, or "" when there is nothing to say.
+#' @noRd
+ai_experience_text <- function(exp, bank = NULL) {
+  m <- ai_experience_min
+  num <- function(x, d = 1) formatC(x, format = "f", digits = d, decimal.mark = ",")
+  out <- character()
+  # Exercises to avoid
+  if (!is.null(bank) && nrow(bank)) {
+    if (!"status" %in% names(bank)) bank$status <- "active"
+    bad <- bank[exercise_avoid(bank) & bank$status != "archived", , drop = FALSE]
+    if (nrow(bad)) {
+      rows <- vapply(seq_len(nrow(bad)), function(i) {
+        b <- bad[i, , drop = FALSE]
+        tags <- b$fb_tags[[1]]
+        tags <- utils::head(tags[names(tags) %in% names(feedback_tags)], 3)
+        paste0("- ", b$code, " (", b$name, "): snitt ", feedback_mean_text(b$fb_mean), "/3, ",
+               "«Bruke igjen: Nei» ", b$fb_no, " av ", b$fb_n,
+               if (length(tags)) paste0("; ", paste0(feedback_tags[names(tags)], " (", tags, ")", collapse = ", ")))
+      }, "")
+      out <- c(out, paste0("## Øvelser å unngå\n\nTrenerne har vurdert disse som dårlige. De er tatt ut av katalogen. ",
+                           "Ikke bruk dem, og ikke gi nye øvelser disse kodene. Unngå det som gjorde dem dårlige.\n\n",
+                           paste(rows, collapse = "\n")))
+    }
+  }
+  lines <- character()
+  if (!is.null(exp)) {
+    # Keywords the trainers often tick
+    if (isTRUE(exp$n_eval >= m$evaluations) && length(exp$tags)) {
+      t <- exp$tags[names(exp$tags) %in% names(feedback_tags) & exp$tags >= m$tag_count &
+                      exp$tags / exp$n_eval >= m$tag_share]
+      t <- utils::head(t, 4)
+      if (length(t)) {
+        lines <- c(lines, paste0("- Stikkord trenerne ofte krysser av for: ",
+                                 paste0("«", feedback_tags[names(t)], "» (", t, " av ", exp$n_eval, " vurderinger)",
+                                        collapse = ", "), "."))
+      }
+    }
+    if (isTRUE(exp$time_sessions >= m$sessions) && isTRUE(abs(exp$time_diff) >= m$minutes)) {
+      lines <- c(lines, paste0("- Øvelsene tar i snitt ", num(abs(exp$time_diff)), " min ",
+                               if (exp$time_diff > 0) "lenger" else "kortere", " enn planlagt (", exp$time_n,
+                               " vurderinger fra ", exp$time_sessions, " økter). Ta hensyn til det i tidsplanen."))
+    }
+    if (isTRUE(exp$att_sessions >= m$sessions) && isTRUE(abs(1 - exp$att_ratio) >= m$attendance)) {
+      pct <- round(abs(1 - exp$att_ratio) * 100)
+      lines <- c(lines, paste0("- Faktisk oppmøte er i snitt ", pct, " % ",
+                               if (exp$att_ratio < 1) "lavere" else "høyere", " enn antall påmeldte (",
+                               exp$att_sessions, " økter). Planlegg gruppene og tilpasningen etter det."))
+    }
+  }
+  if (length(lines)) out <- c(out, paste0("## Fra evalueringene\n\n", paste(lines, collapse = "\n")))
+  if (!length(out)) return("")
+  paste0("# Erfaringer fra laget\n\n", paste(out, collapse = "\n\n"))
 }
 
 #' The order (bestilling) for one event, without names
@@ -567,11 +627,14 @@ ai_prepare <- function(con, access, rights, group_id, ctx, kind = NULL, now = Sy
   budget <- ai_budget(ds_ai_spend(con, access, group_id, ai_month_start(now)), s)
   if (!budget$ok) ai_stop(budget$message)
   bank <- ds_list_exercises(con, access, group_id)
+  experience <- ai_experience_text(ds_team_experience(con, access, group_id, since = now - 365 * 86400), bank)
   ctx$max_new <- s$max_new_exercises
   if (!is.null(base_plan)) ctx$base_codes <- vapply(base_plan$ovelser, function(e) txt1(e$kode), "")
   order <- tryCatch(if (is.null(base_plan)) ai_order_text(ctx) else ai_revision_text(base_plan, ctx),
                     error = function(e) ai_stop(conditionMessage(e)))
-  body <- ai_request_body(model, ai_catalogue(bank, ctx$theme %||% ""), order)
+  catalogue <- ai_catalogue(bank, ctx$theme %||% "")
+  if (nzchar(experience)) catalogue <- paste0(catalogue, "\n\n", experience)
+  body <- ai_request_body(model, catalogue, order)
   list(group_id = group_id, kind = kind, model = model, settings = s, budget = budget, bank = bank,
        ctx = ctx, body = body)
 }

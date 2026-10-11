@@ -438,4 +438,7 @@ test_that("after the training, trainers evaluate the plan, and the results are s
   rows <- ds_list_feedback(con, plan_acc(), "G2016", "E-ulv")
   expect_equal(unique(rows$plan_id), v1$id)                                  # the approved version
   expect_equal(sort(rows$exercise_no, na.last = FALSE), c(NA, 1L))
+  # The number signed up in Spond (players, not trainers) is stored on the session row
+  reg <- DBI::dbGetQuery(con, "SELECT registered_players FROM exercise_feedback WHERE exercise_no IS NULL")
+  expect_false(is.na(reg$registered_players))
 })

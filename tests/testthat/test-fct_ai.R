@@ -112,10 +112,38 @@ test_that("the catalogue shows the trainers' score and leaves out poorly rated e
   expect_length(lines, 2)
   expect_match(lines[1], "| snitt 2,7/3 (3) |", fixed = TRUE)
   expect_false(grepl("snitt", lines[2]))
-  expect_false(any(grepl("Kjedelig", lines)))
-  expect_match(cat, "ikke gi nye øvelser disse kodene: kjedelig-ko.", fixed = TRUE)
-  # Without evaluations nothing is left out, and there is no such line
-  expect_false(grepl("vurdert som dårlige", ai_catalogue(test_bank())))
+  expect_false(grepl("kjedelig", cat))
+})
+
+test_that("«Erfaringer fra laget» lists exercises to avoid and calibration, only with enough data", {
+  b <- test_bank()
+  b$fb_n <- c(4L, 2L, 3L); b$fb_mean <- c(2.5, 1.5, 1)
+  b$fb_yes <- c(3L, 0L, 0L); b$fb_changes <- 0L; b$fb_no <- c(0L, 2L, 3L)
+  b$fb_tags <- I(list(c(goy = 3L), c(ko = 2L, kjedelig = 1L, ukjent = 1L), c(ko = 3L)))
+  exp <- list(n_eval = 12L, time_n = 10L, time_sessions = 4L, time_diff = 2.5, att_sessions = 3L, att_ratio = 0.85,
+              tags = c(ko = 5L, goy = 4L, uklar = 2L, for_lett = 1L, ukjent = 9L))
+  txt <- ai_experience_text(exp, b)
+  expect_match(txt, "^# Erfaringer fra laget")
+  expect_match(txt, "- kontring-3-mot-2 (Kontring 3 mot 2): snitt 1,5/3, «Bruke igjen: Nei» 2 av 2; mye venting/kø (2), kjedelig (1)",
+               fixed = TRUE)
+  expect_false(grepl("gammel-ovelse", txt))        # archived: already out
+  expect_false(grepl("rondo", txt))                # good
+  expect_match(txt, "«mye venting/kø» (5 av 12 vurderinger), «gøy» (4 av 12 vurderinger).", fixed = TRUE)
+  expect_false(grepl("uklar|for lett|ukjent", txt))   # under 20 % or unknown
+  expect_match(txt, "tar i snitt 2,5 min lenger enn planlagt (10 vurderinger fra 4 økter)", fixed = TRUE)
+  expect_match(txt, "Faktisk oppmøte er i snitt 15 % lavere enn antall påmeldte (3 økter)", fixed = TRUE)
+  expect_false(grepl("[A-ZÆØÅ][a-zæøå]+ [A-ZÆØÅ][a-zæøå]+ sa", txt))   # counts only
+
+  # Too little data: nothing
+  few <- list(n_eval = 4L, time_n = 4L, time_sessions = 2L, time_diff = 5, att_sessions = 2L, att_ratio = 0.5,
+              tags = c(ko = 4L))
+  expect_equal(ai_experience_text(few, test_bank()), "")
+  expect_equal(ai_experience_text(NULL, NULL), "")
+  # Small deviations are not mentioned
+  small <- modifyList(exp, list(time_diff = -0.5, att_ratio = 1.03, tags = c(ko = 1L)))
+  expect_equal(ai_experience_text(small, test_bank()), "")
+  expect_match(ai_experience_text(modifyList(exp, list(time_diff = -3, att_ratio = 1.2)), NULL),
+               "3,0 min kortere.*20 % høyere")
 })
 
 test_that("the order has counts but no names, and checks the trainer's wish", {
@@ -287,6 +315,7 @@ test_that("a KI plan is prepared, sent and saved with its cost", {
 
   prep <- ai_prepare(con, acc, list(ai = TRUE), "G1", ctx, key = "k")
   expect_match(prep$body$system[[2]]$text, "- rondo | Rondo", fixed = TRUE)
+  expect_false(grepl("Erfaringer fra laget", prep$body$system[[2]]$text))   # no evaluations yet
   expect_match(prep$body$messages[[1]]$content, "Maks nye øvelser: 2", fixed = TRUE)
 
   sent <- ai_send(prep, http = function(path, body) fake_answer(example_text()))

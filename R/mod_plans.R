@@ -553,7 +553,9 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
         return()
       }
       u <- user()
-      res <- tryCatch(db$run(function(con) ds_save_feedback(con, u$access, pl$id, u$profile$id, fb)), error = function(e) e)
+      registered <- players_coming()
+      res <- tryCatch(db$run(function(con) ds_save_feedback(con, u$access, pl$id, u$profile$id, fb, registered)),
+                      error = function(e) e)
       if (inherits(res, "error")) {
         fb_msg(comment_error_text(res, "Lagring av evaluering"))
         return()

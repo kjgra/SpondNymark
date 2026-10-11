@@ -697,3 +697,47 @@ test_that("the bank gets statistics per code, and a candidate becomes active on 
   bank <- ds_list_exercises(con, acc, "G1")
   expect_equal(bank$fb_n[bank$code == e1$kode], 1L)
 })
+
+test_that("the team's experience: time and attendance per session, keywords, and only the own group", {
+  con <- local_test_db(); acc <- test_access()
+  p <- plan_validate(jsonlite::read_json(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"),
+                                         simplifyVector = FALSE))
+  planned <- p$tidsplan$stasjoner$minutter
+  empty <- ds_team_experience(con, acc, "G1")
+  expect_equal(empty$n_eval, 0L)
+  expect_true(is.na(empty$time_diff))
+  expect_length(empty$tags, 0)
+
+  for (k in 1:3) {
+    pl <- ds_save_plan(con, acc, "G1", paste0("E", k), p, "P1")
+    fb <- feedback_validate(list(list(exercise_no = 1, rating = "3", tags = c("ko", "goy"),
+                                      actual_minutes = as.character(planned + 2)),
+                                 list(exercise_no = 2, rating = "2", tags = "ko", actual_minutes = as.character(planned + 4)),
+                                 list(exercise_no = NA, actual_players = as.character(16 + k))), p)
+    ds_save_feedback(con, acc, pl$id, "P1", fb, registered = 20L)
+    # A second trainer on the same session counts once in the attendance
+    ds_save_feedback(con, acc, pl$id, "P2", feedback_validate(list(list(exercise_no = NA, actual_players = "18")), p),
+                     registered = 20L)
+  }
+  row <- DBI::dbGetQuery(con, "SELECT registered_players FROM exercise_feedback WHERE exercise_no IS NULL LIMIT 1")
+  expect_equal(row$registered_players, 20L)
+  expect_true(all(is.na(DBI::dbGetQuery(con, "SELECT registered_players FROM exercise_feedback
+                                              WHERE exercise_no IS NOT NULL")$registered_players)))
+  e <- ds_team_experience(con, acc, "G1")
+  expect_equal(e$n_eval, 6L)
+  expect_equal(c(e$time_n, e$time_sessions), c(6L, 3L))
+  expect_equal(e$time_diff, 3)
+  expect_equal(e$att_sessions, 3L)
+  expect_equal(e$att_ratio, mean(c((17 + 18) / 2, (18 + 18) / 2, (19 + 18) / 2) / 20))
+  expect_equal(e$tags, c(ko = 6L, goy = 3L))
+  # The block for the prompt
+  txt <- ai_experience_text(e, ds_list_exercises(con, acc, "G1"))
+  expect_match(txt, "3,0 min lenger enn planlagt", fixed = TRUE)
+  expect_match(txt, "«mye venting/kø» (6 av 6 vurderinger)", fixed = TRUE)
+  # Old evaluations and other groups do not count; no access to other groups
+  expect_equal(ds_team_experience(con, acc, "G1", since = Sys.time() + 60)$n_eval, 0L)
+  DBI::dbExecute(con, "UPDATE exercise_feedback SET spond_group_id = 'G2' WHERE spond_event_id = 'E1'")
+  expect_equal(ds_team_experience(con, acc, "G1")$time_sessions, 2L)
+  other <- data.frame(id = "G9", name = "Annet", roles = "Trener", n_subgroups = 0L)
+  expect_error(ds_team_experience(con, other, "G1"), "tilgang")
+})
