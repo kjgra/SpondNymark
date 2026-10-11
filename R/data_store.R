@@ -1350,7 +1350,8 @@ ds_app_tables <- c("member_tags", "group_proposals", "group_proposal_labels", "g
                    "proposal_history", "proposal_comments", "edit_locks",
                    "season_themes", "team_settings", "exercises", "training_plans",
                    "app_roles", "app_role_log", "ai_usage", "ai_settings",
-                   "training_plan_comments", "exercise_feedback", "team_learnings")
+                   "training_plan_comments", "exercise_feedback", "team_learnings",
+                   "maintenance", "archive_log", "ai_usage_monthly")
 
 #' A random password of letters and digits (cryptographically secure)
 #'

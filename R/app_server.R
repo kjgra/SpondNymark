@@ -7,6 +7,8 @@
 app_server <- function(input, output, session) {
   # One database connection per session, opened when first needed.
   db <- db_handle()
+  # Clean-up (plan kap. 7) a few seconds after start, at most once a day.
+  maintenance_on_start()
 
   # Only trainers with app access (and admins) may log in; see R/fct_allowlist.R.
   user <- mod_login_server("login", allow = function(ident, profile_id) login_check(db, profile_id))

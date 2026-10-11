@@ -35,9 +35,10 @@ is_superadmin <- function(profile_id, superadmin = Sys.getenv("SPONDNYMARK_SUPER
   nzchar(superadmin) && length(profile_id) == 1 && !is.na(profile_id) && identical(as.character(profile_id), superadmin)
 }
 
-admin_button <- function(ns) {
+admin_button <- function(ns, dot = FALSE) {
+  label <- if (dot) "Innstillinger (arkiv klart)" else "Innstillinger"
   tags$button(
-    type = "button", class = "btn sn-admin", `aria-label` = "Innstillinger", title = "Innstillinger",
+    type = "button", class = paste("btn sn-admin", if (dot) "sn-admin-dot"), `aria-label` = label, title = label,
     onclick = sprintf("Shiny.setInputValue('%s', Date.now(), {priority: 'event'})", ns("open")),
     HTML(paste0(
       '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" ',
@@ -65,7 +66,7 @@ admin_saved_line <- function(t) {
 
 # The dialog. On phones it fills the screen.
 # `groups`: named vector of main group ids (names are the group names).
-admin_modal <- function(ns, groups, selected, years, year, months = ai_month_choices()) {
+admin_modal <- function(ns, groups, selected, years, year, months = ai_month_choices(), superadmin = FALSE) {
   m <- modalDialog(
     title = tagList("Innstillinger",
                     if (length(groups) > 1) {
@@ -78,8 +79,7 @@ admin_modal <- function(ns, groups, selected, years, year, months = ai_month_cho
                       span(class = "sn-admin-group", names(groups)[1])
                     }),
     size = "xl", easyClose = TRUE, footer = modalButton("Lukk"),
-    bslib::navset_underline(
-      id = ns("tab"),
+    do.call(bslib::navset_underline, c(list(id = ns("tab")), Filter(Negate(is.null), list(
       bslib::nav_panel(
         "Trenere", value = "trainers",
         div(class = "sn-admin-pane",
@@ -136,8 +136,21 @@ admin_modal <- function(ns, groups, selected, years, year, months = ai_month_cho
         div(class = "sn-admin-pane",
             uiOutput(ns("ex_msg")),
             uiOutput(ns("ex_body")))
+      ),
+      # Maintenance and archive (T4): only the superadmin.
+      if (superadmin) bslib::nav_panel(
+        "Vedlikehold", value = "maintenance",
+        div(class = "sn-admin-pane",
+            p(class = "sn-hint", "Mellomversjoner av opplegg slettes etter 30 dager; første, siste og godkjente versjon",
+              " beholdes. KI-forbruk eldre enn 12 måneder summeres per måned. Vedlikeholdet kjører når appen starter,",
+              " maks én gang i døgnet. Opplegg for treninger eldre enn 12 måneder slettes bare etter at du har lastet",
+              " ned arkivet og bekreftet at det er lagret."),
+            uiOutput(ns("maint_body")),
+            uiOutput(ns("maint_msg")),
+            h4(class = "sn-plan-subtitle sn-ai-head", "Arkiv"),
+            uiOutput(ns("archive_body")))
       )
-    )
+    ))))
   )
   htmltools::tagQuery(m)$find(".modal-dialog")$addClass("modal-fullscreen-sm-down sn-admin-modal")$allTags()
 }
@@ -386,6 +399,46 @@ learning_buttons <- function(ns, st, can_ai, busy) {
       " Resultatet lagres som en ny versjon, og kan endres her."))
 }
 
+# Maintenance and archive (T4) -------------------------------------------------------
+
+maintenance_ui <- function(ns, st, group) {
+  when <- if (is.na(st$last_run)) "Vedlikeholdet har ikke kjørt ennå." else {
+    by <- if (identical(st$run_by, "oppstart")) "ved oppstart" else paste("av", plan_author_name(st$run_by, group))
+    paste0("Siste vedlikehold: ", short_time(st$last_run), " (", by, "). ", st$last_result)
+  }
+  tagList(p(class = "sn-maint-state", when),
+          div(class = "sn-ex-formbtns", actionButton(ns("maint_run"), "Kjør vedlikehold nå", class = "btn-outline-primary")))
+}
+
+archive_ui <- function(ns, pending, st, downloaded, group) {
+  log <- st$archives
+  log_ui <- if (nrow(log)) {
+    tagList(p(class = "sn-hint", "Tidligere arkiv:"),
+            tags$ul(class = "sn-archive-log", lapply(seq_len(nrow(log)), function(i) {
+              tags$li(paste0(short_time(log$confirmed_at[i]), ": ", log$n_events[i],
+                             if (log$n_events[i] == 1) " trening" else " treninger", " (", log$n_versions[i],
+                             " versjoner, ", archive_period_text(as.POSIXct(c(log$period_from[i], log$period_to[i]))),
+                             ") bekreftet av ", plan_author_name(log$confirmed_by[i], group)))
+            })))
+  }
+  if (!nrow(pending)) return(tagList(p("Ingen opplegg er eldre enn 12 måneder."), log_ui))
+  ready <- length(downloaded) && all(archive_keys(pending) %in% downloaded)
+  confirm <- actionButton(ns("archive_confirm"), "Bekreft at arkivet er lagret", class = "btn-danger")
+  if (!ready) confirm <- htmltools::tagAppendAttributes(confirm, disabled = NA)
+  tagList(
+    div(class = "alert alert-warning sn-alert", role = "status",
+        strong("Arkiv klart: "), paste0(nrow(pending), if (nrow(pending) == 1) " trening" else " treninger", " med ",
+                                        sum(pending$n_versions), if (sum(pending$n_versions) == 1) " versjon" else " versjoner",
+                                        " (", archive_period_text(pending$last_at), ").")),
+    div(class = "sn-ex-formbtns",
+        downloadButton(ns("archive_zip"), "Last ned arkiv", class = "btn-primary", icon = NULL),
+        confirm),
+    p(class = "sn-hint", "ZIP med PDF og alle data per trening, uten navn. Lagre den der du vil (f.eks. OneDrive).",
+      " «Bekreft» blir aktiv når arkivet er lastet ned, og sletter da oppleggene, kommentarene og evalueringene",
+      " i arkivet. Øvelsesbanken og lærdommene beholdes."),
+    log_ui)
+}
+
 # KI overview -------------------------------------------------------------------------
 
 ai_tile <- function(label, value, sub = NULL) {
@@ -472,7 +525,8 @@ ai_settings_ui <- function(ns, s, editable, group) {
 #' @noRd
 mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = Sys.getenv("SPONDNYMARK_SUPERADMIN"),
                              today = Sys.Date, rights_now = NULL, ai_async = ai_http_post_async,
-                             ai_key = function() Sys.getenv("ANTHROPIC_API_KEY")) {
+                             ai_key = function() Sys.getenv("ANTHROPIC_API_KEY"), make_pdf = plan_pdf,
+                             now = Sys.time) {
   if (is.null(rights)) rights <- rights_reactive(user, db, superadmin)
   # Every change reads the rights again from the database, so an admin whose
   # right has been taken away cannot go on in an open session.
@@ -504,7 +558,7 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
 
     output$bar <- renderUI({
       if (!allowed() || nrow(user()$access) == 0) return(NULL)
-      admin_button(ns)
+      admin_button(ns, dot = isTRUE(rights()$superadmin) && isTRUE(NROW(archive_pending()) > 0))
     })
     # The slot starts empty; render it anyway so the gear can appear.
     outputOptions(output, "bar", suspendWhenHidden = FALSE)
@@ -519,6 +573,7 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
     output$season_msg <- tab_msg("season")
     output$team_msg <- tab_msg("team")
     output$learn_msg <- tab_msg("learnings")
+    output$maint_msg <- tab_msg("maintenance")
     # Exercises: in the list the message is at the top; in the form it is
     # next to the buttons, so it is seen without scrolling.
     output$ex_msg <- renderUI({
@@ -584,7 +639,7 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
       confirm_delete(NULL)
       y <- this_year()
       showModal(admin_modal(ns, stats::setNames(acc$id, acc$name), admin_gid(), years = (y - 1):(y + 1), year = y,
-                            months = ai_month_choices(today())))
+                            months = ai_month_choices(today()), superadmin = isTRUE(rights()$superadmin)))
     })
     observeEvent(input$admin_group, {
       acc <- user()$access
@@ -722,6 +777,115 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
       save("team", function() team_settings_validate(s),
            function(con, r) ds_save_team_settings(con, u$access, gid, s, u$profile$id, rights = r),
            "Lagets standard er lagret.")
+    })
+
+    # Maintenance and archive (T4, plan kap. 7) ----------------------------------------
+    # Only the superadmin. The archive covers all the user's groups.
+    is_super <- reactive(!is.null(user()) && isTRUE(rights()$superadmin))
+    archive_pending <- reactive({
+      req(is_super())
+      refresh()
+      acc <- isolate(user())$access
+      tryCatch(db$run(function(con) ds_archive_pending(con, acc, now())), error = function(e) {
+        message("Lesing av arkiv feilet: ", conditionMessage(e))
+        NULL
+      })
+    })
+    maint_state <- reactive({
+      req(is_super())
+      refresh()
+      acc <- isolate(user())$access
+      read(function(con) ds_maintenance_state(con, acc), "maintenance")
+    })
+    downloaded <- reactiveVal(character())   # keys of the trainings in the downloaded archive
+
+    output$maint_body <- renderUI({
+      st <- maint_state()
+      if (is.null(st)) return(NULL)
+      maintenance_ui(ns, st, the_group())
+    })
+    output$archive_body <- renderUI({
+      st <- maint_state()
+      pend <- archive_pending()
+      if (is.null(st) || is.null(pend)) return(NULL)
+      archive_ui(ns, pend, st, downloaded(), the_group())
+    })
+
+    super_now <- function(tab) {
+      r <- if (is_super()) rights_now()
+      if (!isTRUE(r$superadmin)) {
+        say(tab, "error", "Bare superadmin kan gjøre dette.")
+        return(NULL)
+      }
+      r
+    }
+
+    observeEvent(input$maint_run, {
+      if (is.null(super_now("maintenance"))) return()
+      u <- user()
+      res <- tryCatch(db$run(function(con) maintenance_run(con, by = u$profile$id, force = TRUE, now = now())),
+                      error = function(e) e)
+      if (inherits(res, "error")) {
+        message("Vedlikehold fra adminpanelet feilet: ", conditionMessage(res))
+        say("maintenance", "error", "Vedlikeholdet feilet. Prøv igjen om litt.")
+      } else {
+        say("maintenance", "ok", paste("Vedlikeholdet er kjørt.", maintenance_result_text(res)))
+      }
+      refresh(refresh() + 1)
+    })
+
+    output$archive_zip <- downloadHandler(
+      filename = function() paste0("nymark-arkiv-", format(now(), "%Y-%m-%d", tz = "Europe/Oslo"), ".zip"),
+      content = function(file) {
+        if (is.null(super_now("maintenance"))) stop("Ingen tilgang.", call. = FALSE)
+        u <- user()
+        res <- tryCatch({
+          got <- db$run(function(con) {
+            pend <- ds_archive_pending(con, u$access, now())
+            list(pending = pend, data = ds_archive_data(con, u$access, pend))
+          })
+          if (!nrow(got$pending)) stop("Ingen opplegg å arkivere.", call. = FALSE)
+          w <- archive_write(file, got$data, got$pending, stats::setNames(u$access$name, u$access$id),
+                             make_pdf = make_pdf, now = now())
+          c(w, list(keys = archive_keys(got$pending)))
+        }, error = function(e) e)
+        if (inherits(res, "error")) {
+          message("Arkiv feilet: ", conditionMessage(res))
+          say("maintenance", "error", "Fikk ikke laget arkivet. Prøv igjen om litt.")
+          stop("Fikk ikke laget arkivet.", call. = FALSE)
+        }
+        downloaded(res$keys)
+        say("maintenance", "ok", paste0("Arkivet er laget med ", res$n_events,
+                                        if (res$n_events == 1) " trening" else " treninger",
+                                        if (res$n_pdf_failed) paste0(" (", res$n_pdf_failed, " PDF-er kunne ikke lages)"),
+                                        ". Lagre filen, og trykk så «Bekreft at arkivet er lagret»."))
+      }
+    )
+
+    observeEvent(input$archive_confirm, {
+      r <- super_now("maintenance")
+      if (is.null(r)) return()
+      keys <- downloaded()
+      if (!length(keys)) {
+        say("maintenance", "error", "Last ned arkivet først.")
+        return()
+      }
+      u <- user()
+      res <- tryCatch(db$run(function(con) ds_archive_confirm(con, u$access, r, keys, u$profile$id, now = now())),
+                      error = function(e) e)
+      if (inherits(res, "error")) {
+        if (inherits(res, "sn_user_error")) {
+          say("maintenance", "error", conditionMessage(res))
+        } else {
+          message("Sletting etter arkiv feilet: ", conditionMessage(res))
+          say("maintenance", "error", "Fikk ikke slettet. Prøv igjen om litt.")
+        }
+        return()
+      }
+      downloaded(character())
+      say("maintenance", "ok", paste0(res$n_events, if (res$n_events == 1) " trening" else " treninger", " (",
+                                      res$n_versions, " versjoner) er slettet etter arkivering."))
+      refresh(refresh() + 1)
     })
 
     # Lærdommer (T3e-4) -----------------------------------------------------------

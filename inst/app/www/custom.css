@@ -403,6 +403,11 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-ex-name { font-weight: 700; }
 .sn-ex-meta { font-size: .85rem; color: var(--sn-grey); }
 .sn-learn-state { margin-bottom: 4px; }
+.sn-admin-dot { position: relative; }
+.sn-admin-dot::after { content: ""; position: absolute; top: 4px; right: 4px; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--sn-red); box-shadow: 0 0 0 2px var(--sn-black); }
+.sn-maint-state { margin: 0; }
+.sn-archive-log { font-size: .9rem; margin: 0; padding-left: 1.2rem; }
 .sn-learn-old { margin-top: 4px; }
 .sn-learn-old summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
 .sn-learn-version { padding: 8px 12px; margin-top: 8px; background: var(--sn-ground-2); border-radius: .5rem; }

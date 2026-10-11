@@ -1763,7 +1763,7 @@
       "checksum": "83f7784fbb8bb2059f3b11bdd12dae4f"
     },
     "DESCRIPTION": {
-      "checksum": "eb5fe01271e20b8e456f8d7b5e5f1cac"
+      "checksum": "c27c85013b79e0b9ba466a2f5d835249"
     },
     "inst/ai/laerdommer.md": {
       "checksum": "139b33486c8182d799a45aa1a5cc519f"
@@ -1775,7 +1775,7 @@
       "checksum": "f1e487de51821d7bbc18c371c3b7639e"
     },
     "inst/app/www/custom.css": {
-      "checksum": "b180f074b6f98da7ef561160689e8e76"
+      "checksum": "c8ba3e27f2ec7790ea2ded48e9a844ee"
     },
     "inst/app/www/favicon.ico": {
       "checksum": "a5b73ffecee6a01c0a08ff0b176901cf"
@@ -1846,6 +1846,9 @@
     "inst/db/migrations/012_pameldte_t3e.sql": {
       "checksum": "6971da8fb68fba030c46b96bb077eaa5"
     },
+    "inst/db/migrations/013_vedlikehold_t4.sql": {
+      "checksum": "efa859859017ab0ff0ba516216e914dc"
+    },
     "inst/db/migrations/README.md": {
       "checksum": "23f0960e67c885e20237e26a50df997a"
     },
@@ -1901,13 +1904,13 @@
       "checksum": "0f79d97837ff91c50f065824b39a6fbc"
     },
     "R/app_server.R": {
-      "checksum": "0ffcd456358284aeeacc321af7555e72"
+      "checksum": "84c602477da26837607e2abf7dc5beec"
     },
     "R/app_ui.R": {
       "checksum": "3c0cbf727fbf4557c3c81aa56750908e"
     },
     "R/data_store.R": {
-      "checksum": "9d176f7f3659eeffdcdd9aff4d8373c7"
+      "checksum": "fbdf51985601ae4340732b4b955c45ed"
     },
     "R/fct_access.R": {
       "checksum": "0f3f42aaf2b05546a5608ea9529bd4f7"
@@ -1936,6 +1939,9 @@
     "R/fct_groups.R": {
       "checksum": "dcb11fe68fa18fdae39970385b6e8031"
     },
+    "R/fct_maintenance.R": {
+      "checksum": "71ae38408ba308e8bdc89734454bafb7"
+    },
     "R/fct_members.R": {
       "checksum": "0a394e241b6b33a57234f336253f17b3"
     },
@@ -1955,7 +1961,7 @@
       "checksum": "6227d11e9d69be008c553410b5b200b5"
     },
     "R/mod_admin.R": {
-      "checksum": "9540e71afc1ea39d5f257aa58235ccbe"
+      "checksum": "eb7bba2c15c842106c178211b1949ded"
     },
     "R/mod_events.R": {
       "checksum": "55c11ec215ab165f3a8521e878abf60b"
@@ -1970,7 +1976,7 @@
       "checksum": "06b75ab187e08dc4c2700355a8bbad38"
     },
     "R/mod_plans.R": {
-      "checksum": "79c3ea21b8400a56b8d2d1519e72cf86"
+      "checksum": "f8e0d6992286e42732820fc36dd7cc6f"
     },
     "R/mod_tags.R": {
       "checksum": "2c34c841f8da1bab1ebdc18038a73f27"

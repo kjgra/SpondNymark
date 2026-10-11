@@ -448,7 +448,7 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
         div(class = "sn-plan-card",
             div(class = "sn-plan-title", cur$plan$tittel,
                 if (identical(cur$status, "approved")) span(class = "sn-tag sn-tag-match", "Godkjent")),
-            div(class = "sn-hint", plan_version_line(cur$version, nrow(v), plan_author_name(cur$created_by, group),
+            div(class = "sn-hint", plan_version_line(cur$version, max(v$version), plan_author_name(cur$created_by, group),
                                                      cur$created_at, plan_ai_note(cur))),
             if (identical(cur$status, "approved")) {
               div(class = "sn-hint", paste0("Godkjent av ", plan_author_name(cur$approved_by, group), " ",

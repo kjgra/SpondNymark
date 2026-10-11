@@ -5,7 +5,8 @@ test_that("migrations create the tables and are only applied once", {
                             "group_proposal_members", "proposal_history", "proposal_comments", "edit_locks",
                             "season_themes", "team_settings", "exercises", "training_plans",
                             "app_roles", "app_role_log", "ai_usage", "ai_settings", "training_plan_comments",
-                            "exercise_feedback", "team_learnings"))
+                            "exercise_feedback", "team_learnings", "maintenance", "archive_log", "ai_usage_monthly"))
+  expect_setequal(setdiff(tables, "schema_migrations"), ds_app_tables)
   expect_length(ds_migrate(con, dir = test_migrations_dir()), 0)
 })
 
