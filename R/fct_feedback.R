@@ -222,3 +222,26 @@ feedback_date_text <- function(t, tz = "Europe/Oslo", now = Sys.time()) {
   paste0(as.integer(format(t, "%d", tz = tz)), ". ", no_month(t, tz),
          if (y != format(now, "%Y", tz = tz)) paste0(" ", y) else "")
 }
+
+# Lærdommer (team_learnings, T3e-4) --------------------------------------------------
+
+learning_max_chars <- 3000
+
+#' Check the team's learnings before they are saved or sent to KI
+#' @param names Member names the text must not contain (`member_names()`).
+#' @return The trimmed text. Stops with a Norwegian message.
+#' @noRd
+learning_validate <- function(body, names = character(), allow_empty = FALSE) {
+  body <- gsub("\n{3,}", "\n\n", gsub("\r\n?", "\n", txt1(body)))
+  if (!nzchar(body)) {
+    if (allow_empty) return("")
+    stop("Skriv lærdommene først.", call. = FALSE)
+  }
+  if (nchar(body) > learning_max_chars) stop("Lærdommene kan ha maks ", learning_max_chars, " tegn.", call. = FALSE)
+  if (text_is_sensitive(body)) {
+    stop("Lærdommene skal ikke inneholde helseopplysninger eller andre sensitive opplysninger.", call. = FALSE)
+  }
+  problem <- names_problem(body, names)
+  if (!is.null(problem)) stop(problem, call. = FALSE)
+  body
+}

@@ -146,6 +146,36 @@ test_that("«Erfaringer fra laget» lists exercises to avoid and calibration, on
                "3,0 min kortere.*20 % høyere")
 })
 
+test_that("the learnings come first in «Erfaringer fra laget»", {
+  txt <- ai_experience_text(NULL, NULL, "- Konkurranse med poeng fungerer.")
+  expect_equal(txt, "# Erfaringer fra laget\n\n## Lærdommer\n\n- Konkurranse med poeng fungerer.")
+})
+
+test_that("the learnings order has the evaluations per session, without authors, names or sensitive text", {
+  rows <- data.frame(spond_event_id = c("E1", "E1", "E2"), exercise_no = c(NA, 1L, 2L),
+                     exercise_name = c("", "Rondo", "Kontring"), theme = c("Pasning", "Pasning", ""),
+                     planned_minutes = c(NA, 15L, 15L), rating = c(2L, 3L, 1L),
+                     actual_minutes = c(NA, 18L, NA), actual_players = c(14L, NA, NA), registered_players = c(16L, NA, NA),
+                     body = c("Bra flyt", "Noah var best", "Mange skadet"), use_again = c("", "yes", "no"),
+                     created_at = as.POSIXct(c("2026-10-12 20:00", "2026-10-12 20:00", "2026-10-14 20:00"), tz = "UTC"),
+                     stringsAsFactors = FALSE)
+  rows$tags <- I(list(character(), c("goy", "ko"), "ukjent"))
+  txt <- ai_learning_order(rows, "- Gammel lærdom", c("Noah Sand", "Noah"))
+  expect_match(txt, "# Lærdommer nå\n\n- Gammel lærdom", fixed = TRUE)
+  expect_match(txt, "# Nye evalueringer (3 fra 2 økter)", fixed = TRUE)
+  expect_match(txt, "## Økt 1, evaluert 12. okt., tema: Pasning", fixed = TRUE)
+  expect_match(txt, "- Hele økta: ok; 14 spillere kom av 16 påmeldte «Bra flyt»", fixed = TRUE)
+  expect_match(txt, "- Øvelse 1, Rondo: bra; gøy, mye venting/kø; 18 min (plan 15); bruke igjen: ja\n", fixed = TRUE)
+  expect_match(txt, "- Øvelse 2, Kontring: dårlig; bruke igjen: nei", fixed = TRUE)
+  expect_false(grepl("Noah|skadet|ukjent", txt))
+  expect_match(ai_learning_order(rows[1, ], ""), "Ingen ennå.", fixed = TRUE)
+})
+
+test_that("the KI answer for the learnings loses code fences and is checked", {
+  expect_equal(learning_from_answer("```markdown\n- Poeng fungerer\n```"), "- Poeng fungerer")
+  expect_error(learning_from_answer("- Emma Haugen liker poeng", "Emma Haugen"), "Emma Haugen")
+})
+
 test_that("the order has counts but no names, and checks the trainer's wish", {
   ctx <- list(start = as.POSIXct("2026-10-15 17:30", tz = "Europe/Oslo"), minutes = 75, theme = "Samhandling",
               team = list(age_group = "G10", pitch = "", equipment = "Små mål"), n_players = 18,
@@ -421,4 +451,64 @@ test_that("wishes and comments that name a member are stopped before KI", {
   base <- plan_validate(jsonlite::read_json(app_sys("extdata", "referanse-okt.json"), simplifyVector = FALSE))
   ctx$comments <- c("Øvelse 2: Emma Haugen trenger flere ballberøringer")
   expect_error(ai_revision_text(base, ctx), "«Emma Haugen»")
+})
+
+test_that("lærdommer: KI sums up new evaluations for admins, logs the call and saves a version", {
+  con <- local_test_db(); acc <- test_access()
+  admin_ai <- list(superadmin = FALSE, admin = TRUE, ai = TRUE, app = TRUE)
+  p <- plan_validate(jsonlite::read_json(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"),
+                                         simplifyVector = FALSE))
+  expect_error(ai_learning_prepare(con, acc, list(admin = FALSE, ai = TRUE), "G1", key = "k"), "administratorer")
+  expect_error(ai_learning_prepare(con, acc, list(admin = TRUE, ai = FALSE), "G1", key = "k"), "tilgang til KI")
+  expect_error(ai_learning_prepare(con, acc, admin_ai, "G1", key = "k"), "Ingen nye evalueringer")
+
+  pl <- ds_save_plan(con, acc, "G1", "E1", p, "P1")
+  fb <- feedback_validate(list(list(exercise_no = 1, rating = "3", tags = "goy", use_again = "yes", body = "God flyt"),
+                               list(exercise_no = NA, actual_players = "14")), p)
+  ds_save_feedback(con, acc, pl$id, "P2", fb, registered = 16L)
+  expect_equal(ds_learning_state(con, acc, "G1")$n_new, 2L)
+  expect_error(ai_learning_prepare(con, acc, admin_ai, "G1", base = "Noah Sand er best", names = "Noah Sand", key = "k"),
+               "Noah Sand")
+  prep <- ai_learning_prepare(con, acc, admin_ai, "G1", names = "Noah Sand", key = "k")
+  expect_equal(prep$model, "claude-haiku-5-5")
+  msg <- prep$body$messages[[1]]$content
+  expect_match(msg, paste0("Øvelse 1, ", p$ovelser[[1]]$navn, ": bra; gøy"), fixed = TRUE)
+  expect_match(msg, "14 spillere kom av 16 påmeldte", fixed = TRUE)
+  expect_false(grepl("P2", msg))                                         # no authors
+  expect_match(prep$body$system[[1]]$text, "lærdommer", fixed = TRUE)
+
+  # A bad answer is logged and stops; nothing is saved
+  bad <- ai_send(prep, http = function(path, body) fake_answer("- Mange er skadet",
+                                                               usage = list(input_tokens = 2000, output_tokens = 300)))
+  expect_error(ai_learning_finish(con, acc, "P1", prep, bad), "sensitive")
+  expect_equal(nrow(ds_learning_state(con, acc, "G1")$versions), 0)
+  sent <- ai_send(prep, http = function(path, body) fake_answer("- Poeng og konkurranse fungerer.",
+                                                                usage = list(input_tokens = 2000, output_tokens = 300)))
+  res <- ai_learning_finish(con, acc, "P1", prep, sent)
+  expect_equal(res$n_rows, 2L)
+  expect_equal(res$cost_usd, (2000 * 0.10 + 300 * 0.50) / 1e6)
+  st <- ds_learning_state(con, acc, "G1")
+  expect_equal(st$versions$body, "- Poeng og konkurranse fungerer.")
+  expect_equal(st$versions$source, "ai")
+  expect_equal(st$n_new, 0L)                                             # summed up now
+  log <- DBI::dbGetQuery(con, "SELECT kind, status FROM ai_usage ORDER BY id")
+  expect_equal(log$kind, c("learning", "learning"))
+  expect_equal(log$status, c("error", "ok"))
+  expect_error(ai_learning_prepare(con, acc, admin_ai, "G1", key = "k"), "Ingen nye evalueringer")
+
+  # A manual edit does not reset the count; the newest version goes into the prompt
+  ds_save_learning(con, acc, "G1", "- Skrevet selv.", "manual", "P1", rights = test_admin())
+  expect_equal(ds_latest_learning(con, acc, "G1"), "- Skrevet selv.")
+  ds_save_feedback(con, acc, pl$id, "P3", fb[1, ])
+  st <- ds_learning_state(con, acc, "G1")
+  expect_equal(st$n_new, 1L)
+  expect_equal(st$versions$source, c("manual", "ai"))
+  ds_save_exercise(con, acc, "G1", list(name = "Rondo", category = "annet"), "P1", rights = test_admin())
+  prep2 <- ai_prepare(con, acc, list(ai = TRUE), "G1", list(minutes = 65, theme = "", n_players = 20, wish = ""), key = "k")
+  expect_match(prep2$body$system[[2]]$text, "## Lærdommer\n\n- Skrevet selv.", fixed = TRUE)
+  # Only admins save; other groups have no access
+  expect_error(ds_save_learning(con, acc, "G1", "x", "manual", "P1", rights = list(admin = FALSE)), "administratorer")
+  other <- data.frame(id = "G9", name = "Annet", roles = "Trener", n_subgroups = 0L)
+  expect_error(ds_learning_state(con, other, "G1"), "tilgang")
+  expect_error(ds_feedback_since(con, other, "G1", Sys.time()), "tilgang")
 })

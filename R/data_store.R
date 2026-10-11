@@ -1213,6 +1213,89 @@ ds_team_experience <- function(con, access, group_id, since = Sys.time() - 365 *
        att_sessions = row$att_sessions, att_ratio = row$att_ratio, tags = tags)
 }
 
+# Lærdommer (team_learnings, migration 011; T3e-4) ----------------------------------
+
+#' The team's learnings: the newest versions, and how many evaluations have
+#' been saved or changed since KI last summed them up
+#' @return list(versions = data.frame(id, body, source, created_by,
+#'   created_at), newest first, at most `n`; n_new; since (time of the last
+#'   KI version, NA if none)).
+#' @noRd
+ds_learning_state <- function(con, access, group_id, n = 6) {
+  assert_group_access(access, group_id)
+  v <- ds_query(con, "
+    SELECT id, body, source, created_by, created_at FROM team_learnings
+     WHERE spond_group_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2::integer",
+    list(group_id, as.character(as.integer(n))))
+  since <- ds_query(con, "
+    SELECT max(created_at) AS since FROM team_learnings WHERE spond_group_id = $1 AND source = 'ai'",
+    list(group_id))$since
+  n_new <- ds_query(con, "
+    SELECT count(*)::integer AS n FROM exercise_feedback
+     WHERE spond_group_id = $1 AND ($2 = '' OR updated_at > NULLIF($2, '')::timestamptz)",
+    list(group_id, if (is.na(since)) "" else format(since, "%Y-%m-%d %H:%M:%OS6%z")))$n
+  list(versions = v, n_new = n_new, since = since)
+}
+
+#' The newest version of the team's learnings, or "" (for the prompt)
+#' @noRd
+ds_latest_learning <- function(con, access, group_id) {
+  assert_group_access(access, group_id)
+  b <- ds_query(con, "SELECT body FROM team_learnings WHERE spond_group_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1",
+                list(group_id))$body
+  if (length(b)) b[1] else ""
+}
+
+#' Save a new version of the team's learnings (the newest one applies)
+#' @param rights The user's rights, read just before: only admins.
+#' @param body Checked with `learning_validate()` by the caller.
+#' @return The id.
+#' @noRd
+ds_save_learning <- function(con, access, group_id, body, source, actor, rights) {
+  assert_group_access(access, group_id)
+  assert_admin(rights)
+  if (!source %in% c("manual", "ai")) stop("Ugyldig kilde.", call. = FALSE)
+  body <- txt1(body)
+  if (!nzchar(body) || nchar(body) > learning_max_chars) ds_user_stop("Lærdommene må ha mellom 1 og ", learning_max_chars, " tegn.")
+  if (text_is_sensitive(body)) ds_user_stop("Lærdommene skal ikke inneholde helseopplysninger eller andre sensitive opplysninger.")
+  as.integer(ds_query(con, "
+    INSERT INTO team_learnings (spond_group_id, body, source, created_by) VALUES ($1, $2, $3, $4) RETURNING id",
+    list(group_id, body, source, actor))$id)
+}
+
+#' Evaluations saved or changed after `since`, with the exercise name, the
+#' planned minutes and the theme from the plan, for KI to sum up. No authors.
+#' @return data.frame(spond_event_id, exercise_no, exercise_name, theme,
+#'   planned_minutes, rating, tags (list), actual_minutes, actual_players,
+#'   registered_players, body, use_again, created_at), oldest first, at most
+#'   `max` rows (the newest).
+#' @noRd
+ds_feedback_since <- function(con, access, group_id, since, max = 150) {
+  assert_group_access(access, group_id)
+  rows <- ds_query(con, "
+    SELECT * FROM (
+      SELECT f.spond_event_id, f.exercise_no,
+             coalesce(p.plan->'ovelser'->(f.exercise_no - 1)->>'navn', '') AS exercise_name,
+             CASE jsonb_typeof(p.plan->'tema')
+               WHEN 'string' THEN p.plan->>'tema'
+               WHEN 'array' THEN array_to_string(ARRAY(SELECT jsonb_array_elements_text(p.plan->'tema')), ', ')
+               ELSE '' END AS theme,
+             CASE WHEN jsonb_typeof(p.plan->'tidsplan'->'stasjoner'->'minutter') = 'number'
+                  THEN (p.plan->'tidsplan'->'stasjoner'->>'minutter')::integer END AS planned_minutes,
+             f.rating, array_to_string(f.tags, chr(31)) AS tags, f.actual_minutes, f.actual_players,
+             f.registered_players, coalesce(f.body, '') AS body, coalesce(f.use_again, '') AS use_again,
+             f.created_at, f.updated_at, f.id
+        FROM exercise_feedback f JOIN training_plans p ON p.id = f.plan_id
+       WHERE f.spond_group_id = $1 AND f.updated_at > $2::timestamptz
+       ORDER BY f.updated_at DESC, f.id DESC LIMIT $3::integer) x
+     ORDER BY created_at, spond_event_id, exercise_no NULLS FIRST, id",
+    list(group_id, format(as.POSIXct(since), "%Y-%m-%d %H:%M:%OS6%z"), as.character(as.integer(max))))
+  rows$tags <- lapply(rows$tags, function(x) {
+    if (is.na(x) || !nzchar(x)) character() else strsplit(x, "\x1f", fixed = TRUE)[[1]]
+  })
+  rows
+}
+
 # Rights (app_roles, migration 004) ------------------------------------------------
 
 #' The extra rights of one profile (0 or 1 row)

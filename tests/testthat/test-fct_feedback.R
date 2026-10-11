@@ -105,3 +105,14 @@ test_that("the message after saving names exercises that became active", {
   expect_equal(feedback_saved_text("b", p), "Evalueringen er lagret. Takk! «Kontring» er nå aktiv i øvelsesbanken.")
   expect_match(feedback_saved_text(c("a", "b", "c"), p), "«Rondo», «Kontring» og «Spill» er nå aktive", fixed = TRUE)
 })
+
+# Lærdommer (T3e-4) ---------------------------------------------------------------------
+
+test_that("learnings are checked for length, sensitive words and names", {
+  expect_equal(learning_validate("  - Konkurranse med poeng\r\n\n\n\n- Unngå kø  "), "- Konkurranse med poeng\n\n- Unngå kø")
+  expect_error(learning_validate(""), "Skriv lærdommene")
+  expect_equal(learning_validate("", allow_empty = TRUE), "")
+  expect_error(learning_validate(strrep("a", 3001)), "maks 3000")
+  expect_error(learning_validate("Mange er skadet i høst"), "sensitive")
+  expect_error(learning_validate("Noah Sand liker kø", c("Noah Sand", "Noah")), "Noah")
+})

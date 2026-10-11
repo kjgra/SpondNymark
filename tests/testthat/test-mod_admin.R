@@ -349,3 +349,53 @@ test_that("the drawing preview works only for admins with the panel open", {
     expect_null(preview())
   }))
 })
+
+test_that("lærdommer: written by hand or updated with KI in the background", {
+  con <- local_test_db()
+  acc <- fake_user(fake_spond_groups_two())$access
+  p <- plan_validate(jsonlite::read_json(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"),
+                                         simplifyVector = FALSE))
+  seen <- new.env()
+  args <- c(admin_args(con), list(
+    ai_async = function(path, body) {
+      seen$body <- body
+      promises::promise_resolve(fake_answer("- Poeng fungerer.", usage = list(input_tokens = 2000, output_tokens = 300)))
+    },
+    ai_key = function() "sk-test"))
+  testServer(mod_admin_server, args = args, {
+    session$setInputs(open = 1, tab = "learnings")
+    expect_match(as.character(output$learn_body$html), "Ingen lærdommer ennå")
+    btn <- as.character(output$learn_buttons$html)
+    expect_match(btn, "Ingen nye evalueringer")
+    expect_match(btn, "<button[^>]*disabled[^>]*learn_ai")              # nothing to sum up
+
+    session$setInputs(learn_text = "- Noah Sand trenger ballen", learn_save = 1)
+    expect_equal(msg()$type, "error")
+    expect_match(msg()$text, "Noah Sand")
+    session$setInputs(learn_text = "- Konkurranse med poeng", learn_save = 2)
+    expect_equal(msg()$text, "Lærdommene er lagret.")
+    expect_match(as.character(output$learn_body$html), "skrevet manuelt av Kjetil G.")
+
+    pl <- ds_save_plan(con, acc, "G2016", "E-ulv", p, "P-me")
+    ds_save_feedback(con, acc, pl$id, "P-me", feedback_validate(list(list(exercise_no = 1, rating = "3")), p))
+    refresh(refresh() + 1)
+    session$flushReact()
+    btn <- as.character(output$learn_buttons$html)
+    expect_match(btn, "1 ny evaluering")
+    expect_false(grepl("<button[^>]*disabled[^>]*learn_ai", btn))
+    session$setInputs(learn_ai = 1)
+    for (i in 1:100) {
+      later::run_now(0.01)
+      session$flushReact()
+      if (!identical(isolate(learn_task$status()), "running")) break
+    }
+    expect_equal(msg()$type, "ok")
+    expect_match(msg()$text, "oppdatert fra 1 evaluering")
+    expect_match(seen$body$messages[[1]]$content, "# Lærdommer nå\n\n- Konkurranse med poeng", fixed = TRUE)
+    body <- as.character(output$learn_body$html)
+    expect_match(body, "oppdatert med KI av Kjetil G.")
+    expect_match(body, "- Poeng fungerer.", fixed = TRUE)
+    expect_match(as.character(output$learn_history$html), "Tidligere versjoner \\(1\\)")
+    expect_match(as.character(output$learn_history$html), "skrevet manuelt")
+  })
+})

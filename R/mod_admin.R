@@ -6,9 +6,10 @@
 #' nobody can be locked out); admins are set in the panel (`app_roles`, see
 #' R/fct_roles.R).
 #'
-#' The panel is a dialog for the chosen main group with four tabs: the
-#' trainers (KI and admin rights), the season plan (årshjul) per year, the
-#' team settings and the exercises.
+#' The panel is a dialog for the chosen main group with tabs for the
+#' trainers (app, KI and admin rights), KI use and limits, the season plan
+#' (årshjul) per year, the team settings, the team's learnings (T3e-4) and
+#' the exercises.
 #'
 #' Every save checks again on the server that the user is an admin (and the
 #' superadmin for admin rights), and the data layer checks access to the
@@ -118,6 +119,17 @@ admin_modal <- function(ns, groups, selected, years, year, months = ai_month_cho
             uiOutput(ns("team_form")),
             uiOutput(ns("team_msg")),
             actionButton(ns("team_save"), "Lagre", class = "btn-primary"))
+      ),
+      bslib::nav_panel(
+        "Lærdommer", value = "learnings",
+        div(class = "sn-admin-pane",
+            p(class = "sn-hint", "Kort tekst om hva som fungerer for laget. Den legges ved hver gang KI lager et opplegg.",
+              " Oppdater den med KI fra trenernes evalueringer etter treningene, eller skriv selv.",
+              " Ikke skriv navn eller helseopplysninger."),
+            uiOutput(ns("learn_body")),
+            uiOutput(ns("learn_msg")),
+            uiOutput(ns("learn_buttons")),
+            uiOutput(ns("learn_history")))
       ),
       bslib::nav_panel(
         "Øvelser", value = "exercises",
@@ -322,6 +334,58 @@ role_rows <- function(ns, cand, roles, rights, me, superadmin, group) {
   )
 }
 
+# Lærdommer (T3e-4) -----------------------------------------------------------------
+
+learning_source_text <- function(source) if (identical(source, "ai")) "oppdatert med KI" else "skrevet manuelt"
+
+# The newest version in a text field, and the earlier ones below.
+learning_ui <- function(ns, st, group) {
+  v <- st$versions
+  cur <- if (nrow(v)) v[1, , drop = FALSE]
+  line <- if (is.null(cur)) "Ingen lærdommer ennå." else {
+    paste0("Gjeldende versjon er ", learning_source_text(cur$source), " av ", plan_author_name(cur$created_by, group),
+           " ", short_time(cur$created_at), ".")
+  }
+  tagList(
+    p(class = "sn-hint sn-learn-state", line),
+    htmltools::tagAppendAttributes(
+      textAreaInput(ns("learn_text"), "Lærdommer", value = if (is.null(cur)) "" else cur$body, rows = 10,
+                    width = "100%", placeholder = paste("f.eks.\n- Guttene liker konkurranse med poeng.",
+                                                        "\n- Unngå øvelser med kø; bruk flere ruter.")),
+      maxlength = learning_max_chars, .cssSelector = "textarea")
+  )
+}
+
+# Earlier versions, folded, below the buttons.
+learning_history <- function(st, group) {
+  v <- st$versions
+  if (nrow(v) < 2) return(NULL)
+  tags$details(class = "sn-learn-old",
+               tags$summary(paste0("Tidligere versjoner (", nrow(v) - 1, ")")),
+               lapply(2:nrow(v), function(i) {
+                 div(class = "sn-learn-version",
+                     div(class = "sn-hint", paste0(short_time(v$created_at[i]), " \u00b7 ", learning_source_text(v$source[i]),
+                                                   " av ", plan_author_name(v$created_by[i], group))),
+                     div(class = "sn-learn-text", v$body[i]))
+               }))
+}
+
+learning_buttons <- function(ns, st, can_ai, busy) {
+  n <- st$n_new %||% 0L
+  news <- if (n == 0) "Ingen nye evalueringer siden forrige oppdatering med KI."
+          else paste0(n, if (n == 1) " ny evaluering" else " nye evalueringer", " siden forrige oppdatering med KI.")
+  ai_btn <- actionButton(ns("learn_ai"), if (busy) "Oppdaterer …" else "Oppdater med KI", class = "btn-outline-primary")
+  if (busy || !can_ai || n == 0) ai_btn <- htmltools::tagAppendAttributes(ai_btn, disabled = NA)
+  tagList(
+    div(class = "sn-ex-formbtns",
+        actionButton(ns("learn_save"), "Lagre", class = "btn-primary"),
+        ai_btn),
+    p(class = "sn-hint", news,
+      if (!can_ai) " Du trenger KI-tilgang for å oppdatere med KI." else
+        " KI leser den gjeldende teksten (også endringer som ikke er lagret) og de nye evalueringene, uten navn.",
+      " Resultatet lagres som en ny versjon, og kan endres her."))
+}
+
 # KI overview -------------------------------------------------------------------------
 
 ai_tile <- function(label, value, sub = NULL) {
@@ -407,7 +471,8 @@ ai_settings_ui <- function(ns, s, editable, group) {
 
 #' @noRd
 mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = Sys.getenv("SPONDNYMARK_SUPERADMIN"),
-                             today = Sys.Date, rights_now = NULL) {
+                             today = Sys.Date, rights_now = NULL, ai_async = ai_http_post_async,
+                             ai_key = function() Sys.getenv("ANTHROPIC_API_KEY")) {
   if (is.null(rights)) rights <- rights_reactive(user, db, superadmin)
   # Every change reads the rights again from the database, so an admin whose
   # right has been taken away cannot go on in an open session.
@@ -453,6 +518,7 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
     output$ai_msg <- tab_msg("ai")
     output$season_msg <- tab_msg("season")
     output$team_msg <- tab_msg("team")
+    output$learn_msg <- tab_msg("learnings")
     # Exercises: in the list the message is at the top; in the form it is
     # next to the buttons, so it is seen without scrolling.
     output$ex_msg <- renderUI({
@@ -656,6 +722,109 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
       save("team", function() team_settings_validate(s),
            function(con, r) ds_save_team_settings(con, u$access, gid, s, u$profile$id, rights = r),
            "Lagets standard er lagret.")
+    })
+
+    # Lærdommer (T3e-4) -----------------------------------------------------------
+    learn_state <- reactive({
+      req(allowed(), group_id())
+      refresh()
+      gid <- group_id()
+      acc <- isolate(user())$access
+      read(function(con) ds_learning_state(con, acc, gid), "learnings")
+    })
+    group_names <- function() member_names(the_group()$members)
+
+    output$learn_body <- renderUI({
+      st <- learn_state()
+      if (is.null(st)) return(NULL)
+      learning_ui(ns, st, the_group())
+    })
+    output$learn_history <- renderUI({
+      st <- learn_state()
+      if (is.null(st)) return(NULL)
+      learning_history(st, the_group())
+    })
+    output$learn_buttons <- renderUI({
+      st <- learn_state()
+      if (is.null(st)) return(NULL)
+      learning_buttons(ns, st, isTRUE(rights()$ai), learn_busy())
+    })
+
+    observeEvent(input$learn_save, {
+      u <- user()
+      gid <- group_id()
+      names <- group_names()
+      body <- input$learn_text
+      save("learnings", function() learning_validate(body, names),
+           function(con, r) ds_save_learning(con, u$access, gid, learning_validate(body, names), "manual",
+                                             u$profile$id, rights = r),
+           "Lærdommene er lagret.")
+    })
+
+    # The KI call runs as an ExtendedTask, like «Lag med KI»; logging and
+    # saving happen in the same promise chain, also if the dialog is closed.
+    learn_task <- ExtendedTask$new(function(prep, access, actor) {
+      promises::then(ai_send_async(prep, ai_async), function(sent) {
+        finish <- function(con) ai_learning_finish(con, access, actor, prep, sent)
+        tryCatch(
+          if (isTRUE(session$isClosed())) {
+            h <- db_handle()
+            on.exit(h$close(), add = TRUE)
+            h$run(finish)
+          } else {
+            db$run(finish)
+          },
+          ai_error = function(e) list(error = conditionMessage(e)))
+      })
+    })
+    learn_busy <- reactive(identical(learn_task$status(), "running"))
+
+    observeEvent(input$learn_ai, {
+      if (learn_busy()) return()
+      r <- if (isTRUE(allowed()) && !is.null(group_id())) rights_now()
+      if (!isTRUE(r$admin)) {
+        say("learnings", "error", "Du har ikke tilgang til innstillingene.")
+        return()
+      }
+      u <- user()
+      gid <- group_id()
+      names <- group_names()
+      base <- input$learn_text
+      prep <- tryCatch(db$run(function(con) ai_learning_prepare(con, u$access, r, gid, base = base, names = names,
+                                                                key = ai_key())),
+                       error = function(e) e)
+      if (inherits(prep, "error")) {
+        if (inherits(prep, "ai_error")) {
+          say("learnings", "error", conditionMessage(prep))
+        } else {
+          message("Lærdommer med KI feilet: ", conditionMessage(prep))
+          say("learnings", "error", "Noe gikk galt. Prøv igjen om litt.")
+        }
+        return()
+      }
+      msg(NULL)
+      learn_task$invoke(prep, u$access, u$profile$id)
+    })
+
+    observeEvent(learn_task$status(), {
+      st <- learn_task$status()
+      if (identical(st, "success")) {
+        res <- learn_task$result()
+        if (!is.null(res$error)) {
+          say("learnings", "error", res$error)
+        } else {
+          say("learnings", "ok", paste0("Lærdommene er oppdatert fra ", res$n_rows,
+                                        if (res$n_rows == 1) " evaluering" else " evalueringer", " (",
+                                        ai_format_nok(res$cost_usd, ai_settings_default()$usd_nok),
+                                        "). Les gjennom og rett om nødvendig."))
+        }
+        refresh(refresh() + 1)
+      } else if (identical(st, "error")) {
+        e <- tryCatch(learn_task$result(), error = function(e) e)
+        message("Lærdommer med KI feilet: ", conditionMessage(e))
+        say("learnings", "error", "Noe gikk galt med KI. Prøv igjen om litt.")
+        refresh(refresh() + 1)
+      }
     })
 
     # Exercises -------------------------------------------------------------------

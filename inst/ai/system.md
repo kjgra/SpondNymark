@@ -44,7 +44,7 @@ Regler:
 
 # Erfaringer fra laget
 
-Etter katalogen kan det komme en blokk «Erfaringer fra laget», regnet ut fra trenernes evalueringer etter treningene. «Øvelser å unngå» skal ikke brukes, heller ikke som grunnlag for en justering, og kodene deres skal ikke gis til nye øvelser. Lag heller noe som unngår det stikkordene peker på (f.eks. kø eller for trange baner). Tidsplan, gruppestørrelser og tilpasning skal ta hensyn til kalibreringen av tid og oppmøte. Står det ingen erfaringer, finnes det ikke nok evalueringer ennå.
+Etter katalogen kan det komme en blokk «Erfaringer fra laget», laget fra trenernes evalueringer etter treningene. «Lærdommer» er det trenerne har lært om laget; følg dem når de passer til bestillingen. «Øvelser å unngå» skal ikke brukes, heller ikke som grunnlag for en justering, og kodene deres skal ikke gis til nye øvelser. Lag heller noe som unngår det stikkordene peker på (f.eks. kø eller for trange baner). Tidsplan, gruppestørrelser og tilpasning skal ta hensyn til kalibreringen av tid og oppmøte. Står det ingen erfaringer, finnes det ikke nok evalueringer ennå.
 
 # Justering av et opplegg
 
