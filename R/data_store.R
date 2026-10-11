@@ -37,7 +37,7 @@ ds_connect <- function(url = Sys.getenv("SPONDNYMARK_DB_URL")) {
   }
   # RPostgres does not read connection strings (it passes `dbname` on as a
   # plain database name), so the URL is split into separate arguments.
-  do.call(DBI::dbConnect, c(list(RPostgres::Postgres()), ds_connect_args(url)))
+  timed("db tilkobling", do.call(DBI::dbConnect, c(list(RPostgres::Postgres()), ds_connect_args(url))))
 }
 
 #' Split a postgresql:// connection string into dbConnect() arguments
@@ -122,6 +122,8 @@ ds_interpolate <- function(con, sql, params) {
 ds_fast <- function(con) inherits(con, "PqConnection")
 
 ds_query <- function(con, sql, params = list()) {
+  t0 <- proc.time()[["elapsed"]]
+  on.exit(timing_log(ds_sql_label(sql), (proc.time()[["elapsed"]] - t0) * 1000, always = FALSE), add = TRUE)
   if (!length(params)) return(DBI::dbGetQuery(con, sql))
   if (ds_fast(con)) {
     res <- withCallingHandlers(
@@ -138,6 +140,8 @@ ds_query <- function(con, sql, params = list()) {
 }
 
 ds_exec <- function(con, sql, params = list()) {
+  t0 <- proc.time()[["elapsed"]]
+  on.exit(timing_log(ds_sql_label(sql), (proc.time()[["elapsed"]] - t0) * 1000, always = FALSE), add = TRUE)
   if (!length(params)) return(DBI::dbExecute(con, sql))
   if (ds_fast(con)) return(DBI::dbExecute(con, ds_interpolate(con, sql, params), immediate = TRUE))
   DBI::dbExecute(con, sql, params = unname(params))

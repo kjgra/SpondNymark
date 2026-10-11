@@ -1775,7 +1775,7 @@
       "checksum": "f1e487de51821d7bbc18c371c3b7639e"
     },
     "inst/app/www/custom.css": {
-      "checksum": "c8ba3e27f2ec7790ea2ded48e9a844ee"
+      "checksum": "056d0465930e9dc3ce1c019c109a134c"
     },
     "inst/app/www/favicon.ico": {
       "checksum": "a5b73ffecee6a01c0a08ff0b176901cf"
@@ -1904,13 +1904,13 @@
       "checksum": "0f79d97837ff91c50f065824b39a6fbc"
     },
     "R/app_server.R": {
-      "checksum": "84c602477da26837607e2abf7dc5beec"
+      "checksum": "3c190aa28a6fc4a83682d726928a87df"
     },
     "R/app_ui.R": {
       "checksum": "3c0cbf727fbf4557c3c81aa56750908e"
     },
     "R/data_store.R": {
-      "checksum": "fbdf51985601ae4340732b4b955c45ed"
+      "checksum": "3a3e99582b93b38bf862986b571a1540"
     },
     "R/fct_access.R": {
       "checksum": "0f3f42aaf2b05546a5608ea9529bd4f7"
@@ -1957,6 +1957,9 @@
     "R/fct_tags.R": {
       "checksum": "aeba7c4467066c8e89f152fa511c1a1e"
     },
+    "R/fct_timing.R": {
+      "checksum": "88469883d2ae17f5a981919b04619ca7"
+    },
     "R/fct_training.R": {
       "checksum": "6227d11e9d69be008c553410b5b200b5"
     },
@@ -1964,13 +1967,13 @@
       "checksum": "eb7bba2c15c842106c178211b1949ded"
     },
     "R/mod_events.R": {
-      "checksum": "55c11ec215ab165f3a8521e878abf60b"
+      "checksum": "be216cdd8cea0d2f5ebd33e4bb01aa24"
     },
     "R/mod_groups.R": {
       "checksum": "112e416327b0d1a1411bded5865cb9ab"
     },
     "R/mod_login.R": {
-      "checksum": "78c2e10e9239c23c4ac4ad007def9310"
+      "checksum": "2dd496401f8605d15ad684989fbd58d8"
     },
     "R/mod_participants.R": {
       "checksum": "06b75ab187e08dc4c2700355a8bbad38"
@@ -1988,7 +1991,7 @@
       "checksum": "87b5e16fefaf5166b9375f7dfdc71e73"
     },
     "R/spond_client.R": {
-      "checksum": "0a93c0dd390ba1bf3da16d1002e08d07"
+      "checksum": "58c5929bb8081643f5c8cf1f2c288dac"
     }
   },
   "users": null

@@ -256,6 +256,8 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
       req(ctx)
       refresh()
       t <- now()
+      t0 <- proc.time()[["elapsed"]]
+      on.exit(timing_log("arrangementer for laget i alt", (proc.time()[["elapsed"]] - t0) * 1000), add = TRUE)
       # Events whose invitation is sent, as before, and events not sent yet
       # (scheduled) up to about half a year ahead. Spond lists the latest first
       # and stops at `max`, so the horizon keeps far-off series from crowding
@@ -293,7 +295,8 @@ mod_events_server <- function(id, context, user, tagger = NULL, db = NULL, spond
       req(ctx)
       refresh()
       t <- now()
-      res <- fetch(ctx, min_end = t - past_window() * 86400, max_end = t, max_events = 200)
+      res <- timed("gjennomførte arrangementer", fetch(ctx, min_end = t - past_window() * 86400, max_end = t,
+                                                        max_events = 200))
       res$events <- events_for_context(res$events, ctx$subgroup_id, decreasing = TRUE)
       res
     })

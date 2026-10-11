@@ -53,13 +53,13 @@ spond_login <- function(username, password, base_url = spond_base_url()) {
   ident <- login_identifier(username)
   if (is.null(ident)) spond_stop("Skriv e-postadressen eller mobilnummeret du bruker i Spond.")
 
-  resp <- httr2::request(base_url) |>
+  resp <- timed("spond innlogging", httr2::request(base_url) |>
     httr2::req_url_path_append("auth2", "login") |>
     httr2::req_user_agent("SpondNymark") |>
     httr2::req_timeout(30) |>
     httr2::req_body_json(spond_login_body(ident, password)) |>
     httr2::req_error(is_error = function(resp) FALSE) |>
-    httr2::req_perform()
+    httr2::req_perform())
 
   status <- httr2::resp_status(resp)
   if (status %in% c(400, 401, 403)) {
@@ -109,9 +109,15 @@ spond_request <- function(session, ...) {
 }
 
 spond_get_json <- function(req) {
+  t0 <- proc.time()[["elapsed"]]
   resp <- req |>
     httr2::req_error(is_error = function(resp) FALSE) |>
     httr2::req_perform()
+  # The path only (e.g. "/core/v1/sponds/"), never the query or the token.
+  path <- tryCatch(httr2::url_parse(req$url)$path, error = function(e) "?")
+  bytes <- tryCatch(length(httr2::resp_body_raw(resp)), error = function(e) NA_integer_)
+  timing_log(paste("spond GET", path), (proc.time()[["elapsed"]] - t0) * 1000,
+             detail = paste(c(timing_size(bytes), paste("HTTP", httr2::resp_status(resp))), collapse = ", "))
   status <- httr2::resp_status(resp)
   if (status == 401) {
     # Own class, so the app can log the trainer out and ask for a new login.
