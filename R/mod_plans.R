@@ -95,7 +95,10 @@ ki_modal <- function(ns, o) {
                         placeholder = "F.eks.: Vi kommer ikke hjem bak ballen i forsvar. Mer avslutning på mål.")
         },
         p(class = "sn-hint", "Ikke skriv navn eller helseopplysninger.",
-          if (nzchar(o$facts)) paste0(" KI får bare antall: ", o$facts, ".")),
+          if (nzchar(o$facts)) paste0(" KI får bare antall: ", o$facts, "."),
+          if (!is.null(o$max_new)) paste0(" KI lager maks ", o$max_new, if (o$max_new == 1) " ny øvelse" else " nye øvelser",
+                                          " per opplegg (admin kan endre det under Innstillinger \u2192 KI).",
+                                          " KI kan ikke lese nettsider; beskriv gjerne øvelsene du vil ha.")),
         radioButtons(ns("ki_model"), "Modell", choices = choices, selected = o$model),
         p(class = "sn-hint",
           if (is.null(o$est)) "Fikk ikke regnet ut prisen på forhånd. " else "Prisen er et anslag. ",
@@ -867,7 +870,7 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
                    label = paste0(where, ": ", com$body, " (", vapply(com$author, plan_author_name, "", group = context()$group), ")"))
       }
       o <- list(ctx = ctx, model = pre$prep$model, est = est, budget = pre$prep$budget, facts = facts, base = base,
-                comments = ki_com)
+                comments = ki_com, max_new = pre$prep$settings$max_new_exercises)
       ki_open(o)
       ki_msg(NULL)
       msg(NULL)

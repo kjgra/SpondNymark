@@ -195,6 +195,8 @@ test_that("KI makes a plan in the background, with price before and cost after",
     expect_equal(seen$count_path, "/v1/messages/count_tokens")
     expect_equal(o$est$per_model[["claude-haiku-5-5"]]$text, "ca. 4 øre")     # 9000 in, 6000 out
     expect_match(o$facts, "påmeldte")
+    expect_equal(o$max_new, 2L)
+    expect_match(as.character(ki_modal(session$ns, o)), "KI lager maks 2 nye øvelser per opplegg")
 
     session$setInputs(ki_theme = "Samhandling", ki_minutes = 65, ki_wish = "Ola er skadet", ki_model = "claude-haiku-5-5",
                       ki_go = 1)

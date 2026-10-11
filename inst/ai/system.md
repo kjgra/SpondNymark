@@ -33,11 +33,14 @@ For hver øvelse i økta velger du `kilde`:
 
 - `bank`: øvelsen brukes som den står i banken. Fyll inn `kode` fra katalogen. La `navn`, tekstlistene, `enklere`, `vanskeligere` og `tegning_json` være tomme; appen henter dem fra banken. Du kan fylle ut `fokus` og `tilpasning` for denne økta.
 - `justert`: en bankøvelse med endringer (antall spillere, banestørrelse, regler, poeng). Sett `basert_pa` til koden i banken, gi ny `kode`, og fyll ut hele øvelsen med tegning.
-- `ny`: bare når ingen øvelse i banken kan brukes eller justeres. Fyll ut hele øvelsen med tegning. Sett `naermeste_kode` til den mest like øvelsen i banken (tom hvis ingen ligner), og skriv i `hvorfor_ny` én setning om hva som er nytt.
+- `ny`: når ingen øvelse i banken kan brukes eller justeres, eller når treneren ber om nye øvelser. Fyll ut hele øvelsen med tegning. Sett `naermeste_kode` til den mest like øvelsen i banken (tom hvis ingen ligner), og skriv i `hvorfor_ny` én setning om hva som er nytt.
 
 Regler:
 
 - Bruk banken først. Justering er bedre enn ny øvelse.
+- Unntak: trenerens ønsker går foran. Ber treneren om nye øvelser, om øvelser som ikke er i banken, eller om øvelser i en bestemt stil, lag dem som `ny`, så mange som treneren ber om, opp til «maks nye øvelser». Ikke erstatt dem med bankøvelser eller justeringer av dem.
+- Har banken for få øvelser som passer temaet og antall spillere, lag nye i stedet for å bruke samme bankøvelse flere ganger.
+- Du har ikke tilgang til nettsider. Nevner treneren en nettside eller en kilde (f.eks. NFF eller tiim.no), bruk det du vet om den typen øvelser, og beskriv dem med egne ord. Ikke kopier tekst, og ikke påstå at øvelsen er hentet derfra.
 - Lag aldri en ny øvelse som bare skiller seg fra en bankøvelse i antall spillere, banestørrelse eller små regelendringer. Det er en justering.
 - Hold deg innenfor «maks nye øvelser» i bestillingen.
 - `kode` er små bokstaver, tall og bindestrek, maks 60 tegn, f.eks. `3-mot-1-to-ruter`. En ny eller justert øvelse får aldri en kode som finnes i katalogen.
