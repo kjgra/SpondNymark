@@ -644,3 +644,56 @@ test_that("evaluations: saved per trainer and version, replaced on edit, only in
   expect_error(ds_list_feedback(con, other, "G1", "E1"), "tilgang")
   expect_error(ds_save_feedback(con, other, pl$id, "P9", fb), "tilgang")
 })
+
+test_that("the bank gets statistics per code, and a candidate becomes active on 👍 with Ja", {
+  con <- local_test_db(); acc <- test_access()
+  p <- plan_validate(jsonlite::read_json(testthat::test_path("..", "..", "inst", "extdata", "referanse-okt.json"),
+                                         simplifyVector = FALSE))
+  e1 <- p$ovelser[[1]]; e2 <- p$ovelser[[2]]
+  ds_save_plan_exercise(con, acc, "G1", e1, "P1", source = "ai", status = "candidate")
+  ds_save_plan_exercise(con, acc, "G1", e2, "P1", source = "ai", status = "candidate")
+  bank <- ds_list_exercises(con, acc, "G1")
+  expect_equal(bank$fb_n, c(0L, 0L))
+  expect_true(all(is.na(bank$fb_mean)))
+  expect_length(bank$fb_tags[[1]], 0)
+
+  pl <- ds_save_plan(con, acc, "G1", "E1", p, "P1")
+  # 👌 with Ja, and 👍 with «Med endringer»: still candidates
+  fb <- feedback_validate(list(list(exercise_no = 1, rating = "2", use_again = "yes", tags = c("goy", "ko")),
+                               list(exercise_no = 2, rating = "3", use_again = "changes", actual_minutes = "20")), p)
+  res <- ds_save_feedback(con, acc, pl$id, "P1", fb)
+  expect_equal(res$activated, character())
+  bank <- ds_list_exercises(con, acc, "G1")
+  expect_equal(bank$status, c("candidate", "candidate"))
+  # P2: 👍 with Ja on exercise 1 makes it active
+  fb2 <- feedback_validate(list(list(exercise_no = 1, rating = "3", use_again = "yes", tags = "goy"),
+                                list(exercise_no = NA, rating = "3")), p)
+  res <- ds_save_feedback(con, acc, pl$id, "P2", fb2)
+  expect_equal(res$activated, e1$kode)
+  bank <- ds_list_exercises(con, acc, "G1")
+  r1 <- bank[bank$code == e1$kode, ]; r2 <- bank[bank$code == e2$kode, ]
+  expect_equal(r1$status, "active")
+  expect_equal(r1$updated_by, "P2")
+  expect_equal(c(r1$fb_n, r1$fb_good, r1$fb_ok, r1$fb_yes, r1$fb_sessions), c(2L, 1L, 1L, 2L, 1L))
+  expect_equal(r1$fb_mean, 2.5)
+  expect_equal(r1$fb_tags[[1]], c(goy = 2L, ko = 1L))
+  expect_equal(r2$fb_minutes, 20)
+  expect_false(is.na(r2$fb_last))
+  # Saving again does not activate anything new
+  expect_equal(ds_save_feedback(con, acc, pl$id, "P2", fb2)$activated, character())
+  # The admin can still change the status; "" keeps it
+  id1 <- as.integer(r1$id)
+  ex <- c(as.list(r1[, c("name", "category")]), status = "archived")
+  ds_save_exercise(con, acc, "G1", ex, "P1", id = id1, rights = test_admin())
+  expect_equal(ds_get_exercise(con, acc, id1)$status, "archived")
+  ds_save_exercise(con, acc, "G1", c(ex[1:2], status = ""), "P1", id = id1, rights = test_admin())
+  expect_equal(ds_get_exercise(con, acc, id1)$status, "archived")
+  new <- ds_save_exercise(con, acc, "G1", list(name = "Ny", category = "annet"), "P1", rights = test_admin())
+  expect_equal(ds_get_exercise(con, acc, new)$status, "active")
+  expect_error(ds_save_exercise(con, acc, "G1", list(name = "X", category = "annet", status = "slettet"), "P1",
+                                rights = test_admin()), "Ugyldig status")
+  # Evaluations in other groups do not count
+  DBI::dbExecute(con, paste0("UPDATE exercise_feedback SET spond_group_id = 'G2' WHERE author = 'P1'"))
+  bank <- ds_list_exercises(con, acc, "G1")
+  expect_equal(bank$fb_n[bank$code == e1$kode], 1L)
+})

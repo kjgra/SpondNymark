@@ -195,10 +195,19 @@ exercise_list <- function(ns, ex, confirm_id = NULL) {
           e <- ex[i, , drop = FALSE]
           id <- as.character(e$id)
           meta <- exercise_meta(e)
-          div(class = "sn-ex-row",
+          stats <- exercise_stats_text(e)
+          status <- txt1(e$status)
+          div(class = paste("sn-ex-row", if (status == "archived") "sn-ex-archived"),
               div(class = "sn-ex-main",
-                  div(class = "sn-ex-name", e$name),
+                  div(class = "sn-ex-name", e$name,
+                      if (status %in% c("candidate", "archived")) {
+                        span(class = paste0("sn-tag sn-ex-status sn-ex-status-", status), exercise_statuses[[status]])
+                      },
+                      if (isTRUE(exercise_avoid(e))) span(class = "sn-tag sn-ex-status sn-ex-status-avoid",
+                                                          title = "Tas ikke med i katalogen til KI",
+                                                          "Dårlig vurdert")),
                   if (nzchar(meta)) div(class = "sn-ex-meta", meta),
+                  if (nzchar(stats)) div(class = "sn-ex-meta sn-ex-stats", stats),
                   if (length(e$themes[[1]])) div(class = "sn-ex-themes",
                                                    lapply(e$themes[[1]], function(t) span(class = "sn-tag", t)))),
               if (identical(confirm_id, id)) {
@@ -233,6 +242,12 @@ exercise_form <- function(ns, e, theme_choices) {
         selectInput(ns("ex_category"), "Kategori",
                     choices = c("Velg kategori" = "", stats::setNames(names(exercise_categories), exercise_categories)),
                     selected = e$category %||% "", selectize = FALSE)),
+    div(class = "sn-admin-grid",
+        selectInput(ns("ex_status"), "Status", choices = stats::setNames(names(exercise_statuses), exercise_statuses),
+                    selected = e$status %||% "active", selectize = FALSE),
+        p(class = "sn-hint sn-ex-status-hint",
+          "Kandidater fra KI blir aktive første gang en trener gir \U0001F44D og svarer Ja på «Bruke igjen?». ",
+          "Arkiverte øvelser foreslås ikke av KI.")),
     selectizeInput(ns("ex_themes"), "Temaer", choices = sort(unique(c(theme_choices, themes))), selected = themes,
                    multiple = TRUE, width = "100%",
                    options = list(create = TRUE, placeholder = "Velg fra årshjulet eller skriv et nytt tema")),
@@ -734,7 +749,7 @@ mod_admin_server <- function(id, context, user, db, rights = NULL, superadmin = 
            organisation = input$ex_organisation, execution = input$ex_execution,
            learning_points = input$ex_learning_points, questions = input$ex_questions,
            easier = input$ex_easier, harder = input$ex_harder, nff_url = input$ex_nff_url,
-           drawing = input$ex_drawing)
+           drawing = input$ex_drawing, status = input$ex_status)
     }
 
     observeEvent(input$ex_save, {

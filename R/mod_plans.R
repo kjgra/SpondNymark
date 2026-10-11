@@ -560,7 +560,7 @@ mod_plans_server <- function(id, context, user, db, event, now = Sys.time, make_
       }
       fb_msg(NULL)
       removeModal()
-      msg(list(type = "ok", text = "Evalueringen er lagret. Takk!"))
+      msg(list(type = "ok", text = feedback_saved_text(res$activated, pl$plan)))
       refresh(refresh() + 1)
     })
 

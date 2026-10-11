@@ -402,6 +402,13 @@ h1, h2, h3, .sn-title, .sn-section-title { font-family: var(--sn-font-display); 
 .sn-ex-main { min-width: 0; }
 .sn-ex-name { font-weight: 700; }
 .sn-ex-meta { font-size: .85rem; color: var(--sn-grey); }
+.sn-ex-status { margin-left: 6px; vertical-align: 2px; font-weight: 600; }
+.sn-ex-status-candidate { background: var(--sn-yellow-soft); color: var(--sn-yellow-ink); }
+.sn-ex-status-archived { background: var(--sn-ground); color: var(--sn-grey); box-shadow: inset 0 0 0 1px var(--sn-line); }
+.sn-ex-status-avoid { background: var(--sn-red-soft); color: var(--sn-red-ink); }
+.sn-ex-archived .sn-ex-name { color: var(--sn-grey); }
+.sn-ex-stats { margin-top: 2px; }
+.sn-ex-status-hint { align-self: end; margin-bottom: 1rem; }
 .sn-ex-themes { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .sn-ex-themes .sn-tag { background: var(--sn-white); box-shadow: inset 0 0 0 1px var(--sn-line); }
 .sn-ex-actions { display: flex; gap: 6px; align-items: center; flex: none; }

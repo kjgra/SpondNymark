@@ -62,3 +62,46 @@ test_that("evaluations are summed up per exercise", {
   expect_setequal(sm$authors, c("P-me", "P-x"))
   expect_match(feedback_ratings_text(sm$exercises[[1]]$ratings), "1 · .* 1")
 })
+
+# Statistics in the bank (T3e-2) ----------------------------------------------------
+
+stats_row <- function(...) {
+  r <- data.frame(id = 1L, code = "rondo", name = "Rondo", status = "active", fb_n = 3L, fb_sessions = 2L,
+                  fb_mean = 8 / 3, fb_good = 2L, fb_ok = 1L, fb_bad = 0L, fb_yes = 2L, fb_changes = 1L, fb_no = 0L,
+                  fb_minutes = 16.6, fb_last = as.POSIXct("2026-10-12 19:00", tz = "Europe/Oslo"),
+                  stringsAsFactors = FALSE)
+  r$fb_tags <- I(list(c(goy = 2L, ko = 1L, ukjent = 1L)))
+  mods <- list(...)
+  for (n in names(mods)) r[[n]] <- mods[[n]]
+  r
+}
+
+test_that("an exercise is avoided when rated below OK or when most say no", {
+  expect_false(exercise_avoid(stats_row()))
+  expect_true(exercise_avoid(stats_row(fb_mean = 1.5)))
+  expect_true(exercise_avoid(stats_row(fb_yes = 1L, fb_changes = 0L, fb_no = 2L)))
+  expect_false(exercise_avoid(stats_row(fb_yes = 1L, fb_changes = 1L, fb_no = 2L)))   # not most
+  expect_false(exercise_avoid(stats_row(fb_n = 0L, fb_mean = NA_real_, fb_yes = 0L, fb_changes = 0L)))
+  expect_equal(exercise_avoid(data.frame(code = c("a", "b"))), c(FALSE, FALSE))      # no statistics
+})
+
+test_that("the statistics line sums up ratings, use again, time, tags and date", {
+  txt <- exercise_stats_text(stats_row())
+  expect_match(txt, "\U0001F44D 2 \u00b7 \U0001F44C 1 (snitt 2,7)", fixed = TRUE)
+  expect_match(txt, "2 økter", fixed = TRUE)
+  expect_match(txt, "Bruke igjen: Ja 2, Med endringer 1", fixed = TRUE)
+  expect_match(txt, "faktisk tid ca. 17 min", fixed = TRUE)
+  expect_match(txt, "gøy (2), mye venting/kø (1)", fixed = TRUE)
+  expect_false(grepl("ukjent", txt))
+  expect_match(txt, "sist 12. okt.", fixed = TRUE)
+  expect_equal(exercise_stats_text(stats_row(fb_n = 0L)), "Ikke vurdert ennå")
+  expect_equal(exercise_stats_text(data.frame(code = "a")), "")
+})
+
+test_that("the message after saving names exercises that became active", {
+  p <- list(ovelser = list(list(kode = "a", navn = "Rondo"), list(kode = "b", navn = "Kontring"),
+                           list(kode = "c", navn = "Spill")))
+  expect_equal(feedback_saved_text(character(), p), "Evalueringen er lagret. Takk!")
+  expect_equal(feedback_saved_text("b", p), "Evalueringen er lagret. Takk! «Kontring» er nå aktiv i øvelsesbanken.")
+  expect_match(feedback_saved_text(c("a", "b", "c"), p), "«Rondo», «Kontring» og «Spill» er nå aktive", fixed = TRUE)
+})

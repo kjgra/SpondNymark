@@ -237,16 +237,25 @@ ai_system_text <- function() {
 
 #' The bank as a short catalogue for the prompt (kap. 15.1)
 #'
-#' Archived exercises are left out. Exercises with the month's theme come
-#' first; then active before candidates, then by category and name. At most
-#' `max` lines.
+#' Archived exercises are left out, and so are exercises the trainers have
+#' rated poorly (`exercise_avoid()`); their codes are listed so KI does not
+#' reuse them. Exercises with the month's theme come first; then active
+#' before candidates, then by category and name. At most `max` lines.
+#' Evaluated exercises get «snitt 2,7/3 (n)».
 #' @noRd
 ai_catalogue <- function(bank, theme = "", max = 30) {
   if (is.null(bank) || nrow(bank) == 0) return("# Øvelsesbanken\n\nBanken er tom.")
   if (!"status" %in% names(bank)) bank$status <- "active"
   if (!"based_on" %in% names(bank)) bank$based_on <- ""
   bank <- bank[bank$status != "archived", , drop = FALSE]
-  if (nrow(bank) == 0) return("# Øvelsesbanken\n\nBanken er tom.")
+  avoid <- exercise_avoid(bank)
+  avoided <- bank$code[avoid]
+  bank <- bank[!avoid, , drop = FALSE]
+  avoid_line <- if (length(avoided)) {
+    paste0("\n\nØvelser trenerne har vurdert som dårlige er tatt ut av katalogen. Ikke bruk dem, ",
+           "og ikke gi nye øvelser disse kodene: ", paste(avoided, collapse = ", "), ".")
+  } else ""
+  if (nrow(bank) == 0) return(paste0("# Øvelsesbanken\n\nBanken er tom.", avoid_line))
   hit <- vapply(bank$themes, function(t) nzchar(theme) && tolower(theme) %in% tolower(t), logical(1))
   ord <- order(!hit, bank$status != "active", match(bank$category, names(exercise_categories)), tolower(bank$name))
   bank <- bank[utils::head(ord, max), , drop = FALSE]
@@ -267,11 +276,12 @@ ai_catalogue <- function(bank, theme = "", max = 30) {
                if (!is.na(r$duration_minutes)) paste(r$duration_minutes, "min"),
                if (nzchar(txt1(r$based_on))) paste("variant av", r$based_on),
                if (r$status == "candidate") "kandidat",
+               if (isTRUE(r$fb_n > 0)) paste0("snitt ", feedback_mean_text(r$fb_mean), "/3 (", r$fb_n, ")"),
                if (nzchar(desc)) paste("kort:", desc))
     paste("-", paste(parts[nzchar(parts)], collapse = " | "))
   }, character(1))
   paste0("# Øvelsesbanken\n\nkode | navn | kategori | tema | spillere | minutter | merknader | kort beskrivelse\n\n",
-         paste(lines, collapse = "\n"))
+         paste(lines, collapse = "\n"), avoid_line)
 }
 
 #' The order (bestilling) for one event, without names

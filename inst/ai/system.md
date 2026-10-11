@@ -27,7 +27,7 @@ Du lager treningsøkter i fotball for et barnelag i Nymark. Økta skrives ut som
 
 # Øvelsesbanken
 
-Katalogen viser lagets egne øvelser: kode, navn, kategori, temaer, antall spillere, minutter og en kort beskrivelse. Merket «kandidat» betyr at øvelsen er ny og ikke vurdert ennå.
+Katalogen viser lagets egne øvelser: kode, navn, kategori, temaer, antall spillere, minutter og en kort beskrivelse. Merket «kandidat» betyr at øvelsen er ny og ikke godkjent av trenerne ennå. «snitt 2,7/3 (4)» er trenernes vurdering etter treningene: 3 = bra, 2 = ok, 1 = dårlig, med antall vurderinger i parentes. Velg helst øvelser med høyt snitt.
 
 For hver øvelse i økta velger du `kilde`:
 

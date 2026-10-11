@@ -108,12 +108,19 @@ test_that("exercises: new, edit, delete with confirmation", {
     list_html <- as.character(output$ex_body$html)
     expect_match(list_html, "Pasning og mottak")
     expect_match(list_html, "minst 5 spillere")
+    expect_match(list_html, "Ikke vurdert ennå")
+    expect_false(grepl("sn-ex-status-", list_html))   # active: no badge
+    expect_equal(ex$status, "active")
 
     id <- as.character(ex$id)
     session$setInputs(ex_edit = id)
-    expect_match(as.character(output$ex_body$html), "value=\"Rondo 4 mot 1\"")
-    session$setInputs(ex_name = "Rondo med to touch", ex_save = 3)
+    form <- as.character(output$ex_body$html)
+    expect_match(form, "value=\"Rondo 4 mot 1\"")
+    expect_match(form, "<option value=\"active\" selected>Aktiv</option>", fixed = TRUE)
+    session$setInputs(ex_name = "Rondo med to touch", ex_status = "candidate", ex_save = 3)
     expect_equal(ds_get_exercise(con, acc, ex$id)$name, "Rondo med to touch")
+    expect_equal(ds_get_exercise(con, acc, ex$id)$status, "candidate")
+    expect_match(as.character(output$ex_body$html), "sn-ex-status-candidate\">Kandidat<", fixed = TRUE)
 
     session$setInputs(ex_edit = "999999")          # unknown id: ignored
     expect_null(editing())

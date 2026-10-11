@@ -672,13 +672,51 @@ ds_exercise_group <- function(con, access, exercise_id) {
   row$spond_group_id
 }
 
-#' All exercises in a main group, sorted by category and name
+# Evaluations per exercise code in a group (T3e-2): only rows for an
+# exercise, not for the whole session. Tags as "key:count" joined by the
+# unit separator, most used first.
+ds_exercise_stats_sql <- "
+  LEFT JOIN (
+    SELECT exercise_code, count(*)::integer AS fb_n, count(DISTINCT spond_event_id)::integer AS fb_sessions,
+           avg(rating)::float8 AS fb_mean,
+           count(*) FILTER (WHERE rating = 3)::integer AS fb_good,
+           count(*) FILTER (WHERE rating = 2)::integer AS fb_ok,
+           count(*) FILTER (WHERE rating = 1)::integer AS fb_bad,
+           count(*) FILTER (WHERE use_again = 'yes')::integer AS fb_yes,
+           count(*) FILTER (WHERE use_again = 'changes')::integer AS fb_changes,
+           count(*) FILTER (WHERE use_again = 'no')::integer AS fb_no,
+           avg(actual_minutes)::float8 AS fb_minutes, max(updated_at) AS fb_last
+      FROM exercise_feedback
+     WHERE spond_group_id = $1 AND exercise_no IS NOT NULL AND exercise_code IS NOT NULL
+     GROUP BY exercise_code) s ON s.exercise_code = e.code
+  LEFT JOIN (
+    SELECT exercise_code, string_agg(tag || ':' || n, chr(31) ORDER BY n DESC, tag) AS fb_tags
+      FROM (SELECT exercise_code, tag, count(*) AS n
+              FROM exercise_feedback, unnest(tags) AS tag
+             WHERE spond_group_id = $1 AND exercise_no IS NOT NULL AND exercise_code IS NOT NULL
+             GROUP BY exercise_code, tag) t0
+     GROUP BY exercise_code) t ON t.exercise_code = e.code"
+
+#' All exercises in a main group, sorted by category and name, with the
+#' trainers' evaluations summed up per code
 #' @return data.frame; `themes` is a list column of character vectors.
+#'   fb_n (evaluations), fb_sessions, fb_good/fb_ok/fb_bad, fb_yes/fb_changes/
+#'   fb_no are 0 when there are none; fb_mean, fb_minutes and fb_last are NA.
+#'   `fb_tags` is a list column of named counts (keys of `feedback_tags`).
 #' @noRd
 ds_list_exercises <- function(con, access, group_id) {
   assert_group_access(access, group_id)
-  rows <- ds_query(con, paste(ds_exercise_select, "WHERE spond_group_id = $1 ORDER BY category, lower(name), id"),
-                   list(group_id))
+  counts <- c("fb_n", "fb_sessions", "fb_good", "fb_ok", "fb_bad", "fb_yes", "fb_changes", "fb_no")
+  rows <- ds_query(con, paste0("
+    SELECT e.*, ", paste0("coalesce(s.", counts, ", 0) AS ", counts, collapse = ", "), ",
+           s.fb_mean, s.fb_minutes, s.fb_last, coalesce(t.fb_tags, '') AS fb_tags
+      FROM (", ds_exercise_select, " WHERE spond_group_id = $1) e", ds_exercise_stats_sql, "
+     ORDER BY e.category, lower(e.name), e.id"), list(group_id))
+  rows$fb_tags <- lapply(rows$fb_tags, function(x) {
+    if (is.na(x) || !nzchar(x)) return(stats::setNames(integer(), character()))
+    p <- strsplit(strsplit(x, "\x1f", fixed = TRUE)[[1]], ":", fixed = TRUE)
+    stats::setNames(as.integer(vapply(p, `[`, "", 2)), vapply(p, `[`, "", 1))
+  })
   ds_exercise_rows(rows)
 }
 
@@ -703,18 +741,18 @@ ds_save_exercise <- function(con, access, group_id, ex, actor, id = NULL, rights
   v <- exercise_validate(ex)
   fields <- list(v$name, v$category, ds_text_array(v$themes), v$min_players, v$max_players, v$duration_minutes,
                  v$area, v$organisation, v$execution, v$learning_points, v$questions, v$easier, v$harder,
-                 v$nff_url, actor, v$drawing)
+                 v$nff_url, actor, v$drawing, v$status)
   if (is.null(id)) {
     taken <- ds_query(con, "SELECT code FROM exercises WHERE spond_group_id = $1", list(group_id))$code
     code <- exercise_code(v$name, taken)
     res <- ds_query(con, "
       INSERT INTO exercises (spond_group_id, code, name, category, themes, min_players, max_players,
                              duration_minutes, area, organisation, execution, learning_points, questions,
-                             easier, harder, nff_url, created_by, updated_by, drawing)
+                             easier, harder, nff_url, created_by, updated_by, drawing, status)
       VALUES ($1, $2, $3, $4, $5::text[], NULLIF($6, '')::integer, NULLIF($7, '')::integer,
               NULLIF($8, '')::integer, NULLIF($9, ''), NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''),
               NULLIF($13, ''), NULLIF($14, ''), NULLIF($15, ''), NULLIF($16, ''), $17, $17,
-              NULLIF($18, '')::jsonb)
+              NULLIF($18, '')::jsonb, coalesce(NULLIF($19, ''), 'active'))
       RETURNING id", c(list(group_id, code), fields))
     return(as.integer(res$id))
   }
@@ -728,7 +766,7 @@ ds_save_exercise <- function(con, access, group_id, ex, actor, id = NULL, rights
            area = NULLIF($9, ''), organisation = NULLIF($10, ''), execution = NULLIF($11, ''),
            learning_points = NULLIF($12, ''), questions = NULLIF($13, ''), easier = NULLIF($14, ''),
            harder = NULLIF($15, ''), nff_url = NULLIF($16, ''), drawing = NULLIF($18, '')::jsonb,
-           updated_by = $17, updated_at = now()
+           status = coalesce(NULLIF($19, ''), status), updated_by = $17, updated_at = now()
      WHERE id = $1 AND spond_group_id = $2", c(list(as.integer(id), group_id), fields))
   as.integer(id)
 }
@@ -1094,15 +1132,18 @@ ds_list_feedback <- function(con, access, group_id, event_id) {
 #' Save one trainer's evaluation of a plan version
 #'
 #' Replaces the trainer's earlier evaluation of the same version (rows not
-#' sent are removed), in one transaction.
+#' sent are removed), in one transaction. Candidates in the bank that get
+#' 👍 with «Bruke igjen: Ja» become active in the same transaction.
 #' @param fb data.frame from `feedback_validate()`.
+#' @return list(n = rows saved, activated = codes that became active),
+#'   invisibly.
 #' @noRd
 ds_save_feedback <- function(con, access, plan_id, actor, fb) {
   pl <- ds_get_plan(con, access, plan_id)
   if (!is.data.frame(fb) || nrow(fb) == 0) ds_user_stop("Vurder minst én øvelse eller hele økta.")
   int_arr <- function(x) paste0("{", paste(ifelse(is.na(x), "NULL", as.integer(x)), collapse = ","), "}")
   tags <- vapply(fb$tags, function(t) paste(t, collapse = "\x1f"), "")
-  ds_transaction(con, {
+  activated <- ds_transaction(con, {
     ds_exec(con, "DELETE FROM exercise_feedback WHERE plan_id = $1 AND author = $2", list(as.integer(plan_id), actor))
     ds_exec(con, "
       INSERT INTO exercise_feedback (spond_group_id, spond_event_id, plan_id, exercise_no, exercise_code, rating, tags,
@@ -1116,8 +1157,17 @@ ds_save_feedback <- function(con, access, plan_id, actor, fb) {
            int_arr(fb$exercise_no), ds_text_array(fb$exercise_code), int_arr(fb$rating), ds_text_array(tags),
            int_arr(fb$actual_minutes), int_arr(fb$actual_players), ds_text_array(fb$body),
            ds_text_array(fb$use_again)))
+    # A candidate becomes active on the first 👍 with «Bruke igjen: Ja» (kap. 14).
+    good <- unique(fb$exercise_code[!is.na(fb$exercise_no) & fb$rating %in% 3L & fb$use_again %in% "yes" &
+                                      nzchar(fb$exercise_code)])
+    if (length(good)) {
+      ds_query(con, "
+        UPDATE exercises SET status = 'active', updated_by = $3, updated_at = now()
+         WHERE spond_group_id = $1 AND code = ANY($2::text[]) AND status = 'candidate'
+        RETURNING code", list(pl$group_id, ds_text_array(good), actor))$code
+    } else character()
   })
-  invisible(nrow(fb))
+  invisible(list(n = nrow(fb), activated = activated))
 }
 
 # Rights (app_roles, migration 004) ------------------------------------------------

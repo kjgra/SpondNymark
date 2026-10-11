@@ -159,3 +159,66 @@ feedback_ratings_text <- function(counts) {
   icons <- c(`3` = "\U0001F44D", `2` = "\U0001F44C", `1` = "\U0001F44E")
   paste(paste(icons[names(counts)], counts), collapse = " · ")
 }
+
+# The message after saving, naming candidates that became active.
+feedback_saved_text <- function(activated, plan) {
+  if (!length(activated)) return("Evalueringen er lagret. Takk!")
+  codes <- vapply(plan$ovelser, function(o) txt1(o$kode), "")
+  names <- vapply(plan$ovelser, function(o) txt1(o$navn), "")
+  shown <- ifelse(activated %in% codes, names[match(activated, codes)], activated)
+  shown <- paste0("«", shown, "»")
+  list_txt <- if (length(shown) == 1) shown else paste(paste(utils::head(shown, -1), collapse = ", "), "og",
+                                                       utils::tail(shown, 1))
+  paste0("Evalueringen er lagret. Takk! ", list_txt, " er nå ", if (length(shown) == 1) "aktiv" else "aktive",
+         " i øvelsesbanken.")
+}
+
+# Statistics per exercise in the bank (T3e-2) ------------------------------------
+# The columns fb_* come from `ds_list_exercises()`.
+
+#' Exercises KI should not use: the trainers rate them below OK on average,
+#' or most say «Bruke igjen: Nei»
+#' @param bank `ds_list_exercises()`; without fb_* columns nothing is avoided.
+#' @return Logical vector, one per row.
+#' @noRd
+exercise_avoid <- function(bank) {
+  if (is.null(bank) || !nrow(bank) || !"fb_n" %in% names(bank)) return(rep(FALSE, NROW(bank)))
+  n <- bank$fb_n %||% 0L
+  again <- bank$fb_yes + bank$fb_changes + bank$fb_no
+  n > 0 & ((!is.na(bank$fb_mean) & bank$fb_mean < 2) | (again > 0 & bank$fb_no * 2 > again))
+}
+
+# Mean rating as "2,7" (Norwegian decimal comma).
+feedback_mean_text <- function(x) formatC(x, format = "f", digits = 1, decimal.mark = ",")
+
+#' One line with the evaluations of a bank exercise, for the admin panel
+#' @param e One row of `ds_list_exercises()`.
+#' @return "" when the columns are missing, «Ikke vurdert ennå» when there
+#'   are no evaluations.
+#' @noRd
+exercise_stats_text <- function(e) {
+  if (!"fb_n" %in% names(e)) return("")
+  if (is.na(e$fb_n) || e$fb_n == 0) return("Ikke vurdert ennå")
+  ratings <- feedback_ratings_text(c(`3` = e$fb_good, `2` = e$fb_ok, `1` = e$fb_bad)[c(e$fb_good, e$fb_ok, e$fb_bad) > 0])
+  again <- c(yes = e$fb_yes, changes = e$fb_changes, no = e$fb_no)
+  again <- again[again > 0]
+  tags <- e$fb_tags[[1]]
+  tags <- utils::head(tags[names(tags) %in% names(feedback_tags)], 3)
+  parts <- c(
+    paste0(ratings, " (snitt ", feedback_mean_text(e$fb_mean), ")"),
+    paste(e$fb_sessions, if (e$fb_sessions == 1) "økt" else "økter"),
+    if (length(again)) paste0("Bruke igjen: ", paste(feedback_use_again[names(again)], again, collapse = ", ")),
+    if (!is.na(e$fb_minutes)) paste0("faktisk tid ca. ", round(e$fb_minutes), " min"),
+    if (length(tags)) paste0(feedback_tags[names(tags)], " (", tags, ")", collapse = ", "),
+    if (!is.na(e$fb_last)) paste("sist", feedback_date_text(e$fb_last))
+  )
+  paste(parts, collapse = " · ")
+}
+
+# "12. okt." (with the year if not this year), Norwegian time.
+feedback_date_text <- function(t, tz = "Europe/Oslo", now = Sys.time()) {
+  t <- as.POSIXct(t)
+  y <- format(t, "%Y", tz = tz)
+  paste0(as.integer(format(t, "%d", tz = tz)), ". ", no_month(t, tz),
+         if (y != format(now, "%Y", tz = tz)) paste0(" ", y) else "")
+}

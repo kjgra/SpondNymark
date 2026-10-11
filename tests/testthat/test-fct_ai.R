@@ -102,6 +102,22 @@ test_that("the catalogue puts the theme first and leaves out archived exercises"
   expect_match(ai_catalogue(b), "variant av rondo-3-mot-1", fixed = TRUE)
 })
 
+test_that("the catalogue shows the trainers' score and leaves out poorly rated exercises", {
+  b <- rbind(test_bank(), test_bank()[1, ])
+  b$id[4] <- 4L; b$code[4] <- "kjedelig-ko"; b$name[4] <- "Kjedelig kø"; b$status[4] <- "active"
+  b$fb_n <- c(3L, 0L, 0L, 2L); b$fb_mean <- c(8 / 3, NA, NA, 1.5)
+  b$fb_yes <- c(2L, 0L, 0L, 0L); b$fb_changes <- 0L; b$fb_no <- c(0L, 0L, 0L, 2L)
+  cat <- ai_catalogue(b, "Samhandling")
+  lines <- grep("^- ", strsplit(cat, "\n")[[1]], value = TRUE)
+  expect_length(lines, 2)
+  expect_match(lines[1], "| snitt 2,7/3 (3) |", fixed = TRUE)
+  expect_false(grepl("snitt", lines[2]))
+  expect_false(any(grepl("Kjedelig", lines)))
+  expect_match(cat, "ikke gi nye øvelser disse kodene: kjedelig-ko.", fixed = TRUE)
+  # Without evaluations nothing is left out, and there is no such line
+  expect_false(grepl("vurdert som dårlige", ai_catalogue(test_bank())))
+})
+
 test_that("the order has counts but no names, and checks the trainer's wish", {
   ctx <- list(start = as.POSIXct("2026-10-15 17:30", tz = "Europe/Oslo"), minutes = 75, theme = "Samhandling",
               team = list(age_group = "G10", pitch = "", equipment = "Små mål"), n_players = 18,
